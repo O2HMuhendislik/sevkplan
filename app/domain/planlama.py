@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.domain.kapasite import KapasiteProfili
@@ -56,6 +56,8 @@ class TaslakPlan:
     teslimatlar: list[Teslimat] = field(default_factory=list)
     istisna_asim: bool = False
     """Tek teslimat üst limiti aştığı için açılan istisna planı."""
+    alt_limit_esnetildi: bool = False
+    """Alt limit dolmadığı halde esnetme kuralıyla açılan plan."""
 
     @property
     def toplam_birim(self) -> Decimal:
@@ -91,13 +93,45 @@ class TaslakPlan:
 
     @property
     def gecerli(self) -> bool:
-        return self.istisna_asim or self.profil.gecerli_dolu(self.toplam_birim)
+        return (
+            self.istisna_asim
+            or self.alt_limit_esnetildi
+            or self.profil.gecerli_dolu(self.toplam_birim)
+        )
 
     def ekle(self, teslimat: Teslimat) -> None:
         self.teslimatlar.append(teslimat)
 
     def sigar_mi(self, teslimat: Teslimat) -> bool:
         return not self.istisna_asim and teslimat.birim <= self.bos_alan
+
+
+@dataclass(frozen=True)
+class EsnetmeKurali:
+    """Alt limitin ne zaman esneyeceğini tanımlar.
+
+    Alt limiti dolduramayan teslimatlar normalde beklemede kalır. İki durumda plana
+    dönüşürler:
+      * `zorla=True`  — kullanıcı "kalanları planla" dediğinde alt limit hiç aranmaz.
+      * aciliyet      — kalanlar arasında termin tarihine `gun_esigi` gün veya daha az
+                        kalmış (ya da termini geçmiş) bir teslimat varsa.
+    Her iki durumda da `asgari_oran` altındaki kalıntılar yine beklemede bırakılır.
+    """
+
+    bugun: date
+    zorla: bool = False
+    gun_esigi: int | None = None
+    asgari_oran: Decimal = Decimal(0)
+
+    def uygulanir_mi(self, plan: TaslakPlan) -> bool:
+        if plan.toplam_birim < plan.profil.ust_limit * self.asgari_oran:
+            return False
+        if self.zorla:
+            return True
+        if self.gun_esigi is None:
+            return False
+        son_tarih = self.bugun + timedelta(days=self.gun_esigi)
+        return any(t.oncelik_tarihi <= son_tarih for t in plan.teslimatlar)
 
 
 @dataclass
@@ -123,14 +157,19 @@ def palet_hesapla(miktar: Decimal, palet_ici_adet: int) -> Decimal:
     return Decimal(math.ceil(Decimal(miktar) / Decimal(palet_ici_adet)))
 
 
-def planla(teslimatlar: list[Teslimat], profil: KapasiteProfili) -> PlanlamaSonucu:
+def planla(
+    teslimatlar: list[Teslimat],
+    profil: KapasiteProfili,
+    esnetme: EsnetmeKurali | None = None,
+) -> PlanlamaSonucu:
     """Teslimatları kapasite profiline göre planlara yerleştirir.
 
     Kurallar (bkz. docs/ANALIZ.md):
       * Gruplama: (depo kodu, planlama anahtarı). Farklı SKU'lar karışmaz.
       * Üst limiti tek başına aşan teslimat kendi istisna planına gider.
       * Yerleştirme: Best-Fit Decreasing.
-      * Alt limitin altında kalan planlar dağıtılır, teslimatları beklemede kalır.
+      * Alt limitin altında kalan planlar dağıtılır, teslimatları beklemede kalır —
+        `esnetme` kuralı devreye girmediği sürece.
     """
     sonuc = PlanlamaSonucu()
     for anahtar in sorted({(t.depo_kodu, t.planlama_anahtari) for t in teslimatlar}):
@@ -138,13 +177,16 @@ def planla(teslimatlar: list[Teslimat], profil: KapasiteProfili) -> PlanlamaSonu
             t for t in teslimatlar
             if (t.depo_kodu, t.planlama_anahtari) == anahtar
         ]
-        _grubu_planla(grup, profil, sonuc)
+        _grubu_planla(grup, profil, sonuc, esnetme)
     sonuc.planlar.sort(key=lambda p: (p.depo_kodu, p.planlama_anahtari))
     return sonuc
 
 
 def _grubu_planla(
-    grup: list[Teslimat], profil: KapasiteProfili, sonuc: PlanlamaSonucu
+    grup: list[Teslimat],
+    profil: KapasiteProfili,
+    sonuc: PlanlamaSonucu,
+    esnetme: EsnetmeKurali | None = None,
 ) -> None:
     depo_kodu = grup[0].depo_kodu
     planlama_anahtari = grup[0].planlama_anahtari
@@ -182,7 +224,16 @@ def _grubu_planla(
         hedef.ekle(teslimat)
 
     gecerliler = [k for k in kutular if k.gecerli]
-    dagitilanlar = [t for k in kutular if not k.gecerli for t in k.teslimatlar]
+    eksik_kalanlar = [k for k in kutular if not k.gecerli]
+
+    if esnetme is not None:
+        for kutu in eksik_kalanlar:
+            if esnetme.uygulanir_mi(kutu):
+                kutu.alt_limit_esnetildi = True
+        gecerliler = [k for k in kutular if k.gecerli]
+        eksik_kalanlar = [k for k in kutular if not k.gecerli]
+
+    dagitilanlar = [t for k in eksik_kalanlar for t in k.teslimatlar]
 
     _yaslandirma_takasi(gecerliler, dagitilanlar)
 

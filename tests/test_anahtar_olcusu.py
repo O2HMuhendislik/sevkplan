@@ -102,3 +102,54 @@ def test_agirlik_ve_adet_toplamlari_plana_yazilir(db):
     ).planlar[0]
     assert plan.toplam_adet == 200
     assert plan.toplam_agirlik == Decimal("5800.000")
+
+
+def test_alt_limit_termine_yaklasan_siparis_icin_esner(db):
+    """Kalan siparişler tek başına alt limiti dolduramıyorsa ve termin yaklaştıysa
+    plan yine de açılır."""
+    urun_ekle(db, "KMB-24", palet_ici_adet=10)
+    satir_ekle(db, "TSL-1", "KMB-24", 50, termin=date(2026, 9, 1), siparis_no="S1")
+    satir_ekle(db, "TSL-2", "KMB-24", 50, termin=date(2026, 9, 1), siparis_no="S2")
+
+    # Termine 12 gün var: esneme yok, beklemede kalır.
+    erken = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 20), depo_kodu="64")
+    assert erken.planlar == []
+
+    # Termine 2 gün kaldı: alt limit esnetilir.
+    gec = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 30), depo_kodu="64")
+    assert len(gec.planlar) == 1
+    plan = gec.planlar[0]
+    assert plan.alt_limit_esnetildi is True
+    assert plan.toplam_birim == 10
+    assert gec.esnetilen_plan_sayisi == 1
+
+
+def test_kalanlari_zorla_alt_limiti_hic_uygulamaz(db):
+    urun_ekle(db, "KMB-24", palet_ici_adet=10)
+    satir_ekle(db, "TSL-1", "KMB-24", 30, termin=date(2026, 12, 31), siparis_no="S1")
+
+    normal = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    assert normal.planlar == []
+
+    zorlanan = plan_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 8, 31), depo_kodu="64", kalanlari_zorla=True
+    )
+    assert len(zorlanan.planlar) == 1
+    assert zorlanan.planlar[0].alt_limit_esnetildi is True
+    assert zorlanan.planlar[0].toplam_birim == 3
+
+
+def test_esnetme_dolu_planlari_isaretlemez(db):
+    urun_ekle(db, "KMB-24", palet_ici_adet=10)
+    for i in range(4):
+        satir_ekle(db, f"TSL-{i}", "KMB-24", 50, termin=date(2026, 9, 1), siparis_no=f"S{i}")
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 30), depo_kodu="64")
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].alt_limit_esnetildi is False
+    assert sonuc.esnetilen_plan_sayisi == 0
+
+
+def test_tum_depolar_profil_tanimli(db):
+    """Verilerde geçen depo kodlarının hepsi planlanabilir olmalı."""
+    for depo in ("64", "64-D", "64-V", "64-P", "74", "74-V", "3", "03", "34", "36", "44"):
+        assert depo_profili(depo) is not None, depo

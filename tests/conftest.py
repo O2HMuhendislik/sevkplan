@@ -61,7 +61,9 @@ def satir_ekle(
         depo_kodu=depo_kodu,
         sehir="ESKİŞEHİR",
         bayi_adi="TEST BAYİ",
-        termin_tarihi=termin or date(2026, 9, 1),
+        # Varsayılan termin uzak bırakılır ki alt limit esnetmesi kendiliğinden
+        # devreye girip testleri etkilemesin; esnetme testleri terminini kendi verir.
+        termin_tarihi=termin or date(2026, 12, 1),
     )
     db.add(satir)
     db.flush()

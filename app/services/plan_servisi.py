@@ -8,11 +8,17 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.config import RING_DEPO_KODU, depo_profili
+from app.config import (
+    ESNETME_ASGARI_ORAN,
+    ESNETME_GUN_ESIGI,
+    RING_DEPO_KODU,
+    depo_profili,
+)
 from app.domain import sefer_no as sefer_no_modulu
 from app.domain.kapasite import RING_PALET, AracTipi, KapasiteProfili, Olcu
 from app.domain.planlama import (
     BekleyenTeslimat,
+    EsnetmeKurali,
     PlanlamaSonucu,
     TaslakPlan,
     Teslimat,
@@ -43,13 +49,20 @@ class PlanUretimSonucu:
     degerlendirilen_teslimat: int = 0
     profil: KapasiteProfili | None = None
 
+    @property
+    def esnetilen_plan_sayisi(self) -> int:
+        return sum(1 for plan in self.planlar if plan.alt_limit_esnetildi)
+
     def ozet(self) -> str:
-        return (
+        metin = (
             f"{self.degerlendirilen_teslimat} teslimat değerlendirildi · "
             f"{len(self.planlar)} plan üretildi · "
             f"{len(self.bekleyenler)} teslimat beklemede · "
             f"{len(self.hatali_teslimatlar)} teslimat hatalı"
         )
+        if self.esnetilen_plan_sayisi:
+            metin += f" · {self.esnetilen_plan_sayisi} planda alt limit esnetildi"
+        return metin
 
 
 def sonraki_sefer_no(db: Session, plan_tarihi: date, belge_kodu: str) -> str:
@@ -227,11 +240,16 @@ def plan_uret(
     depo_kodu: str = RING_DEPO_KODU,
     profil: KapasiteProfili | None = None,
     kullanici: str = "sistem",
+    kalanlari_zorla: bool = False,
 ) -> PlanUretimSonucu:
     """Beklemedeki siparişlerden taslak sevkiyat planları üretir.
 
     Kapasite profili depo koduna göre seçilir: 64 palet ölçüsüyle, 74 anahtar
     değerle planlanır (bkz. app/config.py DEPO_PROFILLERI).
+
+    Alt limiti dolduramayan kalıntılar normalde beklemede bırakılır. İçlerinde termini
+    yaklaşmış teslimat varsa (ESNETME_GUN_ESIGI) ya da `kalanlari_zorla` verildiyse
+    alt limit esnetilir ve plan "alt limit esnetildi" olarak işaretlenir.
     """
     plan_tarihi = plan_tarihi or date.today()
     profil = profil or depo_profili(depo_kodu)
@@ -259,7 +277,13 @@ def plan_uret(
         db.flush()
         return sonuc
 
-    planlama: PlanlamaSonucu = planla(teslimatlar, profil)
+    esnetme = EsnetmeKurali(
+        bugun=plan_tarihi,
+        zorla=kalanlari_zorla,
+        gun_esigi=ESNETME_GUN_ESIGI,
+        asgari_oran=ESNETME_ASGARI_ORAN,
+    )
+    planlama: PlanlamaSonucu = planla(teslimatlar, profil, esnetme)
     satir_haritasi = {satir.id: satir for satir in satirlar}
 
     for taslak in planlama.planlar:
@@ -297,6 +321,7 @@ def _plani_kaydet(
         doluluk_yuzdesi=taslak.doluluk_yuzdesi,
         teslimat_sayisi=len(taslak.teslimatlar),
         istisna_asim=taslak.istisna_asim,
+        alt_limit_esnetildi=taslak.alt_limit_esnetildi,
         mix_mi=mix_mi,
         durum=PlanDurumu.TASLAK,
         plan_tarihi=plan_tarihi,
@@ -319,6 +344,7 @@ def _plani_kaydet(
                 f"{profil.bicimle(taslak.toplam_birim)} · "
                 f"{len(taslak.teslimatlar)} teslimat"
                 + (" · üst limit istisnası" if taslak.istisna_asim else "")
+                + (" · alt limit esnetildi" if taslak.alt_limit_esnetildi else "")
             ),
             kullanici=kullanici,
         )

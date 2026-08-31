@@ -72,13 +72,16 @@ gerekçesiyle listeler.
    | Depo | Ölçü | Üst / alt limit | Kullanılan master data alanı |
    |---|---|---|---|
    | 64, 64-D, 64-V, 64-P | Palet | 20 / 18 | Palet içi adet |
-   | 74, 74-V | Anahtar değer | 1.00 / 0.90 | Tır yükleme adeti |
+   | 74, 74-V, 3, 03, 34, 36, 44 | Anahtar değer | 1.00 / 0.90 | Tır yükleme adeti |
 
    `palet = yukarı yuvarla(miktar / palet içi adet)` — kırık palet bir tam palet sayılır.
    `anahtar = miktar / tır yükleme adeti` — toplam 1.0 olunca araç %100 dolu.
 5. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
 6. Sıralama termin tarihine göredir; eski siparişler önce planlanır.
-7. Alt limitin altında kalan teslimatlar planlanmaz, `BEKLEMEDE` statüsünde kalır.
+7. Alt limitin altında kalan teslimatlar `BEKLEMEDE` kalır — iki istisna dışında:
+   termine 3 gün veya daha az kalmış bir teslimat varsa alt limit **kendiliğinden**
+   esner; ya da planlama ekranındaki *"Kalanları da planla"* seçeneğiyle **manuel**
+   olarak devre dışı bırakılır. Bu planlar **ESNETİLDİ** rozetiyle işaretlenir.
 
 ## Sefer numarası
 

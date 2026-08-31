@@ -137,6 +137,7 @@ class SevkiyatPlani(Temel):
     doluluk_yuzdesi: Mapped[Decimal] = mapped_column(Numeric(6, 2))
     teslimat_sayisi: Mapped[int] = mapped_column(Integer, default=0)
     istisna_asim: Mapped[bool] = mapped_column(Boolean, default=False)
+    alt_limit_esnetildi: Mapped[bool] = mapped_column(Boolean, default=False)
     mix_mi: Mapped[bool] = mapped_column(Boolean, default=False)
     durum: Mapped[PlanDurumu] = mapped_column(
         Enum(PlanDurumu), default=PlanDurumu.TASLAK, index=True

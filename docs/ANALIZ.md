@@ -21,7 +21,7 @@ soyutlamayla ele alınıyor.
 | Depo | Ölçü | Üst limit | Alt limit | Kaynağı |
 |---|---|---|---|---|
 | 64, 64-D, 64-V, 64-P | **Palet** | 20 | 18 | `Palet içi adet` |
-| 74, 74-V | **Anahtar değer** | 1.00 (%100) | 0.90 | `Tır yükleme adeti` |
+| 74, 74-V, 3, 03, 34, 36, 44 | **Anahtar değer** | 1.00 (%100) | 0.90 | `Tır yükleme adeti` |
 
 ```
 palet   = yukarı yuvarla( miktar / palet içi adet )      # her SKU için ayrı
@@ -37,9 +37,26 @@ anahtar = miktar / tır yükleme adeti                      # 1.0 = araç %100 d
   (tır yükleme adeti ≈ 2 × kamyon yükleme adeti); depo 74 planları kamyon ölçüsünde
   ≈ 2.0, tır ölçüsünde ≈ 1.0 verir. Sistem tır ölçüsünü kullanır.
 
-**Açık konu:** 2025'te depo 64 planlarının palet medyanı 10.8; yani pratikte 18 palet
-alt limitinin çok altında da plan açılmış. Alt limit şu an 18 olarak uygulanıyor
-(`app/domain/kapasite.py`). Acil sevkler için istisna gerekiyorsa kural gözden geçirilmeli.
+**Depo ölçüleri nasıl belirlendi:** 2025'te depo 3 planlarının %95'i, depo 03'ün %95'i,
+depo 74'ün %91'i anahtar değeri 1,0 civarında; depo 64/64-V/64-P'nin anahtar medyanı
+0,15–0,38 ama palet dağılımının tepesi tam 20. Depo 34, 36 ve 44 için 2025'te yeterli
+örnek yok; Ağustos 2026 planlarında anahtar değerleri 1,0 civarında olduğu için anahtar
+ölçüsü kabul edildi. Değiştirmek için `app/config.py` → `DEPO_PROFILLERI`.
+
+### Alt limit esnetmesi
+
+2025 verisinde depo 64 planlarının palet medyanı 10,8 — yani pratikte alt limitin çok
+altında da plan açılmış. Bunu karşılamak için alt limitin iki esneme yolu var:
+
+1. **Aciliyet (otomatik).** Alt limiti dolduramayan kalıntılar arasında termin tarihine
+   `ESNETME_GUN_ESIGI` gün veya daha az kalmış (ya da termini geçmiş) bir teslimat varsa,
+   kalanlar alt limite bakılmadan planlanır. Varsayılan eşik **3 gün**.
+2. **Kullanıcı isteği (manuel).** Planlama ekranındaki *"Kalanları da planla"* seçeneği
+   işaretlenerek alt limit tamamen devre dışı bırakılır.
+
+Her iki durumda da plan `alt_limit_esnetildi` olarak işaretlenir; listede **ESNETİLDİ**
+rozetiyle görünür ve plan detayında gerekçesi yazar. Esnetme yapılsa bile
+`ESNETME_ASGARI_ORAN` altındaki kalıntılar beklemede bırakılır (varsayılan 0 = sınır yok).
 
 ## 3. Planlama anahtarı: bir planın içinde ne aynı kalır?
 
@@ -86,12 +103,10 @@ Format: `YY` + `AA` + `D` + `####` → `2608D1001`
 **Veriyle doğrulanan:** 2025'te aylık 173–295 plan üretilmiş; belge kodu neredeyse
 tamamen `D` (2.566 plan), ayrıca birkaç `S` ve `T`. Sayaç her ay sıfırlanıyor.
 
-**Açık konu — sayaç bantları:** Gerçek numaralar tek bir diziden gelmiyor; her ay
-`1001…`, `2001…`, `3001…` (Ocak'ta `5001…`) şeklinde birden fazla bant kullanılmış.
-Bantlarla depo arasında kısmi bir ilişki var (2xxx ağırlıklı depo 64, 1xxx/3xxx
-ağırlıklı depo 74) ama birebir değil. **Bandın neye göre seçildiği netleşmedi;**
-sistem şu an ayda tek dizi kullanıp `1001`'den başlıyor. Kural netleşince
-`app/domain/sefer_no.py` içindeki `BASLANGIC_SAYAC` bant seçimine çevrilecek.
+Geçmiş verilerde her ay `1001…`, `2001…`, `3001…` gibi birden fazla sayaç bandı
+kullanılmış (elle planlama döneminden kalma). **Karar: sistemde tek sayaç kullanılacak.**
+Her ay `1001`'den başlar, plan başına bir artar. Aylık hacim 200–300 civarı olduğu için
+`1001–9999` aralığı fazlasıyla yeterlidir.
 
 İptal edilen planın numarası geri kullanılmaz; numara akışında boşluk kalması normaldir.
 
@@ -125,9 +140,10 @@ Sipariş statüleri: `BEKLEMEDE` → `PLANLANDI` → `TAMAMLANDI` (+ `HATALI`).
 
 | # | Konu | Durum |
 |---|---|---|
-| 1 | Sefer numarası sayaç bantları (1xxx / 2xxx / 3xxx) neye göre seçiliyor? | **Cevap bekliyor** |
-| 2 | Depo 64'te 18 palet alt limiti katı mı, acil sevkler için istisna var mı? | **Cevap bekliyor** |
-| 3 | Planlama anahtarı ürün grubu mu, SKU mu? (veri ürün grubunu gösteriyor) | Varsayılan URUN_GRUBU |
-| 4 | Depo 34, 36, 03, 44 planlaması bu sisteme girecek mi? | Şu an profil tanımsız |
+| 1 | Sefer numarası sayacı | **Karar verildi:** tek sayaç, her ay 1001'den |
+| 2 | Alt limit esnetmesi | **Karar verildi:** aciliyet (3 gün) + manuel "kalanları planla" |
+| 3 | Depo 3, 03, 34, 36, 44 | **Eklendi**, anahtar ölçüsüyle (34/36/44 varsayım) |
+| 4 | Planlama anahtarı ürün grubu mu, SKU mu? (veri ürün grubunu gösteriyor) | Varsayılan URUN_GRUBU |
 | 5 | Mail alıcı listesi ve SMTP bilgileri | **Cevap bekliyor** |
 | 6 | Form üzerindeki "PLANLAYAN" alanı — kullanıcı yönetimi gerekli mi? | Şu an plan oluşturan yazılıyor |
+| 7 | Esneme eşiği 3 gün doğru mu, ürün grubuna göre değişmeli mi? | Varsayılan 3 gün |

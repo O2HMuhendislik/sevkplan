@@ -128,12 +128,84 @@ uvicorn app.main:uygulama --reload
 
 ---
 
+## Yeni sürüm geldiğinde nasıl güncellenir?
+
+Sana yeni bir `sevkplan.zip` geldiğinde izleyeceğin yol. **Verilerin kaybolmaz** —
+ürünler, siparişler ve planlar `veri` klasöründeki `sevkplan.db` dosyasında durur ve
+bu dosyaya dokunmayız.
+
+### Adım 1 — Programı durdur
+
+Programın çalıştığı Komut İstemi penceresinde `Ctrl + C`. Pencerenin kapanması gerekmez.
+
+### Adım 2 — Verilerini bir kenara al
+
+`C:\sevkplan` klasörünün içindeki **`veri`** klasörünü masaüstüne kopyala.
+(Sadece güvenlik için; normalde gerekmez ama bir dakikanı alır.)
+
+### Adım 3 — Yeni dosyaları çıkar
+
+Yeni `sevkplan.zip`'i indir, sağ tık → **Tümünü ayıkla** → **aynı** `C:\sevkplan`
+klasörünü seç. "Dosyalar zaten var, değiştirilsin mi?" diye sorarsa **Evet / Tümünü
+değiştir** de.
+
+> Zip'in içinde `veri` klasörü yoktur; mevcut verilerin olduğu yerde kalır.
+> Yine de klasör kayboldu ise Adım 2'deki kopyayı geri koy.
+
+### Adım 4 — Yeni bileşen gerekiyorsa kur
+
+```
+cd C:\sevkplan
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Yeni bir bileşen eklenmediyse bu komut "already satisfied" der ve hiçbir şey yapmaz;
+zararı yoktur, her güncellemede çalıştırabilirsin.
+
+### Adım 5 — Programı başlat
+
+```
+uvicorn app.main:uygulama --reload
+```
+
+Veritabanı gerekiyorsa **kendiliğinden** yeni sürüme uyarlanır (yeni eklenen alanlar
+otomatik eklenir). Ekranda ekstra bir şey görmezsen her şey yolundadır.
+
+### "Mevcut veritabanı programın bu sürümüyle uyumlu değil" hatası alırsan
+
+Nadiren, veri yapısında otomatik çözülemeyen bir değişiklik olur. O zaman:
+
+```
+python -m scripts.veritabani_sifirla
+```
+
+Bu komut mevcut veritabanını `sevkplan_yedek_20260831_143000.db` gibi tarihli bir
+adla yedekler ve boş bir veritabanı oluşturur. Ardından programı başlatıp **Master
+Data** ve **Siparişler** ekranlarından Excel dosyalarını yeniden yükle.
+
+### Güncelleme özeti
+
+| Ne | Nerede durur | Güncellemede ne olur |
+|---|---|---|
+| Program dosyaları (`app`, `scripts`, `docs`) | `C:\sevkplan` | Yenisiyle değişir |
+| Veritabanı (`sevkplan.db`) | `C:\sevkplan\veri` | **Korunur**, gerekirse otomatik uyarlanır |
+| Ürettiğin çıktılar (`veri\ciktilar`) | `C:\sevkplan\veri\ciktilar` | **Korunur** |
+| Ayarların (depo profilleri, esneme eşiği) | `app\config.py` | Yenisiyle değişir — özel bir değişiklik yaptıysan not al |
+
+---
+
 ## Programı ilk açtığında ne yapmalısın
 
-1. **Master Data** ekranına git, ürünlerini tanımla. En önemli alan
-   **Palet İçi Adet** — planlamanın tek sayısal girdisi budur.
-   Tek tek girebilir ya da "Şablonu indir" ile aldığın Excel'i doldurup
-   toplu yükleyebilirsin.
+1. **Master Data** ekranına git, ürünleri yükle. Kaynak sistemdeki `masterdata`
+   sayfasını içeren Excel'i doğrudan yükleyebilirsin; sistem sayfayı kendi bulur.
+   Planlamanın kullandığı alanlar: depo 64 için **Palet içi adet**, diğer depolar için
+   **Tır yükleme adeti**.
 2. **Siparişler** ekranından sipariş Excel'ini yükle.
-3. **Planlar** ekranında "Planlamayı çalıştır" de.
+3. **Planlar** ekranında "Planlamayı çalıştır" de. Depo 64 palet ölçüsüyle,
+   depo 74 ve diğerleri anahtar değerle planlanır.
 4. Üretilen planın detayına gir, **Axata numarasını** yaz, yükleme formunu indir.
+
+Alt limiti dolduramayan siparişler beklemede kalır. Termine 3 gün veya daha az kalmışsa
+kendiliğinden plana girerler; hepsini hemen çıkarmak istersen planlama formundaki
+**"Kalanları da planla"** kutusunu işaretle.

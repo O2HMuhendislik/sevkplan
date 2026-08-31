@@ -15,7 +15,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import CIKTI_DIZIN, DEPO_PROFILLERI, PLANLAMA_SEVIYESI, RING_DEPO_KODU
+from app.config import (
+    CIKTI_DIZIN,
+    DEPO_PROFILLERI,
+    ESNETME_GUN_ESIGI,
+    PLANLAMA_SEVIYESI,
+    RING_DEPO_KODU,
+)
 from app.db import oturum_bagimliligi, semayi_olustur
 from app.models import PlanDurumu, SevkiyatPlani, SiparisDurumu, Urun
 from app.services import ice_aktarim, plan_servisi, rapor_servisi, sablonlar, yukleme_formu
@@ -46,6 +52,7 @@ def sayfa(istek: Request, ad: str, **baglam):
     baglam.setdefault("ring_depo", RING_DEPO_KODU)
     baglam.setdefault("depolar", DEPO_PROFILLERI)
     baglam.setdefault("planlama_seviyesi", PLANLAMA_SEVIYESI)
+    baglam.setdefault("esnetme_gun", ESNETME_GUN_ESIGI)
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
 
@@ -186,11 +193,14 @@ def siparis_sablonu_indir():
 def planlari_uret(
     plan_tarihi: str = Form(""),
     depo_kodu: str = Form(RING_DEPO_KODU),
+    kalanlari_zorla: bool = Form(False),
     db: Session = Depends(oturum_bagimliligi),
 ):
     tarih = datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
     try:
-        sonuc = plan_servisi.plan_uret(db, plan_tarihi=tarih, depo_kodu=depo_kodu)
+        sonuc = plan_servisi.plan_uret(
+            db, plan_tarihi=tarih, depo_kodu=depo_kodu, kalanlari_zorla=kalanlari_zorla
+        )
         db.commit()
     except PlanHatasi as hata:
         db.rollback()
