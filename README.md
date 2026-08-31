@@ -3,9 +3,9 @@
 Sipariş verisinden otomatik sevkiyat planı üreten, planları sefer numarasıyla
 takip eden ve depo operasyona yükleme formu çıkaran uygulama.
 
-**Faz 1 (bu sürüm):** Depo `64` için **Ring planlaması** — 18–20 palet aralığında,
-tek ürünlü, teslimat bölmeyen planlar.
-**Faz 2 (sonraki):** Diğer depolar için tır planlaması (anahtar değer %100 doluluk).
+**Faz 1 (bu sürüm):** **Ring planlaması** — depo 64 palet ölçüsüyle (18–20 palet),
+depo 74 anahtar değerle (%90–100). Teslimat bölünmez, planda tek ürün grubu bulunur.
+**Faz 2 (sonraki):** Tır planlaması — aynı anahtar değer altyapısı, farklı belge kodu.
 
 İş kurallarının tamamı → [`docs/ANALIZ.md`](docs/ANALIZ.md)
 Excel formatları → [`docs/veri-formatlari.md`](docs/veri-formatlari.md)
@@ -34,8 +34,18 @@ Tarayıcıdan <http://127.0.0.1:8000> adresine gidin. Veritabanı ilk açılış
 python -m scripts.ornek_veri
 ```
 
-8 ürün ve 60 sipariş satırı üretip planlamayı çalıştırır; örnek Excel dosyaları
-`veri/ornek/` altına yazılır.
+8 ürün ve 80 sipariş satırı üretip her iki depo için planlamayı çalıştırır; örnek
+Excel dosyaları `veri/ornek/` altına yazılır.
+
+### Kaynak master datadan temiz dosya üretmek
+
+```bash
+python -m scripts.masterdata_hazirla "Ring Planları.xlsx" veri/ornek/urun_masterdata.xlsx
+```
+
+Kaynak kitaptaki `masterdata` sayfasını bulur, `#N/A` değerlerini temizler, ürün
+gruplarını normalize eder ve eksik kapasite verisi olan ürünleri ayrı bir sayfada
+gerekçesiyle listeler.
 
 ## Ekranlar
 
@@ -52,17 +62,36 @@ python -m scripts.ornek_veri
 ## Planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
-2. Bir planda **tek ürün (SKU)** bulunur. Farklı ürünler yalnızca manuel mix planla birleşir.
-3. **Header code**'lu ürünler (ana ürün + aksesuar) her zaman aynı plandadır.
-4. Kapasite **20 palet**, alt limit **18 palet**. Altında kalan teslimatlar beklemede kalır.
-5. Tek başına 20 paleti aşan teslimat, **istisna planı** olarak tek başına planlanır.
+2. Bir planda **tek ürün grubu** bulunur (PANEL, KOMBİ, TERMOSİFON …). Farklı gruplar
+   yalnızca manuel mix planla birleşir. SKU seviyesine geçmek için
+   `app/config.py` → `PLANLAMA_SEVIYESI = "SKU"`.
+3. **Header code**'lu ürünler ve **aksesuarlar** (AKSESUAR, BACA, DİRSEK) her zaman
+   ana ürünle aynı plandadır.
+4. Kapasite depoya göre iki ölçüden biriyle hesaplanır:
+
+   | Depo | Ölçü | Üst / alt limit | Kullanılan master data alanı |
+   |---|---|---|---|
+   | 64, 64-D, 64-V, 64-P | Palet | 20 / 18 | Palet içi adet |
+   | 74, 74-V | Anahtar değer | 1.00 / 0.90 | Tır yükleme adeti |
+
+   `palet = yukarı yuvarla(miktar / palet içi adet)` — kırık palet bir tam palet sayılır.
+   `anahtar = miktar / tır yükleme adeti` — toplam 1.0 olunca araç %100 dolu.
+5. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
 6. Sıralama termin tarihine göredir; eski siparişler önce planlanır.
-7. Palet = `yukarı yuvarla(miktar / palet içi adet)`; kırık palet bir tam palet sayılır.
+7. Alt limitin altında kalan teslimatlar planlanmaz, `BEKLEMEDE` statüsünde kalır.
 
 ## Sefer numarası
 
 `2608D1001` = `26` yıl · `08` ay · `D` Ring belge kodu · `1001` sayaç.
 Sayaç her ay `1001`'den başlar. İptal edilen planın numarası geri kullanılmaz.
+
+## Yükleme formu
+
+Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir üretilir:
+form no, sefer no, plan sevk tarihi, depo/AXATA kutusu, satır tablosu, toplam adet ve
+imza alanları. Axata iş emri numarası planın deposuna karşılık gelen satıra yazılır ve
+**numara girilmeden plan gönderildi olarak işaretlenemez**. Bir günün bütün planları
+tek dosyaya, her biri ayrı sayfaya basılacak şekilde alt alta yazılabilir.
 
 ## Proje yapısı
 

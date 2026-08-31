@@ -1,85 +1,97 @@
 # Excel Veri Formatları
 
-Sistem iki Excel dosyası okur: **ürün master datası** ve **siparişler**.
-Her ikisinin de hazır şablonu uygulama içinden indirilebilir
-(`Master Data > Şablonu indir`, `Siparişler > Şablonu indir`) ve
-`veri/ornek/` klasöründe hazır durur.
+Başlıklar, sahadaki gerçek dosyalara göre belirlendi: ürün master datası için
+"Ring Planları" çalışma kitabının **masterdata** sayfası, siparişler için sevk planı /
+havuz sipariş sayfaları ve Bekleyen Talep Listesi.
 
-## Başlık eşleştirme nasıl çalışır?
+## Başlık ve sayfa eşleştirme
 
-Kolon başlıkları birebir aynı yazılmak zorunda değildir. Karşılaştırma yapılırken
-büyük/küçük harf, Türkçe karakter, boşluk ve alt çizgi farkları yok sayılır. Ayrıca
-her kolonun kabul edilen alternatif başlıkları vardır (aşağıdaki tablolarda son sütun).
-Örneğin `Ürün Kodu`, `ÜRÜN KODU`, `urun_kodu`, `SKU` ve `Malzeme Kodu` aynı kolondur.
-
-Kolon **sırası** önemli değildir; fazladan kolonlar yok sayılır. Zorunlu bir kolon
-bulunamazsa dosya hiç işlenmez ve hangi kolonun eksik olduğu bildirilir.
+* **Sayfa otomatik bulunur.** Çok sayfalı bir kitap yüklendiğinde sistem bütün
+  sayfaların ilk 10 satırını tarar ve aranan tabloyu kendisi bulur. `masterdata`
+  sayfası kitabın kaçıncı sayfası olursa olsun bulunur.
+* **Başlıklar birebir aynı olmak zorunda değil.** Büyük/küçük harf, Türkçe karakter,
+  boşluk ve alt çizgi farkları yok sayılır; ayrıca aşağıdaki tablolarda listelenen
+  alternatif başlıklar da tanınır.
+* Kolon **sırası** önemli değildir, fazladan kolonlar yok sayılır.
+* `#N/A`, `#YOK`, `-` gibi formül hataları **boş** kabul edilir.
 
 ## 1. Ürün Master Data
 
-Dosya: `veri/ornek/urun_masterdata_sablonu.xlsx`
-
 | Kolon başlığı | Zorunlu | Açıklama | Kabul edilen diğer başlıklar |
 |---|---|---|---|
-| **Ürün Kodu** | Evet | SKU. Sistemdeki benzersiz anahtar. | SKU, Malzeme Kodu, Stok Kodu, Material |
-| **Ürün Adı** | Evet | Yükleme formunda görünecek isim. | Malzeme Adı, Stok Adı, Tanım |
-| **Ürün Grubu** | Evet | Kombi, Radyatör, Termosifon, Klima, Şofben, Isı Pompası ... | Grup, Mal Grubu |
-| **Palet İçi Adet** | Evet | Bir palete kaç adet sığdığı. Palet hesabının tek girdisi. Tam sayı, > 0. | Paletteki Adet, Palet Adedi, Palet Kapasitesi |
-| **Header Kod** | Hayır | Ana ürün ve aksesuarını bağlayan üst kod. Aynı header kodlu ürünler her zaman aynı plana girer. Header sistemi kullanılmıyorsa boş bırakın. | Header Code, Üst Kod, Ana Kod |
-| **Aksesuar mı** | Hayır | E / H. Header kod altındaki aksesuar kalemleri için E. | Aksesuar, Aksesuar mi |
+| **StokKodu** | Evet | SKU. Sistemdeki benzersiz anahtar. | Stok Kodu, Ürün Kodu, SKU, Malzeme Kodu, Stok No |
+| **StokAdi** | Evet | Yükleme formunda görünen ürün adı. | Stok Adı, Ürün Adı, Malzeme Adı |
+| **Ürün Grubu** | Evet | PANEL, KOMBİ, KLİMA, TERMOSİFON, AKSESUAR, BACA, ŞOFBEN, ISI POMPASI ... Planlama bu alana göre gruplanır. | Grup, Mal Grubu |
+| **Palet içi adet** | Evet | Bir palete kaç adet sığdığı. Palet ölçüsüyle planlanan depolarda (64) kullanılan tek girdi. | Palet İçi Adet, Paletteki Adet |
+| **Kamyon yükleme adeti** | Hayır | Bir kamyonu dolduran adet. Kamyon anahtar değeri = 1 / bu sayı. | Kamyon Yükleme Adeti, Kamyon adet |
+| **Kamyon palet** | Hayır | Bu üründen bir kamyona sığan palet sayısı (bilgi amaçlı). | — |
+| **Tır yükleme adeti** | Hayır | Bir tırı dolduran adet. Tır anahtar değeri = 1 / bu sayı. Anahtar ölçüsüyle planlanan depolarda (74) kullanılır. | Tir yükleme adeti, Tır adet |
+| **Tır palet** | Hayır | Bu üründen bir tıra sığan palet sayısı (bilgi amaçlı). | Tir palet |
+| **Ağırlık** | Hayır | Birim ağırlık (kg). | Agirlik, Kg |
+| **Ürün Desi** | Hayır | Birim desi. | Desi |
+| **M3** | Hayır | Birim hacim (m³). | Hacim |
+| **Palet En** | Hayır | Palet eni (cm). | — |
+| **Palet Boy** | Hayır | Palet boyu (cm). | — |
+| **Palet Yükseklik** | Hayır | Palet yüksekliği (cm). | — |
+| **Header Kod** | Hayır | Ana ürün ile aksesuarını bağlayan üst kod. Doluysa planlama anahtarı olarak ürün grubunun önüne geçer. | Header Code, Üst Kod |
 | **Aktif** | Hayır | E / H. Boş bırakılırsa E kabul edilir. | — |
 
-### Önemli notlar
+### Planlama hangi alanı kullanır?
 
-* **Palet İçi Adet** planlamanın tek sayısal girdisidir. Bir teslimatın palet sayısı
-  `yukarı yuvarla(miktar / palet içi adet)` ile bulunur; kırık palet bir tam palet sayılır.
-* **Header Kod** doldurulduğunda o kod altındaki tüm ürünler (ana ürün + aksesuarlar)
-  aynı planda kalır. Header sistemi kullanmayan ürünlerde boş bırakın.
-* Aynı ürün kodu tekrar yüklenirse kayıt **güncellenir**, mükerrer oluşmaz.
-* Pasif (`Aktif = H`) ürün içeren teslimatlar planlamaya alınmaz, hata listesine düşer.
+| Depo | Kullanılan alan |
+|---|---|
+| 64 (palet ölçüsü) | **Palet içi adet** |
+| 74 (anahtar ölçüsü) | **Tır yükleme adeti** |
+
+Bir üründe bu alanların üçü de (palet içi adet, kamyon ve tır yükleme adeti) boşsa
+ürün kaydedilir ama planlamaya giremez; içe aktarım sonunda uyarı listesinde görünür.
+
+`Header Kod` doluysa o kod altındaki tüm ürünler (ana ürün + aksesuar) her zaman
+aynı plandadır ve planlama anahtarı olarak ürün grubunun önüne geçer.
 
 ## 2. Siparişler
 
-Dosya: `veri/ornek/siparis_sablonu.xlsx`
-
 | Kolon başlığı | Zorunlu | Açıklama | Kabul edilen diğer başlıklar |
 |---|---|---|---|
-| **Sipariş No** | Evet | Sipariş başlık numarası. | Siparis No, Order No, Belge No |
-| **Sipariş Satır No** | Evet | Sipariş içindeki satır sırası. Sipariş no ile birlikte benzersiz olmalı; aynı dosya iki kez yüklenirse mükerrer kayıt oluşmaz. | Satır No, Kalem No, Pozisyon |
-| **Teslimat No** | Evet | Planlamanın bölünemez birimi. Aynı teslimat tek plandadır. | Teslimat, Delivery, Sevkiyat No |
-| **Müşteri Kodu** | Hayır | Raporlama için. | Cari Kodu, Müşteri No |
-| **Müşteri Adı** | Hayır | Yükleme formunda görünür. | Cari Adı, Müşteri Ünvanı |
-| **Ürün Kodu** | Evet | Master datada tanımlı olmalı; tanımsız ürün planlamaya girmez. | SKU, Malzeme Kodu, Stok Kodu |
-| **Ürün Adı** | Hayır | Bilgi amaçlı; master data önceliklidir. | Malzeme Adı, Stok Adı |
-| **Miktar** | Evet | Sipariş adedi. Palet hesabı bundan yapılır. | Adet, Sipariş Miktarı, Kalan Miktar |
-| **Birim** | Hayır | Varsayılan ADET. | Birim Kodu, UOM |
-| **Depo Kodu** | Evet | Satır bazlıdır. 64 ise Ring planlaması, değilse Faz 2 (tır) kapsamındadır. | Depo, Ambar Kodu, Depo No |
-| **Sipariş Tarihi** | Hayır | GG.AA.YYYY | Belge Tarihi |
-| **Termin Tarihi** | Hayır | GG.AA.YYYY. Planlama önceliğini belirler: eski termin önce planlanır. | Teslim Tarihi, Sevk Tarihi, İstenen Tarih |
+| **Sipariş No** | Evet | Sipariş başlık numarası. | Siparis No, Talep Numarası, Belge No, Order No |
+| **Teslimat No** | Evet | Planlamanın bölünemez birimi. Aynı teslimat tek plandadır. | Teslimat, Delivery |
+| **StokKodu** | Evet | Master datada tanımlı olmalı; tanımsız ürün planlamaya girmez. | Stok Kodu, Stok No, Ürün Kodu, SKU |
+| **StokAdi** | Hayır | Bilgi amaçlı; master data önceliklidir. | Stok Adı, Ürün Adı |
+| **Adet** | Evet | Sipariş adedi. Palet ve anahtar hesabı bundan yapılır. | Miktar, Sipariş Miktarı |
+| **Depo  Kodu** | Evet | Satır bazlıdır. 64 → palet ölçüsüyle, 74 → anahtar değerle planlanır. | Depo Kodu, Depo, Ambar Kodu |
+| **SehirAdi** | Hayır | Yükleme formunun 'İl Adı' sütunu. | Şehir Adı, Sehir Adi, İl, İl Adi |
+| **BayiAdi** | Hayır | Yükleme formunun 'Bayii Adı' sütunu. | Bayi Adı, Bayii Adı |
+| **AliciFirma** | Hayır | Kaynak dosyada sevk adresi bu sütunda gelir; yükleme formunda adres olarak yazılır. | Alıcı Firma, Alici Firma |
+| **SevkAdresi** | Hayır | Kaynak dosyada ilçe bu sütunda gelir; yükleme formunun son adres sütunudur. | Sevk Adresi, İlçe |
+| **Not** | Hayır | Teslim şekli (CIF vb.). | Teslim Şekli |
+| **Tarih** | Hayır | GG.AA.YYYY | Sipariş Tarihi, Talep Tarihi, Belge Tarihi |
+| **Termin Tarihi** | Hayır | GG.AA.YYYY. Planlama önceliğini belirler: eski termin önce planlanır. Boşsa sipariş tarihi kullanılır. | Teslim Tarihi, Sevk Tarihi, Planlama Tarihi, PLANLAMA TARİHİ |
+| **Sipariş Satır No** | Hayır | Verilmezse ürün kodu satır anahtarı olarak kullanılır. | Satır No, Kalem No |
 
 ### Önemli notlar
 
-* **Sipariş No + Sipariş Satır No** birlikte benzersizdir. Aynı dosya iki kez
-  yüklenirse mükerrer kayıt oluşmaz; mevcut satır güncellenir.
-* Planlanmış veya tamamlanmış satırlar yeniden yüklemeyle **bozulmaz**, atlanır.
-* Bir **teslimat numarası** yalnızca tek ürün içerebilir. İçinde birden fazla ürün
-  bulunan teslimatın tüm satırları `HATALI` statüsüne düşer ve Siparişler ekranındaki
-  HATALI sekmesinde gerekçesiyle listelenir. Header kod ile bağlı ana ürün + aksesuar
-  bu kuralın istisnasıdır, tek ürün sayılır.
-* **Depo Kodu** satır bazlıdır. `64` olan satırlar Ring planlamasına girer; diğerleri
-  Faz 2 (tır planlaması) kapsamındadır ve şimdilik beklemede kalır.
-* **Termin Tarihi** planlama önceliğini belirler: eski terminli teslimatlar önce planlanır.
-  Boşsa sipariş tarihi kullanılır.
-* Tarih formatı `GG.AA.YYYY` (Excel'in gerçek tarih hücreleri de okunur).
+* Satır anahtarı **Sipariş No + Teslimat No + ürün kodudur.** Aynı sipariş kalemi
+  birden çok teslimata bölünebildiği için teslimat numarası anahtara dahildir.
+* Aynı dosyada tekrar eden satırların miktarları toplanır.
+* Planlanmış veya tamamlanmış satırlar yeniden yüklemeyle bozulmaz, atlanır.
+* **Teslimat numarası atanmamış** satırlar (`BAYİ DEPO` gibi) ve **depo kodu `-1`**
+  olan satırlar planlanamaz; hata listesine düşer. Bekleyen Talep Listesi'ndeki
+  kayıtlar bu durumdadır — teslimat ve depo ataması yapıldıktan sonra yüklenmelidir.
+* Kaynak dosyada `AliciFirma` sütununda adres, `SevkAdresi` sütununda ilçe geliyor.
+  Yükleme formu bu sırayı koruyarak yazar.
 
 ## 3. Yükleme Formu (çıktı)
 
-`app/services/yukleme_formu.py` içindeki düzen **geçicidir** — nihai form formatı
-iletildiğinde yalnızca bu modül değişecektir. Formun şu an taşıdığı bilgiler:
+Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir üretilir:
 
-* Üst bilgi: sefer no, **Axata iş emri no**, plan tarihi, depo kodu, toplam palet,
-  doluluk yüzdesi, teslimat sayısı, ürün kodları
-* Satırlar: teslimat no, sipariş no/satır, müşteri, ürün kodu, ürün adı, miktar, birim, termin
-* Alt bilgi: toplam palet ve imza alanları (Hazırlayan / Depo Sorumlusu / Forklift Op.)
+* Sağ üstte `FORM NO : 8101058099.01`
+* `SEFER NO` kutusu, `Plan Sevk Tarihi ve Günü`
+* Depo/AXATA kutusu: `34-DEPO`, `44-DEPO`, `64-D DEPO`, `64-V DEPO`, `74-DEPO` —
+  Axata numarası planın deposuna karşılık gelen satıra yazılır
+* Eksik ürün çıkışı uyarı metni
+* Satır tablosu: No · İl Adı · Sipariş No · Belge No · Depo · Ürün Kodu · Ürün Adı ·
+  Adet · Bayii Adı · adres · ilçe · Teslimat
+* Altta `PLANLAYAN`, `TOPLAM ADET` ve `Sevk Kontrol / Adı Soyadı / İmzası` alanları
 
-Axata numarası girilmeden plan "gönderildi" olarak işaretlenemez.
+Bir günün bütün planları tek çalışma kitabına alt alta yazılır ve her form ayrı
+sayfaya basılacak şekilde sayfa sonu konur (yatay, A4).

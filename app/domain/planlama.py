@@ -32,6 +32,10 @@ class Teslimat:
     satir_idleri: tuple[int, ...] = ()
     sku_kodlari: tuple[str, ...] = ()
     """Teslimattaki tüm SKU'lar. Header code'lu teslimatta ana ürün + aksesuarları."""
+    palet: Decimal = Decimal(0)
+    anahtar: Decimal = Decimal(0)
+    agirlik: Decimal = Decimal(0)
+    """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
 
     @property
     def kodlar(self) -> tuple[str, ...]:
@@ -56,6 +60,22 @@ class TaslakPlan:
     @property
     def toplam_birim(self) -> Decimal:
         return sum((t.birim for t in self.teslimatlar), Decimal(0))
+
+    @property
+    def toplam_palet(self) -> Decimal:
+        return sum((t.palet for t in self.teslimatlar), Decimal(0))
+
+    @property
+    def toplam_anahtar(self) -> Decimal:
+        return sum((t.anahtar for t in self.teslimatlar), Decimal(0))
+
+    @property
+    def toplam_adet(self) -> Decimal:
+        return sum((t.miktar for t in self.teslimatlar), Decimal(0))
+
+    @property
+    def toplam_agirlik(self) -> Decimal:
+        return sum((t.agirlik for t in self.teslimatlar), Decimal(0))
 
     @property
     def bos_alan(self) -> Decimal:

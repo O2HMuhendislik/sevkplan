@@ -14,15 +14,16 @@ from app.config import VERI_DIZIN
 from app.db import oturum, semayi_olustur
 from app.services import ice_aktarim, plan_servisi
 
+# (stok kodu, ad, grup, palet içi adet, kamyon yükleme adeti, tır yükleme adeti)
 URUNLER = [
-    ("KMB-24-ERP", "Kombi 24 kW ErP", "Kombi", 30, None, "H"),
-    ("KMB-28-ERP", "Kombi 28 kW ErP", "Kombi", 30, None, "H"),
-    ("KMB-BACA", "Kombi Baca Seti", "Kombi", 120, "HDR-KMB-24", "E"),
-    ("KMB-24-HDR", "Kombi 24 kW (Header)", "Kombi", 30, "HDR-KMB-24", "H"),
-    ("RAD-600-1000", "Panel Radyatör 600x1000", "Radyatör", 24, None, "H"),
-    ("TRM-80", "Termosifon 80 lt", "Termosifon", 12, None, "H"),
-    ("KLM-12000", "Klima 12000 BTU", "Klima", 18, None, "H"),
-    ("ISP-8KW", "Isı Pompası 8 kW", "Isı Pompası", 6, None, "H"),
+    ("8000013403", "ademiX P 24/24 –AS/2 (H-TR)", "KOMBİ", 18, 234, 468),
+    ("8000013404", "ademiX P 28/28 –AS/2 (H-TR)", "KOMBİ", 16, 208, 416),
+    ("20268005", "Atık gaz borusu,DD 60/100", "AKSESUAR", 77, 1078, 2002),
+    ("316181213", "22-600 180CMV010_B1A1G1 _13", "PANEL", 13, 195, 377),
+    ("316101213", "22-600 100CMV010_B1A1G1 _13", "PANEL", 22, 330, 638),
+    ("313151213", "25 DD S 22 300 1500 V0 A1 G1", "PANEL", 26, 390, 754),
+    ("10016567", "T 7350 B Termosifon", "TERMOSİFON", 12, 144, 288),
+    ("10047334", "aroTHERM pure VWL 65/7.2 AS", "ISI POMPASI", 1, 32, 64),
 ]
 
 
@@ -32,7 +33,10 @@ def ornek_dosyalar(hedef_dizin: Path) -> tuple[Path, Path]:
     urun_kitabi = Workbook()
     sayfa = urun_kitabi.active
     sayfa.title = "Ürünler"
-    sayfa.append(["Ürün Kodu", "Ürün Adı", "Ürün Grubu", "Palet İçi Adet", "Header Kod", "Aksesuar mı"])
+    sayfa.append([
+        "StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet",
+        "Kamyon yükleme adeti", "Tır yükleme adeti",
+    ])
     for satir in URUNLER:
         sayfa.append(list(satir))
     urun_dosyasi = hedef_dizin / "ornek_urunler.xlsx"
@@ -43,18 +47,24 @@ def ornek_dosyalar(hedef_dizin: Path) -> tuple[Path, Path]:
     sayfa = siparis_kitabi.active
     sayfa.title = "Siparişler"
     sayfa.append([
-        "Sipariş No", "Sipariş Satır No", "Teslimat No", "Müşteri Kodu", "Müşteri Adı",
-        "Ürün Kodu", "Miktar", "Depo Kodu", "Sipariş Tarihi", "Termin Tarihi",
+        "SehirAdi", "Sipariş No", "Teslimat No", "Depo  Kodu", "StokKodu", "StokAdi",
+        "Adet", "BayiAdi", "AliciFirma", "SevkAdresi", "Tarih", "Termin Tarihi",
     ])
     bugun = date(2026, 8, 31)
-    for sayac in range(1, 61):
+    for sayac in range(1, 81):
         urun = rastgele.choice(URUNLER)
-        palet = rastgele.randint(2, 8)
-        depo = "64" if sayac % 6 else "71"  # her 6 satırdan biri tır kapsamında
+        depo = "64" if sayac % 3 else "74"
+        # Depo 64 palet, depo 74 anahtar ölçüsüyle planlandığı için miktarlar farklı
+        # büyüklüklerde üretilir.
+        if depo == "64":
+            miktar = rastgele.randint(2, 8) * urun[3]
+        else:
+            miktar = int(urun[5] * rastgele.choice((0.2, 0.25, 0.33, 0.5)))
         sayfa.append([
-            f"SIP-2026-{sayac:05d}", "10", f"TSL-88{sayac:05d}",
-            f"M-{rastgele.randint(1000, 1099)}", f"Bayi {rastgele.randint(1, 40)}",
-            urun[0], palet * urun[3], depo,
+            "ESKİŞEHİR", 2010420000 + sayac, 2013620000 + sayac, depo,
+            urun[0], urun[1], miktar,
+            f"MOVUS DEPO-BAYİ {rastgele.randint(1, 40)}",
+            "ORGANİZE SANAYİ BÖLGESİ 20. CAD. NO:36", "ODUNPAZARI",
             (bugun - timedelta(days=rastgele.randint(1, 12))).strftime("%d.%m.%Y"),
             (bugun + timedelta(days=rastgele.randint(2, 20))).strftime("%d.%m.%Y"),
         ])
@@ -69,16 +79,19 @@ def main() -> None:
     with oturum() as db:
         urun_sonucu = ice_aktarim.urunleri_aktar(db, urun_dosyasi, urun_dosyasi.name)
         siparis_sonucu = ice_aktarim.siparisleri_aktar(db, siparis_dosyasi, siparis_dosyasi.name)
-        plan_sonucu = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))
         print("Ürünler   :", urun_sonucu.ozet())
         print("Siparişler:", siparis_sonucu.ozet())
-        print("Planlama  :", plan_sonucu.ozet())
-        for plan in plan_sonucu.planlar:
-            print(
-                f"  {plan.sefer_no}  {plan.urun_kodlari:<24} "
-                f"{plan.toplam_palet:>2} palet  %{plan.doluluk_yuzdesi}  "
-                f"{plan.teslimat_sayisi} teslimat"
+        for depo in ("64", "74"):
+            plan_sonucu = plan_servisi.plan_uret(
+                db, plan_tarihi=date(2026, 8, 31), depo_kodu=depo
             )
+            print(f"\nDepo {depo}:", plan_sonucu.ozet())
+            for plan in plan_sonucu.planlar:
+                print(
+                    f"  {plan.sefer_no}  {plan.planlama_anahtari:<14} "
+                    f"{plan.birim_metni:>16}  %{plan.doluluk_yuzdesi}  "
+                    f"{plan.teslimat_sayisi} teslimat"
+                )
 
 
 if __name__ == "__main__":

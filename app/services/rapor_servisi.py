@@ -74,8 +74,8 @@ def siparisleri_getir(
                 SiparisSatiri.siparis_no.ilike(desen),
                 SiparisSatiri.teslimat_no.ilike(desen),
                 SiparisSatiri.urun_kodu.ilike(desen),
-                SiparisSatiri.musteri_adi.ilike(desen),
-                SiparisSatiri.musteri_kodu.ilike(desen),
+                SiparisSatiri.bayi_adi.ilike(desen),
+                SiparisSatiri.sehir.ilike(desen),
             )
         )
     sorgu = sorgu.order_by(

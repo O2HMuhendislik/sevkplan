@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -14,9 +15,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import CIKTI_DIZIN, RING_DEPO_KODU
+from app.config import CIKTI_DIZIN, DEPO_PROFILLERI, PLANLAMA_SEVIYESI, RING_DEPO_KODU
 from app.db import oturum_bagimliligi, semayi_olustur
-from app.domain.kapasite import RING
 from app.models import PlanDurumu, SevkiyatPlani, SiparisDurumu, Urun
 from app.services import ice_aktarim, plan_servisi, rapor_servisi, sablonlar, yukleme_formu
 from app.services.excel import ExcelHatasi
@@ -44,6 +44,8 @@ def sayfa(istek: Request, ad: str, **baglam):
     baglam.setdefault("hata", istek.query_params.get("hata"))
     baglam.setdefault("bugun", date.today())
     baglam.setdefault("ring_depo", RING_DEPO_KODU)
+    baglam.setdefault("depolar", DEPO_PROFILLERI)
+    baglam.setdefault("planlama_seviyesi", PLANLAMA_SEVIYESI)
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
 
@@ -87,24 +89,32 @@ def urun_kaydet(
     urun_kodu: str = Form(...),
     urun_adi: str = Form(...),
     urun_grubu: str = Form(...),
-    palet_ici_adet: int = Form(...),
+    palet_ici_adet: int = Form(0),
+    kamyon_yukleme_adeti: int = Form(0),
+    tir_yukleme_adeti: int = Form(0),
+    agirlik: str = Form(""),
     header_kod: str = Form(""),
-    aksesuar_mi: bool = Form(False),
     aktif: bool = Form(True),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    if palet_ici_adet <= 0:
-        return yonlendir("/urunler", hata="Palet içi adet sıfırdan büyük olmalı.")
+    if palet_ici_adet <= 0 and kamyon_yukleme_adeti <= 0 and tir_yukleme_adeti <= 0:
+        return yonlendir(
+            "/urunler",
+            hata="Palet içi adet, kamyon yükleme adeti ve tır yükleme adetinden "
+                 "en az biri girilmelidir; yoksa ürün planlanamaz.",
+        )
     urun = db.scalar(select(Urun).where(Urun.urun_kodu == urun_kodu.strip()))
     yeni_mi = urun is None
     if urun is None:
         urun = Urun(urun_kodu=urun_kodu.strip())
         db.add(urun)
     urun.urun_adi = urun_adi.strip()
-    urun.urun_grubu = urun_grubu.strip()
-    urun.palet_ici_adet = palet_ici_adet
+    urun.urun_grubu = urun_grubu.strip().upper() or None
+    urun.palet_ici_adet = palet_ici_adet or None
+    urun.kamyon_yukleme_adeti = kamyon_yukleme_adeti or None
+    urun.tir_yukleme_adeti = tir_yukleme_adeti or None
+    urun.agirlik = Decimal(agirlik.replace(",", ".")) if agirlik.strip() else None
     urun.header_kod = header_kod.strip() or None
-    urun.aksesuar_mi = aksesuar_mi
     urun.aktif = aktif
     db.commit()
     return yonlendir(
@@ -174,11 +184,17 @@ def siparis_sablonu_indir():
 # -------------------------------------------------------------------------------- plan
 @uygulama.post("/planlar/uret")
 def planlari_uret(
-    plan_tarihi: str = Form(""), db: Session = Depends(oturum_bagimliligi)
+    plan_tarihi: str = Form(""),
+    depo_kodu: str = Form(RING_DEPO_KODU),
+    db: Session = Depends(oturum_bagimliligi),
 ):
     tarih = datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
-    sonuc = plan_servisi.plan_uret(db, plan_tarihi=tarih, profil=RING)
-    db.commit()
+    try:
+        sonuc = plan_servisi.plan_uret(db, plan_tarihi=tarih, depo_kodu=depo_kodu)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/planlar", hata=str(hata))
     if not sonuc.planlar:
         return yonlendir(
             "/planlar",

@@ -20,7 +20,7 @@ def test_plan_uretimi_sefer_numarasi_atar(db):
     assert len(sonuc.planlar) == 1
     plan = sonuc.planlar[0]
     assert plan.sefer_no == "2608D1001"
-    assert plan.toplam_palet == 20
+    assert plan.toplam_birim == 20
     assert plan.durum == PlanDurumu.TASLAK
     assert plan.teslimat_sayisi == 4
     assert all(s.durum == SiparisDurumu.PLANLANDI for s in plan.satirlar)
@@ -58,14 +58,16 @@ def test_masterdatasi_olmayan_urun_hataliya_dusar(db):
     sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))
     assert sonuc.planlar == []
     assert sonuc.hatali_teslimatlar[0][0] == "TSL-X"
-    satir = db.query(type(sonuc)  and __import__("app.models", fromlist=["SiparisSatiri"]).SiparisSatiri).one()
+    from app.models import SiparisSatiri
+
+    satir = db.query(SiparisSatiri).one()
     assert satir.durum == SiparisDurumu.HATALI
     assert "master datada tanımlı değil" in satir.hata_aciklamasi
 
 
 def test_header_code_ana_urun_ve_aksesuar_paleti_ayri_hesaplanir(db):
     urun_ekle(db, "KMB-24", palet_ici_adet=10, header_kod="HDR-1")
-    urun_ekle(db, "KMB-AKS", palet_ici_adet=100, header_kod="HDR-1")
+    urun_ekle(db, "KMB-AKS", palet_ici_adet=100, header_kod="HDR-1", grup="AKSESUAR")
     satir_ekle(db, "TSL-1", "KMB-24", Decimal(95), siparis_no="S1")   # 10 palet
     satir_ekle(db, "TSL-1", "KMB-AKS", Decimal(50), siparis_no="S2")  # 1 palet
     satir_ekle(db, "TSL-2", "KMB-24", Decimal(90), siparis_no="S3")   # 9 palet
@@ -73,7 +75,7 @@ def test_header_code_ana_urun_ve_aksesuar_paleti_ayri_hesaplanir(db):
     sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))
     assert len(sonuc.planlar) == 1
     plan = sonuc.planlar[0]
-    assert plan.toplam_palet == 20
+    assert plan.toplam_birim == 20
     assert plan.planlama_anahtari == "HDR-1"
     assert "KMB-AKS" in plan.urun_kodlari
 
@@ -102,7 +104,11 @@ def test_iptal_edilen_planin_siparisleri_beklemeye_doner(db):
     plan_servisi.plan_iptal(db, plan, "Depo talebiyle iptal")
 
     assert plan.durum == PlanDurumu.IPTAL
-    assert all(s.durum == SiparisDurumu.BEKLEMEDE for s in db.query(type(plan).satirlar.property.mapper.class_).all())
+    from app.models import SiparisSatiri
+
+    assert all(
+        s.durum == SiparisDurumu.BEKLEMEDE for s in db.query(SiparisSatiri).all()
+    )
 
     # İptal edilen numara geri kullanılmaz: yeni plan 1002 alır.
     yeni = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))
@@ -123,7 +129,7 @@ def test_tamamlanan_plan_siparisleri_tamamlandi_yapar(db):
 
 def test_mix_plan_manuel_olusturulur(db):
     urun_ekle(db, "KMB-24", palet_ici_adet=10)
-    urun_ekle(db, "RAD-600", palet_ici_adet=10, grup="Radyatör")
+    urun_ekle(db, "RAD-600", palet_ici_adet=10, grup="PANEL")
     satir_ekle(db, "M1", "KMB-24", Decimal(100), siparis_no="S1")   # 10 palet
     satir_ekle(db, "M2", "RAD-600", Decimal(90), siparis_no="S2")   # 9 palet
 
@@ -133,13 +139,13 @@ def test_mix_plan_manuel_olusturulur(db):
 
     plan = plan_servisi.mix_plan_olustur(db, ["M1", "M2"], plan_tarihi=date(2026, 8, 31))
     assert plan.mix_mi is True
-    assert plan.toplam_palet == 19
+    assert plan.toplam_birim == 19
     assert plan.urun_kodlari == "KMB-24, RAD-600"
 
 
 def test_mix_plan_ust_limiti_asamaz(db):
     urun_ekle(db, "KMB-24", palet_ici_adet=10)
-    urun_ekle(db, "RAD-600", palet_ici_adet=10, grup="Radyatör")
+    urun_ekle(db, "RAD-600", palet_ici_adet=10, grup="PANEL")
     satir_ekle(db, "M1", "KMB-24", Decimal(150), siparis_no="S1")
     satir_ekle(db, "M2", "RAD-600", Decimal(100), siparis_no="S2")
     with pytest.raises(PlanHatasi, match="üst limit"):

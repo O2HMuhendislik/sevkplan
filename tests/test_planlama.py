@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.domain.kapasite import RING
+from app.domain.kapasite import RING_PALET as RING
 from app.domain.planlama import Teslimat, palet_hesapla, planla
 
 

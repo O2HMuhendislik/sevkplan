@@ -37,7 +37,7 @@
   {% if satirlar %}
   <table>
     <thead><tr>
-      <th>Sipariş</th><th>Teslimat</th><th>Müşteri</th><th>Ürün</th>
+      <th>Sipariş</th><th>Teslimat</th><th>Bayi / İl</th><th>Ürün</th>
       <th class="sag">Miktar</th><th>Depo</th><th>Termin</th><th>Durum</th><th>Plan</th>
     </tr></thead>
     <tbody>
@@ -45,9 +45,9 @@
       <tr>
         <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
         <td><b>{{ satir.teslimat_no }}</b></td>
-        <td>{{ satir.musteri_adi or satir.musteri_kodu or '—' }}</td>
+        <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
         <td>{{ satir.urun_kodu }}</td>
-        <td class="sag">{{ satir.miktar }} {{ satir.birim_kodu }}</td>
+        <td class="sag">{{ satir.miktar }}</td>
         <td>{{ satir.depo_kodu }}</td>
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td>

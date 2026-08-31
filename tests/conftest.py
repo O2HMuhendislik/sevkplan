@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,12 +21,25 @@ def db() -> Session:
         oturum.close()
 
 
-def urun_ekle(db, urun_kodu, palet_ici_adet=10, header_kod=None, grup="Kombi", aktif=True):
+def urun_ekle(
+    db,
+    urun_kodu,
+    palet_ici_adet=10,
+    grup="KOMBİ",
+    header_kod=None,
+    kamyon_yukleme_adeti=None,
+    tir_yukleme_adeti=None,
+    agirlik=None,
+    aktif=True,
+):
     urun = models.Urun(
         urun_kodu=urun_kodu,
         urun_adi=f"{urun_kodu} ürünü",
         urun_grubu=grup,
         palet_ici_adet=palet_ici_adet,
+        kamyon_yukleme_adeti=kamyon_yukleme_adeti,
+        tir_yukleme_adeti=tir_yukleme_adeti,
+        agirlik=Decimal(str(agirlik)) if agirlik is not None else None,
         header_kod=header_kod,
         aktif=aktif,
     )
@@ -32,17 +48,19 @@ def urun_ekle(db, urun_kodu, palet_ici_adet=10, header_kod=None, grup="Kombi", a
     return urun
 
 
-def satir_ekle(db, teslimat_no, urun_kodu, miktar, depo_kodu="64", termin=None, siparis_no=None):
-    from datetime import date
-
+def satir_ekle(
+    db, teslimat_no, urun_kodu, miktar, depo_kodu="64", termin=None, siparis_no=None
+):
     sayac = db.query(models.SiparisSatiri).count() + 1
     satir = models.SiparisSatiri(
         siparis_no=siparis_no or f"SIP-{sayac:04d}",
-        siparis_satir_no="10",
+        siparis_satir_no=urun_kodu,
         teslimat_no=teslimat_no,
         urun_kodu=urun_kodu,
-        miktar=miktar,
+        miktar=Decimal(str(miktar)),
         depo_kodu=depo_kodu,
+        sehir="ESKİŞEHİR",
+        bayi_adi="TEST BAYİ",
         termin_tarihi=termin or date(2026, 9, 1),
     )
     db.add(satir)

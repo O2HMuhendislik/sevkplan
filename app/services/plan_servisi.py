@@ -8,9 +8,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.config import RING_DEPO_KODU
+from app.config import RING_DEPO_KODU, depo_profili
 from app.domain import sefer_no as sefer_no_modulu
-from app.domain.kapasite import RING, KapasiteProfili
+from app.domain.kapasite import RING_PALET, AracTipi, KapasiteProfili, Olcu
 from app.domain.planlama import (
     BekleyenTeslimat,
     PlanlamaSonucu,
@@ -19,6 +19,7 @@ from app.domain.planlama import (
     palet_hesapla,
     planla,
 )
+from app.services.planlama_anahtari import teslimat_anahtari
 from app.models import (
     PlanDurumu,
     PlanHareketi,
@@ -40,6 +41,7 @@ class PlanUretimSonucu:
     bekleyenler: list[BekleyenTeslimat] = field(default_factory=list)
     hatali_teslimatlar: list[tuple[str, str]] = field(default_factory=list)
     degerlendirilen_teslimat: int = 0
+    profil: KapasiteProfili | None = None
 
     def ozet(self) -> str:
         return (
@@ -92,13 +94,55 @@ def _durum_degistir(
     plan.durum = yeni_durum
 
 
+@dataclass
+class TeslimatOlculeri:
+    palet: Decimal
+    anahtar: Decimal
+    adet: Decimal
+    agirlik: Decimal
+
+
+def teslimat_olculeri(
+    satirlar: list[SiparisSatiri],
+    urun_haritasi: dict[str, Urun],
+    arac_tipi: AracTipi,
+) -> TeslimatOlculeri:
+    """Bir teslimatın palet, anahtar, adet ve ağırlık toplamlarını hesaplar.
+
+    Palet her SKU için ayrı yukarı yuvarlanır: kırık palet bir palet gözü kaplar ve
+    aksesuarın palet içi adedi ana üründen farklıdır.
+    """
+    sku_miktarlari: dict[str, Decimal] = {}
+    for satir in satirlar:
+        sku_miktarlari[satir.urun_kodu] = (
+            sku_miktarlari.get(satir.urun_kodu, Decimal(0)) + Decimal(satir.miktar)
+        )
+
+    palet = anahtar = agirlik = Decimal(0)
+    for urun_kodu, miktar in sku_miktarlari.items():
+        urun = urun_haritasi[urun_kodu]
+        if urun.palet_ici_adet:
+            palet += palet_hesapla(miktar, urun.palet_ici_adet)
+        birim_anahtar = urun.anahtar_degeri(arac_tipi)
+        if birim_anahtar is not None:
+            anahtar += miktar * birim_anahtar
+        if urun.agirlik:
+            agirlik += miktar * Decimal(urun.agirlik)
+    return TeslimatOlculeri(
+        palet=palet,
+        anahtar=anahtar.quantize(Decimal("0.000001")),
+        adet=sum(sku_miktarlari.values(), Decimal(0)),
+        agirlik=agirlik.quantize(Decimal("0.001")),
+    )
+
+
 def teslimatlari_hazirla(
-    db: Session, satirlar: list[SiparisSatiri]
+    db: Session, satirlar: list[SiparisSatiri], profil: KapasiteProfili
 ) -> tuple[list[Teslimat], list[tuple[str, str]]]:
     """Sipariş satırlarını planlanabilir teslimatlara dönüştürür.
 
-    Master datası eksik ya da pasif ürün içeren teslimatlar planlamaya alınmaz;
-    ilgili satırlar HATALI statüsüne çekilir.
+    Master datası eksik olan ya da kapasite ölçüsü için gerekli alanı bulunmayan
+    teslimatlar planlamaya alınmaz; ilgili satırlar HATALI statüsüne çekilir.
     """
     urun_haritasi = {
         urun.urun_kodu: urun
@@ -124,16 +168,19 @@ def teslimatlari_hazirla(
             if not urun.aktif:
                 hata = f"{satir.urun_kodu} ürünü pasif durumda"
                 break
-            if urun.palet_ici_adet <= 0:
+            if profil.olcu is Olcu.PALET and not urun.palet_ici_adet:
                 hata = f"{satir.urun_kodu} için palet içi adet tanımsız"
                 break
-        anahtarlar = {
-            urun_haritasi[s.urun_kodu].planlama_anahtari
-            for s in grup
-            if s.urun_kodu in urun_haritasi
-        }
-        if hata is None and len(anahtarlar) > 1:
-            hata = "Teslimat birden fazla ürün içeriyor, planlanamaz"
+            if profil.olcu is Olcu.ANAHTAR and not urun.yukleme_adeti(profil.arac_tipi):
+                hata = (
+                    f"{satir.urun_kodu} için "
+                    f"{profil.arac_tipi.value.lower()} yükleme adeti tanımsız"
+                )
+                break
+
+        anahtar = teslimat_anahtari(urun_haritasi.get(s.urun_kodu) for s in grup)
+        if hata is None and anahtar and " + " in anahtar:
+            hata = f"Teslimat birden fazla ürün grubu içeriyor ({anahtar})"
 
         if hata is not None:
             for satir in grup:
@@ -142,16 +189,15 @@ def teslimatlari_hazirla(
             hatalilar.append((teslimat_no, hata))
             continue
 
-        # Palet, her SKU için ayrı hesaplanıp toplanır: aksesuarın palet içi adedi
-        # ana üründen farklıdır.
-        palet = Decimal(0)
-        sku_miktarlari: dict[str, Decimal] = {}
-        for satir in grup:
-            sku_miktarlari[satir.urun_kodu] = (
-                sku_miktarlari.get(satir.urun_kodu, Decimal(0)) + Decimal(satir.miktar)
-            )
-        for urun_kodu, miktar in sku_miktarlari.items():
-            palet += palet_hesapla(miktar, urun_haritasi[urun_kodu].palet_ici_adet)
+        olculer = teslimat_olculeri(grup, urun_haritasi, profil.arac_tipi)
+        birim = olculer.palet if profil.olcu is Olcu.PALET else olculer.anahtar
+        if birim <= 0:
+            hata = "Teslimatın kapasite büyüklüğü sıfır hesaplandı"
+            for satir in grup:
+                satir.durum = SiparisDurumu.HATALI
+                satir.hata_aciklamasi = hata
+            hatalilar.append((teslimat_no, hata))
+            continue
 
         ana_satir = grup[0]
         ana_urun = urun_haritasi[ana_satir.urun_kodu]
@@ -159,14 +205,17 @@ def teslimatlari_hazirla(
             Teslimat(
                 teslimat_no=teslimat_no,
                 depo_kodu=ana_satir.depo_kodu,
-                planlama_anahtari=ana_urun.planlama_anahtari,
+                planlama_anahtari=anahtar or ana_urun.urun_kodu,
                 urun_kodu=ana_urun.urun_kodu,
                 urun_adi=ana_urun.urun_adi,
-                miktar=sum(sku_miktarlari.values(), Decimal(0)),
-                birim=palet,
+                miktar=olculer.adet,
+                birim=birim,
                 oncelik_tarihi=min(s.oncelik_tarihi for s in grup),
                 satir_idleri=tuple(s.id for s in grup),
-                sku_kodlari=tuple(sorted(sku_miktarlari)),
+                sku_kodlari=tuple(sorted({s.urun_kodu for s in grup})),
+                palet=olculer.palet,
+                anahtar=olculer.anahtar,
+                agirlik=olculer.agirlik,
             )
         )
     return teslimatlar, hatalilar
@@ -176,11 +225,22 @@ def plan_uret(
     db: Session,
     plan_tarihi: date | None = None,
     depo_kodu: str = RING_DEPO_KODU,
-    profil: KapasiteProfili = RING,
+    profil: KapasiteProfili | None = None,
     kullanici: str = "sistem",
 ) -> PlanUretimSonucu:
-    """Beklemedeki siparişlerden taslak sevkiyat planları üretir."""
+    """Beklemedeki siparişlerden taslak sevkiyat planları üretir.
+
+    Kapasite profili depo koduna göre seçilir: 64 palet ölçüsüyle, 74 anahtar
+    değerle planlanır (bkz. app/config.py DEPO_PROFILLERI).
+    """
     plan_tarihi = plan_tarihi or date.today()
+    profil = profil or depo_profili(depo_kodu)
+    if profil is None:
+        raise PlanHatasi(
+            f"{depo_kodu} deposu için kapasite profili tanımlı değil. "
+            "app/config.py içindeki DEPO_PROFILLERI listesine ekleyin."
+        )
+
     satirlar = db.scalars(
         select(SiparisSatiri).where(
             SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
@@ -189,9 +249,11 @@ def plan_uret(
         )
     ).all()
 
-    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar))
+    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar), profil)
     sonuc = PlanUretimSonucu(
-        hatali_teslimatlar=hatalilar, degerlendirilen_teslimat=len(teslimatlar)
+        hatali_teslimatlar=hatalilar,
+        degerlendirilen_teslimat=len(teslimatlar),
+        profil=profil,
     )
     if not teslimatlar:
         db.flush()
@@ -226,7 +288,12 @@ def _plani_kaydet(
         depo_kodu=taslak.depo_kodu,
         planlama_anahtari=taslak.planlama_anahtari,
         urun_kodlari=", ".join(taslak.urun_kodlari),
-        toplam_palet=taslak.toplam_birim,
+        olcu=profil.olcu.value,
+        toplam_birim=taslak.toplam_birim,
+        toplam_palet=taslak.toplam_palet,
+        toplam_anahtar=taslak.toplam_anahtar,
+        toplam_adet=taslak.toplam_adet,
+        toplam_agirlik=taslak.toplam_agirlik,
         doluluk_yuzdesi=taslak.doluluk_yuzdesi,
         teslimat_sayisi=len(taslak.teslimatlar),
         istisna_asim=taslak.istisna_asim,
@@ -249,7 +316,7 @@ def _plani_kaydet(
             onceki_durum=None,
             yeni_durum=PlanDurumu.TASLAK.value,
             aciklama=(
-                f"{taslak.toplam_birim} {profil.olcu_adi} · "
+                f"{profil.bicimle(taslak.toplam_birim)} · "
                 f"{len(taslak.teslimatlar)} teslimat"
                 + (" · üst limit istisnası" if taslak.istisna_asim else "")
             ),
@@ -263,10 +330,10 @@ def mix_plan_olustur(
     db: Session,
     teslimat_nolar: list[str],
     plan_tarihi: date | None = None,
-    profil: KapasiteProfili = RING,
+    profil: KapasiteProfili | None = None,
     kullanici: str = "sistem",
 ) -> SevkiyatPlani:
-    """Manuel tetiklenen karma (farklı SKU'lu) plan.
+    """Manuel tetiklenen karma (farklı ürün gruplu) plan.
 
     Otomatik motor asla mix plan üretmez; bu yol yalnızca kullanıcı siparişleri
     seçip 'mix plan yap' dediğinde çalışır.
@@ -286,19 +353,26 @@ def mix_plan_olustur(
             "Beklemede olmayan teslimatlar seçilemez: " + ", ".join(sorted(set(planli)))
         )
 
-    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar))
+    depolar_ham = {s.depo_kodu for s in satirlar}
+    if len(depolar_ham) > 1:
+        raise PlanHatasi(
+            f"Tek planda farklı depolar olamaz: {', '.join(sorted(depolar_ham))}"
+        )
+    profil = profil or depo_profili(next(iter(depolar_ham)))
+    if profil is None:
+        raise PlanHatasi(
+            f"{next(iter(depolar_ham))} deposu için kapasite profili tanımlı değil."
+        )
+
+    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar), profil)
     if hatalilar:
         raise PlanHatasi("; ".join(f"{no}: {mesaj}" for no, mesaj in hatalilar))
-
-    depolar = {t.depo_kodu for t in teslimatlar}
-    if len(depolar) > 1:
-        raise PlanHatasi(f"Tek planda farklı depolar olamaz: {', '.join(sorted(depolar))}")
 
     toplam = sum((t.birim for t in teslimatlar), Decimal(0))
     if toplam > profil.ust_limit:
         raise PlanHatasi(
-            f"Seçilen teslimatlar {toplam} {profil.olcu_adi} tutuyor, "
-            f"üst limit {profil.ust_limit}."
+            f"Seçilen teslimatlar {profil.bicimle(toplam)} tutuyor, "
+            f"üst limit {profil.bicimle(profil.ust_limit)}."
         )
 
     taslak = TaslakPlan(

@@ -7,8 +7,10 @@
   <div class="kart">
     <h2>Excel ile toplu tanımlama</h2>
     <p class="soluk">
-      Şablonu indirip doldurun. Aynı ürün kodu tekrar yüklenirse kayıt güncellenir.
-      Palet içi adet, planlamanın tek girdisidir.
+      Şablonu indirip doldurun; kaynak sistemdeki <b>masterdata</b> sayfası da doğrudan
+      yüklenebilir. Aynı ürün kodu tekrar yüklenirse kayıt güncellenir.
+      Palet ölçüsüyle planlanan depolar (64) <b>palet içi adet</b>, anahtar değerle
+      planlananlar (74) <b>tır yükleme adeti</b> alanını kullanır.
     </p>
     <form class="satir" method="post" action="/urunler/yukle" enctype="multipart/form-data">
       <div><label for="dosya">Excel dosyası</label>
@@ -29,12 +31,16 @@
         <div><label for="urun_grubu">Ürün Grubu</label>
           <input id="urun_grubu" name="urun_grubu" placeholder="Kombi, Radyatör..." required style="width:100%"></div>
         <div><label for="palet_ici_adet">Palet İçi Adet</label>
-          <input id="palet_ici_adet" name="palet_ici_adet" type="number" min="1" required style="width:100%"></div>
+          <input id="palet_ici_adet" name="palet_ici_adet" type="number" min="0" style="width:100%"></div>
+        <div><label for="kamyon_yukleme_adeti">Kamyon Yükleme Adeti</label>
+          <input id="kamyon_yukleme_adeti" name="kamyon_yukleme_adeti" type="number" min="0" style="width:100%"></div>
+        <div><label for="tir_yukleme_adeti">Tır Yükleme Adeti</label>
+          <input id="tir_yukleme_adeti" name="tir_yukleme_adeti" type="number" min="0" style="width:100%"></div>
+        <div><label for="agirlik">Ağırlık (kg)</label>
+          <input id="agirlik" name="agirlik" style="width:100%"></div>
         <div><label for="header_kod">Header Kod (opsiyonel)</label>
           <input id="header_kod" name="header_kod" style="width:100%"></div>
         <div style="display:flex; gap:18px; align-items:flex-end; padding-bottom:6px">
-          <label style="display:flex; gap:6px; align-items:center; margin:0">
-            <input type="checkbox" name="aksesuar_mi" value="true"> Aksesuar</label>
           <label style="display:flex; gap:6px; align-items:center; margin:0">
             <input type="checkbox" name="aktif" value="true" checked> Aktif</label>
         </div>
@@ -55,7 +61,9 @@
   <table>
     <thead><tr>
       <th>Ürün Kodu</th><th>Ürün Adı</th><th>Grup</th>
-      <th class="sag">Palet İçi Adet</th><th>Header Kod</th><th>Aksesuar</th><th>Durum</th>
+      <th class="sag">Palet İçi</th><th class="sag">Kamyon Yük. Adeti</th>
+      <th class="sag">Tır Yük. Adeti</th><th class="sag">Ağırlık</th>
+      <th>Header Kod</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for urun in urunler %}
@@ -63,9 +71,11 @@
         <td><b>{{ urun.urun_kodu }}</b></td>
         <td>{{ urun.urun_adi }}</td>
         <td>{{ urun.urun_grubu }}</td>
-        <td class="sag">{{ urun.palet_ici_adet }}</td>
+        <td class="sag">{{ urun.palet_ici_adet or '—' }}</td>
+        <td class="sag">{{ urun.kamyon_yukleme_adeti or '—' }}</td>
+        <td class="sag">{{ urun.tir_yukleme_adeti or '—' }}</td>
+        <td class="sag">{{ urun.agirlik or '—' }}</td>
         <td>{{ urun.header_kod or '—' }}</td>
-        <td>{{ 'Evet' if urun.aksesuar_mi else '—' }}</td>
         <td><span class="rozet {{ 'TAMAMLANDI' if urun.aktif else 'IPTAL' }}">
           {{ 'Aktif' if urun.aktif else 'Pasif' }}</span></td>
       </tr>

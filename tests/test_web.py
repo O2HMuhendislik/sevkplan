@@ -64,8 +64,8 @@ def test_ekranlar_acilir(istemci, yol):
 
 def test_uctan_uca_akis(istemci):
     urun_dosyasi = kitap(
-        ["Ürün Kodu", "Ürün Adı", "Ürün Grubu", "Palet İçi Adet"],
-        [["KMB-24", "Kombi 24 kW", "Kombi", 10]],
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet"],
+        [["KMB-24", "Kombi 24 kW", "KOMBİ", 10]],
     )
     cevap = istemci.post(
         "/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)}
@@ -73,13 +73,14 @@ def test_uctan_uca_akis(istemci):
     assert cevap.status_code == 200 and "1 yeni" in sorgu(cevap)
 
     siparis_dosyasi = kitap(
-        ["Sipariş No", "Sipariş Satır No", "Teslimat No", "Ürün Kodu", "Miktar",
-         "Depo Kodu", "Termin Tarihi"],
-        [[f"SIP-{i}", "10", f"TSL-{i}", "KMB-24", 50, "64", "05.09.2026"] for i in range(4)],
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "Termin Tarihi"],
+        [[f"SIP-{i}", f"TSL-{i}", "KMB-24", 50, "64", "05.09.2026"] for i in range(4)],
     )
     istemci.post("/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparis_dosyasi)})
 
-    cevap = istemci.post("/planlar/uret", data={"plan_tarihi": "2026-08-31"})
+    cevap = istemci.post(
+        "/planlar/uret", data={"plan_tarihi": "2026-08-31", "depo_kodu": "64"}
+    )
     assert "1 plan üretildi" in sorgu(cevap)
 
     planlar = istemci.get("/planlar")

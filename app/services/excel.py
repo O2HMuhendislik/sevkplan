@@ -33,59 +33,110 @@ class ExcelHatasi(Exception):
     pass
 
 
-def satirlari_oku(
-    dosya: Path | Any, alias_haritasi: dict[str, tuple[str, ...]]
-) -> list[dict[str, Any]]:
-    """İlk sayfayı okuyup her satırı normalize alan adlarıyla sözlüğe çevirir.
+def _kolonlari_esle(
+    basliklar: list[str], alias_haritasi: dict[str, tuple[str, ...]]
+) -> dict[str, int]:
+    """Başlık satırını alan adlarına eşler.
 
-    `alias_haritasi`: {alan_adi: (kabul edilen başlık varyantları, ...)}
+    Aynı başlığın iki kez geçtiği dosyalar var (kaynak sistemde iki ayrı 'Not'
+    sütunu gibi); ilk eşleşen sütun kullanılır, sonrakiler serbest kalır.
     """
-    calisma_kitabi = load_workbook(dosya, data_only=True, read_only=True)
-    sayfa = calisma_kitabi.worksheets[0]
-    satir_iter = sayfa.iter_rows(values_only=True)
-    try:
-        basliklar = [normalize(h) for h in next(satir_iter)]
-    except StopIteration:
-        raise ExcelHatasi("Dosya boş.") from None
-
     kolon_indeksi: dict[str, int] = {}
+    kullanilan: set[int] = set()
     for alan, aliaslar in alias_haritasi.items():
-        aday_setleri = {normalize(a) for a in aliaslar} | {alan}
+        adaylar = {normalize(a) for a in aliaslar} | {alan}
         for idx, baslik in enumerate(basliklar):
-            if baslik in aday_setleri:
+            if idx not in kullanilan and baslik in adaylar:
                 kolon_indeksi[alan] = idx
+                kullanilan.add(idx)
                 break
+    return kolon_indeksi
 
-    kayitlar: list[dict[str, Any]] = []
-    for satir_no, satir in enumerate(satir_iter, start=2):
-        if satir is None or all(h is None or str(h).strip() == "" for h in satir):
+
+def sayfa_bul(
+    calisma_kitabi,
+    alias_haritasi: dict[str, tuple[str, ...]],
+    zorunlu: tuple[str, ...],
+    sayfa_adi: str | None = None,
+    taranacak_satir: int = 10,
+):
+    """Veri sayfasını ve başlık satırını otomatik bulur.
+
+    Kaynak dosyalarda aranan tablo çoğu zaman ilk sayfada ve ilk satırda değildir.
+    Bütün sayfaların ilk birkaç satırı taranır, zorunlu alanların en çoğunu
+    karşılayan satır başlık kabul edilir.
+    """
+    en_iyi = None
+    for sayfa in calisma_kitabi.worksheets:
+        if sayfa_adi and normalize(sayfa.title) != normalize(sayfa_adi):
             continue
-        kayit: dict[str, Any] = {"_satir_no": satir_no}
-        for alan, idx in kolon_indeksi.items():
-            kayit[alan] = satir[idx] if idx < len(satir) else None
-        kayitlar.append(kayit)
-    calisma_kitabi.close()
-    return kayitlar
+        for satir_no, satir in enumerate(sayfa.iter_rows(values_only=True), start=1):
+            if satir_no > taranacak_satir:
+                break
+            basliklar = [normalize(h) for h in satir]
+            kolonlar = _kolonlari_esle(basliklar, alias_haritasi)
+            puan = sum(1 for alan in zorunlu if alan in kolonlar)
+            if en_iyi is None or puan > en_iyi[0]:
+                en_iyi = (puan, sayfa.title, satir_no, kolonlar)
+            if puan == len(zorunlu):
+                return sayfa.title, satir_no, kolonlar
+    if en_iyi is None:
+        raise ExcelHatasi("Dosyada okunabilir sayfa bulunamadı.")
+    return en_iyi[1], en_iyi[2], en_iyi[3]
+
+
+def satirlari_oku(
+    dosya: Path | Any,
+    alias_haritasi: dict[str, tuple[str, ...]],
+    zorunlu: tuple[str, ...] = (),
+    sayfa_adi: str | None = None,
+) -> list[dict[str, Any]]:
+    """Veri sayfasını bulup her satırı normalize alan adlarıyla sözlüğe çevirir."""
+    calisma_kitabi = load_workbook(dosya, data_only=True, read_only=True)
+    try:
+        bulunan_sayfa, baslik_satiri, kolon_indeksi = sayfa_bul(
+            calisma_kitabi, alias_haritasi, zorunlu, sayfa_adi
+        )
+        sayfa = calisma_kitabi[bulunan_sayfa]
+        kayitlar: list[dict[str, Any]] = []
+        for satir_no, satir in enumerate(sayfa.iter_rows(values_only=True), start=1):
+            if satir_no <= baslik_satiri:
+                continue
+            if satir is None or all(h is None or str(h).strip() == "" for h in satir):
+                continue
+            kayit: dict[str, Any] = {"_satir_no": satir_no, "_sayfa": bulunan_sayfa}
+            for alan, idx in kolon_indeksi.items():
+                kayit[alan] = satir[idx] if idx < len(satir) else None
+            kayitlar.append(kayit)
+        return kayitlar
+    finally:
+        calisma_kitabi.close()
 
 
 def eksik_kolonlar(
-    dosya: Path | Any, alias_haritasi: dict[str, tuple[str, ...]], zorunlu: tuple[str, ...]
+    dosya: Path | Any,
+    alias_haritasi: dict[str, tuple[str, ...]],
+    zorunlu: tuple[str, ...],
+    sayfa_adi: str | None = None,
 ) -> list[str]:
     calisma_kitabi = load_workbook(dosya, data_only=True, read_only=True)
-    basliklar = {
-        normalize(h) for h in next(calisma_kitabi.worksheets[0].iter_rows(values_only=True), ())
-    }
-    calisma_kitabi.close()
-    eksikler = []
-    for alan in zorunlu:
-        adaylar = {normalize(a) for a in alias_haritasi.get(alan, ())} | {alan}
-        if not (adaylar & basliklar):
-            eksikler.append(alan)
-    return eksikler
+    try:
+        _, _, kolonlar = sayfa_bul(calisma_kitabi, alias_haritasi, zorunlu, sayfa_adi)
+        return [alan for alan in zorunlu if alan not in kolonlar]
+    finally:
+        calisma_kitabi.close()
+
+
+GECERSIZ_DEGERLER = {"#n/a", "#yok", "#value!", "#ref!", "na", "n/a", "-", "header"}
+
+
+def bos_mu(deger: Any) -> bool:
+    """Kaynak dosyalarda formül hatası olarak gelen değerleri boş sayar."""
+    return deger is None or str(deger).strip().lower() in GECERSIZ_DEGERLER | {""}
 
 
 def metin(deger: Any) -> str | None:
-    if deger is None:
+    if bos_mu(deger):
         return None
     sonuc = str(deger).strip()
     if sonuc.endswith(".0") and sonuc[:-2].isdigit():
@@ -93,8 +144,23 @@ def metin(deger: Any) -> str | None:
     return sonuc or None
 
 
+def sayi_ya_da(deger: Any) -> Decimal | None:
+    """Sayıya çevrilebiliyorsa Decimal, çevrilemiyorsa None döner (hata atmaz)."""
+    if bos_mu(deger):
+        return None
+    try:
+        return Decimal(str(deger).strip().replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def tam_sayi_ya_da(deger: Any) -> int | None:
+    sonuc = sayi_ya_da(deger)
+    return int(sonuc) if sonuc is not None else None
+
+
 def sayi(deger: Any, alan: str) -> Decimal:
-    if deger is None or str(deger).strip() == "":
+    if bos_mu(deger):
         raise ExcelHatasi(f"{alan} boş olamaz")
     try:
         return Decimal(str(deger).strip().replace(",", "."))
@@ -107,7 +173,7 @@ def tam_sayi(deger: Any, alan: str) -> int:
 
 
 def tarih(deger: Any) -> date | None:
-    if deger is None or str(deger).strip() == "":
+    if bos_mu(deger):
         return None
     if isinstance(deger, datetime):
         return deger.date()
@@ -123,7 +189,7 @@ def tarih(deger: Any) -> date | None:
 
 
 def evet_hayir(deger: Any, varsayilan: bool = False) -> bool:
-    if deger is None or str(deger).strip() == "":
+    if bos_mu(deger):
         return varsayilan
     return normalize(deger) in {"e", "evet", "h_evet", "1", "true", "x", "var", "yes"}
 

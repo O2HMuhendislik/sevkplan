@@ -6,18 +6,30 @@
 <div class="izgara iki">
   <div class="kart">
     <h2>Otomatik Ring planlaması</h2>
-    <p class="soluk">Depo {{ ring_depo }} · 18–20 palet · tek ürün · teslimat bölünmez.</p>
+    <p class="soluk">
+      Depo 64 → 18–20 palet · depo 74 → %90–100 anahtar değer ·
+      planda tek {{ 'ürün grubu' if planlama_seviyesi == 'URUN_GRUBU' else 'ürün kodu' }} ·
+      teslimat bölünmez.
+    </p>
     <form class="satir" method="post" action="/planlar/uret">
       <div><label for="plan_tarihi">Plan tarihi</label>
         <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}"></div>
-      <button type="submit">Planlamayı çalıştır</button>
+          <div>
+      <label for="depo_kodu_p">Depo</label>
+      <select id="depo_kodu_p" name="depo_kodu">
+        {% for kod, profil in depolar.items() %}
+        <option value="{{ kod }}" {{ 'selected' if kod == ring_depo }}>{{ kod }} — {{ profil.ad }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Planlamayı çalıştır</button>
     </form>
   </div>
   <div class="kart">
     <h2>Manuel mix plan</h2>
     <p class="soluk">
-      Farklı ürünleri tek plana koymak sadece burada mümkündür. Teslimat numaralarını
-      virgülle ayırarak girin; toplam 20 paleti aşamaz.
+      Farklı ürün gruplarını tek plana koymak sadece burada mümkündür. Teslimat
+      numaralarını virgülle ayırarak girin; toplam üst limiti aşamaz.
     </p>
     <form class="satir" method="post" action="/planlar/mix">
       <div><label for="teslimat_nolar">Teslimat numaraları</label>
@@ -49,7 +61,7 @@
   <table>
     <thead><tr>
       <th>Sefer No</th><th>Tarih</th><th>Depo</th><th>Ürün(ler)</th>
-      <th class="sag">Teslimat</th><th class="sag">Palet</th><th>Doluluk</th>
+      <th class="sag">Teslimat</th><th class="sag">Büyüklük</th><th>Doluluk</th>
       <th>Axata No</th><th>Durum</th>
     </tr></thead>
     <tbody>
@@ -62,7 +74,7 @@
         <td>{{ plan.depo_kodu }}</td>
         <td>{{ plan.urun_kodlari }}</td>
         <td class="sag">{{ plan.teslimat_sayisi }}</td>
-        <td class="sag">{{ plan.toplam_palet }}</td>
+        <td class="sag">{{ plan.birim_metni }}</td>
         <td><div class="doluluk">
           <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
           <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>

@@ -1,101 +1,133 @@
-# Sevkiyat Planlama Sistemi — Faz 1 Analiz ve Kararlar
+# Sevkiyat Planlama Sistemi — Analiz ve Kararlar
 
-Bu doküman, sistemin iş kurallarının tek referans kaynağıdır. Kodda bir davranış
-tartışmalı hale gelirse önce burası güncellenir, sonra kod.
+Bu doküman iş kurallarının tek referans kaynağıdır. Bir davranış tartışmalı hale
+gelirse önce burası güncellenir, sonra kod.
+
+Kurallar iki kaynaktan geliyor: (a) sözlü olarak aktarılan kurallar, (b) 2025 yılının
+tamamı (23.540 satır, 2.578 plan) ile Ağustos 2026 örnek planları üzerinde yapılan
+inceleme. İkisinin ayrıştığı yerler **"Veriyle doğrulanan"** başlığı altında ayrıca
+belirtildi.
 
 ## 1. Kapsam
 
-**Faz 1 (bu repo):** Depo kodu `64` olan sipariş satırları için **Ring planlaması**
-— 20 paletlik sevkiyat planları.
+**Faz 1 (bu sürüm):** Ring planlaması — depo 64 ve 74.
+**Faz 2:** Tır planlaması (aynı anahtar değer altyapısı, farklı belge kodu).
 
-**Faz 2 (sonra):** Depo kodu `64` dışındaki siparişler için **tır bazlı planlama**
-(palet değil, "anahtar değer" %100 dolulukla).
+## 2. Kapasite: iki ayrı ölçü
 
-Faz 2'yi bugünden karşılamak için kapasite soyutlaması parametrik kuruldu:
-`app/domain/kapasite.py` içinde her plan tipi kendi kapasite ölçüsünü tanımlar.
-Ring için ölçü = palet, kapasite = 20. Tır için ölçü = anahtar değer, kapasite = 100.
-Planlama motoru ölçünün ne olduğunu bilmez, sadece "birim" ile çalışır.
+Sahada iki farklı ölçü kullanılıyor ve ikisi de `app/domain/kapasite.py` içindeki tek
+soyutlamayla ele alınıyor.
 
-## 2. Temel kavramlar
+| Depo | Ölçü | Üst limit | Alt limit | Kaynağı |
+|---|---|---|---|---|
+| 64, 64-D, 64-V, 64-P | **Palet** | 20 | 18 | `Palet içi adet` |
+| 74, 74-V | **Anahtar değer** | 1.00 (%100) | 0.90 | `Tır yükleme adeti` |
 
-| Kavram | Tanım |
+```
+palet   = yukarı yuvarla( miktar / palet içi adet )      # her SKU için ayrı
+anahtar = miktar / tır yükleme adeti                      # 1.0 = araç %100 dolu
+```
+
+**Veriyle doğrulanan:**
+* Depo 64 planlarının palet dağılımında en yüksek tepe **tam 20 palet** (1.370 planın
+  103'ü). "20 palet" kuralı doğrulandı.
+* Depo 74 planlarının anahtar değer **medyanı tam 1.000**, palet medyanı 27.
+  Bu depoda ölçü palet değil, anahtar değer.
+* Kaynak dosyadaki `Kamyon anahtar` sütunu tırın yaklaşık yarısıdır
+  (tır yükleme adeti ≈ 2 × kamyon yükleme adeti); depo 74 planları kamyon ölçüsünde
+  ≈ 2.0, tır ölçüsünde ≈ 1.0 verir. Sistem tır ölçüsünü kullanır.
+
+**Açık konu:** 2025'te depo 64 planlarının palet medyanı 10.8; yani pratikte 18 palet
+alt limitinin çok altında da plan açılmış. Alt limit şu an 18 olarak uygulanıyor
+(`app/domain/kapasite.py`). Acil sevkler için istisna gerekiyorsa kural gözden geçirilmeli.
+
+## 3. Planlama anahtarı: bir planın içinde ne aynı kalır?
+
+Ayar: `app/config.py` → `PLANLAMA_SEVIYESI`
+
+| Değer | Anlamı |
 |---|---|
-| Sipariş satırı | Excel'den gelen en küçük kayıt. Depo kodu **satır bazındadır**. |
-| Teslimat (`teslimat_no`) | Planlamanın atomik birimi. Bölünemez. |
-| SKU (`urun_kodu`) | Planlama, SKU bazında gruplanır. |
-| Header code | Ana ürün + aksesuarını bağlayan üst kod. Aynı planda olmak zorundadır. |
-| Planlama anahtarı | `header_kod` varsa o, yoksa `urun_kodu`. Motor bu alana göre gruplar. |
-| Sefer no | Plan kimliği. Format: `YYAAD####` (örn. `2608D1001`). |
-| Axata no | WMS iş emri numarası. Yükleme formuna işlenir, mail öncesi zorunludur. |
+| `URUN_GRUBU` *(varsayılan)* | Aynı gruptaki farklı SKU'lar tek planda birleşir |
+| `SKU` | Planda tek bir ürün kodu bulunur |
 
-## 3. Faz 1 iş kuralları (kararlaştırılmış)
+**Veriyle doğrulanan — varsayılanın gerekçesi:** 2025'te üretilen 2.578 planın
+sadece 395'inde tek SKU var. 955 PANEL planı birden fazla SKU içeriyor (farklı
+ölçülerdeki paneller aynı plana konmuş). Buna karşılık planların 1.668'i **tek ürün
+grubundan** oluşuyor; iki gruplu olanların çoğu `AKSESUAR + KOMBİ` gibi ana ürün +
+aksesuar eşleşmesi. Yani sahadaki kural SKU değil, **ürün grubu** seviyesinde.
 
-1. **Teslimat bölünemez.** Bir teslimatın tüm satırları aynı plandadır.
-2. **Bir planda tek SKU** bulunur (header code istisnası hariç).
-   Mix plan sadece manuel tetiklemeyle yapılır (Faz 1'de kapsam dışı, altyapısı hazır).
-3. **Header code'lu ürünler:** ana ürün ve aksesuarı aynı plandadır. Planlama
-   anahtarı header code olduğu için bu doğal olarak sağlanır.
-4. **Kapasite:** üst sınır 20 palet, alt sınır 18 palet.
-   18 paletin altında kalan teslimatlar planlanmaz, `BEKLEMEDE` statüsünde kalır.
-5. **İstisna:** tek başına 20 paletten büyük bir teslimat, kendi planına tek başına
-   yerleştirilir ve plan `istisna_asim = True` olarak işaretlenir.
-6. **Ağırlık / tonaj limiti yoktur.** Hareket depo içi forklift taşımasıdır.
-7. **Rota / coğrafi kısıt yoktur.** Aynı sebeple.
-8. **Yalnızca tek ürün içeren teslimatlar** sisteme yüklenir. Çok ürünlü teslimat
-   gelirse plana alınmaz, `HATALI` statüsüyle hata listesine düşer ve raporlanır.
+Anahtar belirleme sırası (`app/services/planlama_anahtari.py`):
+1. Teslimatta header kodu tanımlı ürün varsa → **header kodu**
+2. Yoksa aksesuar nitelikli gruplar (`AKSESUAR`, `BACA`, `DİRSEK`) yok sayılır,
+   kalan ana ürünün anahtarı kullanılır
+3. Ayara göre ürün grubu ya da ürün kodu
 
-### Palet hesabı
-```
-teslimat_palet = ceil( teslimattaki toplam miktar / urun.palet_ici_adet )
-```
-Kırık palet 1 tam palet sayılır (fiziksel gerçeklik: yarım palet de bir göz kaplar).
+Ürün grupları (master datadan): PANEL, KLİMA, AKSESUAR, BACA, KOMBİ, TANK,
+TERMOSİFON, BANYOPAN, KAZAN, ŞOFBEN, BOYLER, VRF, SOLAR, KOLLEKTÖR, ISI POMPASI,
+DİRSEK, Header.
 
-### Planlama sırası
-Aynı grup içindeki teslimatlar **termin tarihi eskiden yeniye** sıralanır; böylece
-bekleyen eski siparişler önce planlanır. Termin tarihi yoksa sipariş tarihi kullanılır.
+## 4. Diğer planlama kuralları
 
-### Yerleştirme algoritması
-`Best-Fit Decreasing`: teslimatlar palet adedine göre büyükten küçüğe sıralanır,
-her biri en az boşluk bırakacak plana konur. Kapasite dolunca yeni plan açılır.
-Sonuçta 18 paletin altında kalan planlar dağıtılır, içindeki teslimatlar
-`BEKLEMEDE`'ye döner.
+1. **Teslimat bölünmez.** Bir teslimatın tüm satırları aynı plandadır.
+2. **Aksesuar ana ürünle birlikte gider.** Header kod veya aksesuar grubu üzerinden.
+3. **Üst limiti tek başına aşan teslimat** kendi istisna planına konur
+   (`istisna_asim = True`), plana ve yükleme formuna uyarı yazılır.
+4. **Sıralama** termin tarihine göredir (yoksa sipariş tarihi); eski olan önce planlanır.
+   Alt limit yüzünden dışarıda kalan eski bir teslimat, plandaki aynı büyüklükteki
+   daha yeni bir teslimatla yer değiştirir.
+5. **Yerleştirme** Best-Fit Decreasing'dir.
+6. **Ağırlık/tonaj ve rota kısıtı yoktur** — hareket depo içi forklift taşımasıdır.
+   Ağırlık yine de hesaplanıp plana yazılır (bilgi amaçlı).
 
-## 4. Sefer numarası
+## 5. Sefer numarası
 
 Format: `YY` + `AA` + `D` + `####` → `2608D1001`
 
-- `YY` yılın son iki hanesi, `AA` ay (01-12)
-- `D` = Ring belge kodu (Faz 2'de tır için farklı kod kullanılacak)
-- `####` sayaç, **her ay 1001'den başlar**
-- Aylık plan hacmi 400-500 civarı; 1001-9999 aralığı fazlasıyla yeterli
-- Eş zamanlı üretim yok, ancak yine de sayaç tek transaction içinde artırılır ve
-  `sefer_no` üzerinde UNIQUE kısıt vardır (yanlışlıkla iki kez çalıştırmaya karşı)
-- **İptal edilen planın numarası geri kullanılmaz.** Numara akışında boşluk kalması
-  normaldir ve izlenebilirlik için tercih edilir.
+**Veriyle doğrulanan:** 2025'te aylık 173–295 plan üretilmiş; belge kodu neredeyse
+tamamen `D` (2.566 plan), ayrıca birkaç `S` ve `T`. Sayaç her ay sıfırlanıyor.
 
-## 5. Plan yaşam döngüsü
+**Açık konu — sayaç bantları:** Gerçek numaralar tek bir diziden gelmiyor; her ay
+`1001…`, `2001…`, `3001…` (Ocak'ta `5001…`) şeklinde birden fazla bant kullanılmış.
+Bantlarla depo arasında kısmi bir ilişki var (2xxx ağırlıklı depo 64, 1xxx/3xxx
+ağırlıklı depo 74) ama birebir değil. **Bandın neye göre seçildiği netleşmedi;**
+sistem şu an ayda tek dizi kullanıp `1001`'den başlıyor. Kural netleşince
+`app/domain/sefer_no.py` içindeki `BASLANGIC_SAYAC` bant seçimine çevrilecek.
+
+İptal edilen planın numarası geri kullanılmaz; numara akışında boşluk kalması normaldir.
+
+## 6. Plan yaşam döngüsü
 
 ```
 TASLAK ──> AXATA_BEKLIYOR ──> MAIL_GONDERILDI ──> TAMAMLANDI
-   │              │                   │
    └──────────────┴───────────────────┴──> IPTAL
 ```
 
-- **TASLAK:** motor planı üretti, henüz onaylanmadı.
-- **AXATA_BEKLIYOR:** plan onaylandı, WMS'ten Axata iş emri numarası bekleniyor.
-- **MAIL_GONDERILDI:** Axata no girildi, yükleme formu depo operasyona mail atıldı.
-  **Mail, Axata numarası girilmeden gönderilemez.**
-- **TAMAMLANDI:** yükleme fiilen yapıldı.
-- **IPTAL:** plan iptal; içindeki siparişler `BEKLEMEDE`'ye döner, sefer no yanar.
+**Axata numarası girilmeden yükleme formu gönderilemez.** Numara, formdaki
+depo/AXATA kutusunda planın deposuna karşılık gelen satıra yazılır
+(`34-DEPO`, `44-DEPO`, `64-D DEPO`, `64-V DEPO`, `74-DEPO`).
 
+Plan iptal edilince siparişler `BEKLEMEDE`'ye döner.
 Sipariş statüleri: `BEKLEMEDE` → `PLANLANDI` → `TAMAMLANDI` (+ `HATALI`).
 
-## 6. Açık konular (cevap bekleyenler)
+## 7. Veri kalitesi kuralları
+
+* Bir teslimat **tek planlama anahtarına** ve **tek depoya** ait olmalıdır; değilse
+  satırlar `HATALI` statüsüne düşer ve gerekçesiyle listelenir.
+* Teslimat numarası atanmamış satırlar (havuz listelerinde `BAYİ DEPO` gibi) ve depo
+  kodu `-1` olanlar planlanamaz; hata listesine düşer.
+* Aynı dosyada tekrar eden (sipariş + teslimat + ürün) satırların miktarları toplanır.
+  Kaynak veride bu durum mevcut.
+* Master datada `#N/A` gelen alanlar boş kabul edilir. Kapasite verisi olmayan ürünler
+  yine de kaydedilir ama "planlanamaz" uyarısı verilir — Ağustos 2026 master datasında
+  2.585 üründen **440'ında** kapasite verisi eksik.
+
+## 8. Açık konular
 
 | # | Konu | Durum |
 |---|---|---|
-| 1 | Yükleme formu Excel formatı | Bekleniyor — geldiğinde `app/services/yukleme_formu.py` doldurulacak |
-| 2 | Sipariş Excel'inin gerçek kolon isimleri | Bekleniyor — `docs/veri-formatlari.md` içindeki taslak eşleme güncellenecek |
-| 3 | Mail alıcı listesi ve SMTP bilgileri | Bekleniyor |
-| 4 | Aynı SKU'nun farklı müşterilere giden teslimatları aynı planda birleşebilir mi? | **Varsayım: evet** (depo içi hareket olduğu için müşteri kısıtı yok) |
-| 5 | Plan onayı kim tarafından veriliyor, kullanıcı/yetki yönetimi gerekli mi? | Faz 1'de tek kullanıcı varsayıldı |
+| 1 | Sefer numarası sayaç bantları (1xxx / 2xxx / 3xxx) neye göre seçiliyor? | **Cevap bekliyor** |
+| 2 | Depo 64'te 18 palet alt limiti katı mı, acil sevkler için istisna var mı? | **Cevap bekliyor** |
+| 3 | Planlama anahtarı ürün grubu mu, SKU mu? (veri ürün grubunu gösteriyor) | Varsayılan URUN_GRUBU |
+| 4 | Depo 34, 36, 03, 44 planlaması bu sisteme girecek mi? | Şu an profil tanımsız |
+| 5 | Mail alıcı listesi ve SMTP bilgileri | **Cevap bekliyor** |
+| 6 | Form üzerindeki "PLANLAYAN" alanı — kullanıcı yönetimi gerekli mi? | Şu an plan oluşturan yazılıyor |
