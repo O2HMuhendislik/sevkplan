@@ -38,29 +38,44 @@ def test_anahtar_altinda_kalan_teslimatlar_beklemede_kalir(db):
     assert len(sonuc.bekleyenler) == 1
 
 
-def test_ayni_gruptaki_farkli_skular_tek_planda_birlesir(db):
-    """2025 planlarının davranışı: farklı ölçülerdeki paneller aynı plandadır."""
+def test_varsayilan_planlama_sku_bazlidir(db):
+    """Mix işaretlenmediğinde aynı gruptaki farklı ürün kodları birleşmez."""
+    urun_ekle(db, "PNL-600", palet_ici_adet=10, grup="PANEL")
+    urun_ekle(db, "PNL-400", palet_ici_adet=10, grup="PANEL")
+    satir_ekle(db, "TSL-1", "PNL-600", 100, siparis_no="S1")  # 10 palet
+    satir_ekle(db, "TSL-2", "PNL-400", 100, siparis_no="S2")  # 10 palet
+
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    # Her ürün tek başına 18 palet alt limitini dolduramaz.
+    assert sonuc.planlar == []
+    assert len(sonuc.bekleyenler) == 2
+
+
+def test_mix_secildiginde_ayni_grup_birlesir(db):
     urun_ekle(db, "PNL-600", palet_ici_adet=10, grup="PANEL")
     urun_ekle(db, "PNL-400", palet_ici_adet=10, grup="PANEL")
     satir_ekle(db, "TSL-1", "PNL-600", 100, siparis_no="S1")
     satir_ekle(db, "TSL-2", "PNL-400", 100, siparis_no="S2")
 
-    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    sonuc = plan_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 8, 31), depo_kodu="64", mix=True
+    )
     assert len(sonuc.planlar) == 1
     plan = sonuc.planlar[0]
     assert plan.planlama_anahtari == "PANEL"
     assert plan.urun_kodlari == "PNL-400, PNL-600"
+    assert plan.mix_mi is True
 
 
-def test_farkli_gruplar_ayni_plana_girmez(db):
+def test_mix_secilse_bile_farkli_gruplar_ayrisir(db):
     urun_ekle(db, "PNL-600", palet_ici_adet=10, grup="PANEL")
     urun_ekle(db, "KMB-24", palet_ici_adet=10, grup="KOMBİ")
-    satir_ekle(db, "P1", "PNL-600", 100, siparis_no="S1")
-    satir_ekle(db, "P2", "PNL-600", 100, siparis_no="S2")
-    satir_ekle(db, "K1", "KMB-24", 100, siparis_no="S3")
-    satir_ekle(db, "K2", "KMB-24", 100, siparis_no="S4")
+    for no, urun in (("P1", "PNL-600"), ("P2", "PNL-600"), ("K1", "KMB-24"), ("K2", "KMB-24")):
+        satir_ekle(db, no, urun, 100, siparis_no=f"S{no}")
 
-    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    sonuc = plan_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 8, 31), depo_kodu="64", mix=True
+    )
     assert {p.planlama_anahtari for p in sonuc.planlar} == {"PANEL", "KOMBİ"}
 
 
@@ -75,22 +90,9 @@ def test_aksesuar_ana_urunun_planina_yazilir(db):
     sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
     assert len(sonuc.planlar) == 1
     plan = sonuc.planlar[0]
-    assert plan.planlama_anahtari == "KOMBİ"
+    assert plan.planlama_anahtari == "KMB-24"
     assert plan.toplam_birim == 20
     assert "BACA-60" in plan.urun_kodlari
-
-
-def test_sku_seviyesinde_ayni_grup_bile_ayrisir(db, monkeypatch):
-    monkeypatch.setattr("app.config.PLANLAMA_SEVIYESI", "SKU")
-    urun_ekle(db, "PNL-600", palet_ici_adet=10, grup="PANEL")
-    urun_ekle(db, "PNL-400", palet_ici_adet=10, grup="PANEL")
-    satir_ekle(db, "TSL-1", "PNL-600", 100, siparis_no="S1")
-    satir_ekle(db, "TSL-2", "PNL-400", 100, siparis_no="S2")
-
-    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
-    # Tek başına 10 palet, 18 palet alt limitini dolduramaz; ikisi de beklemede kalır.
-    assert sonuc.planlar == []
-    assert len(sonuc.bekleyenler) == 2
 
 
 def test_agirlik_ve_adet_toplamlari_plana_yazilir(db):
@@ -151,5 +153,21 @@ def test_esnetme_dolu_planlari_isaretlemez(db):
 
 def test_tum_depolar_profil_tanimli(db):
     """Verilerde geçen depo kodlarının hepsi planlanabilir olmalı."""
-    for depo in ("64", "64-D", "64-V", "64-P", "74", "74-V", "3", "03", "34", "36", "44"):
+    for depo in ("64", "64-V", "64-P", "74", "74-V", "3", "03", "34", "36", "44"):
         assert depo_profili(depo) is not None, depo
+
+
+def test_tum_depolar_tek_seferde_planlanir(db):
+    """"Tüm depolar" seçeneği her depoyu kendi ölçüsüyle planlar, sayaç ortaktır."""
+    urun_ekle(db, "KMB-24", palet_ici_adet=10, tir_yukleme_adeti=100, grup="KOMBİ")
+    for i in range(4):
+        satir_ekle(db, f"A-{i}", "KMB-24", 50, depo_kodu="64", siparis_no=f"S64{i}")
+    for i in range(4):
+        satir_ekle(db, f"B-{i}", "KMB-24", 25, depo_kodu="74", siparis_no=f"S74{i}")
+
+    sonuc = plan_servisi.tum_depolari_planla(db, plan_tarihi=date(2026, 8, 31))
+    depolar = {p.depo_kodu: p for p in sonuc.planlar}
+    assert set(depolar) == {"64", "74"}
+    assert depolar["64"].olcu == "PALET" and depolar["64"].toplam_birim == 20
+    assert depolar["74"].olcu == "ANAHTAR"
+    assert sorted(p.sefer_no for p in sonuc.planlar) == ["2608D1001", "2608D1002"]

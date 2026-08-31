@@ -53,28 +53,30 @@ gerekçesiyle listeler.
 |---|---|
 | **Gösterge Paneli** | Özet metrikler, planlamayı çalıştırma, bekleyen sipariş özeti |
 | **Siparişler** | Excel aktarımı; beklemede / planlandı / tamamlandı / hatalı sekmeleri |
-| **Planlar** | Plan listesi, filtre, Excel'e aktarma, manuel mix plan |
+| **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
 | **Plan Detayı** | Plan içeriği, Axata no girişi, yükleme formu, statü işlemleri, plan geçmişi |
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
-| **Raporlar** | Aylık özet, ürün bazlı doluluk, bekleyenlerin gerekçesi |
+| **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
 
 ## Planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
-2. Bir planda **tek ürün grubu** bulunur (PANEL, KOMBİ, TERMOSİFON …). Farklı gruplar
-   yalnızca manuel mix planla birleşir. SKU seviyesine geçmek için
-   `app/config.py` → `PLANLAMA_SEVIYESI = "SKU"`.
+2. Bir planda **tek ürün kodu (SKU)** bulunur. Planlama ekranındaki **"Mix plan yap"**
+   kutusu işaretlenirse seviye ürün grubuna çıkar ve aynı gruptaki farklı ürün kodları
+   birleşebilir. Farklı grupları birleştirmek için "Seçilerek mix plan" kullanılır.
 3. **Header code**'lu ürünler ve **aksesuarlar** (AKSESUAR, BACA, DİRSEK) her zaman
    ana ürünle aynı plandadır.
 4. Kapasite depoya göre iki ölçüden biriyle hesaplanır:
 
    | Depo | Ölçü | Üst / alt limit | Kullanılan master data alanı |
    |---|---|---|---|
-   | 64, 64-D, 64-V, 64-P | Palet | 20 / 18 | Palet içi adet |
+   | 64, 64-V, 64-P | Palet | 20 / 18 | Palet içi adet |
    | 74, 74-V, 3, 03, 34, 36, 44 | Anahtar değer | 1.00 / 0.90 | Tır yükleme adeti |
 
-   `palet = yukarı yuvarla(miktar / palet içi adet)` — kırık palet bir tam palet sayılır.
+   `palet = yukarı yuvarla(plandaki toplam miktar / palet içi adet)` — palet **plan
+   bazında** hesaplanır: aynı ürünün farklı teslimatlardaki miktarları önce toplanır,
+   sonra yuvarlanır. 13 + 3 adet, iki kırık palet değil tek dolu palettir.
    `anahtar = miktar / tır yükleme adeti` — toplam 1.0 olunca araç %100 dolu.
 5. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
 6. Sıralama termin tarihine göredir; eski siparişler önce planlanır.

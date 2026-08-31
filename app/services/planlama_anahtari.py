@@ -4,7 +4,9 @@ Kurallar:
   * Header kodu tanımlı bir ürün varsa anahtar odur (ana ürün + aksesuar bir arada).
   * Aksesuar nitelikli gruplar (AKSESUAR, BACA, DİRSEK) tek başına plan açmaz;
     teslimatta ana ürün varsa anahtar ana ürünün grubudur.
-  * Ayar `URUN_GRUBU` ise anahtar ürün grubu, `SKU` ise ürün kodudur.
+  * Varsayılan seviye SKU'dur: planda tek ürün kodu bulunur.
+  * Mix plan seçildiğinde seviye ürün grubudur: aynı gruptaki farklı ürün kodları
+    tek planda birleşebilir.
 """
 from __future__ import annotations
 
@@ -13,10 +15,13 @@ from collections.abc import Iterable
 from app.models import AKSESUAR_GRUPLARI, Urun
 
 
-def teslimat_anahtari(urunler: Iterable[Urun | None], seviye: str | None = None) -> str | None:
-    from app.config import PLANLAMA_SEVIYESI
+VARSAYILAN_SEVIYE = "SKU"
 
-    seviye = seviye or PLANLAMA_SEVIYESI
+
+def teslimat_anahtari(
+    urunler: Iterable[Urun | None], seviye: str | None = None
+) -> str | None:
+    seviye = seviye or VARSAYILAN_SEVIYE
     tanimli = [urun for urun in urunler if urun is not None]
     if not tanimli:
         return None

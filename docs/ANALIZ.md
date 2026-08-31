@@ -24,9 +24,16 @@ soyutlamayla ele alınıyor.
 | 74, 74-V, 3, 03, 34, 36, 44 | **Anahtar değer** | 1.00 (%100) | 0.90 | `Tır yükleme adeti` |
 
 ```
-palet   = yukarı yuvarla( miktar / palet içi adet )      # her SKU için ayrı
-anahtar = miktar / tır yükleme adeti                      # 1.0 = araç %100 dolu
+palet   = yukarı yuvarla( planda o SKU'dan toplam miktar / palet içi adet )
+anahtar = Σ ( miktar / tır yükleme adeti )                # 1.0 = araç %100 dolu
 ```
+
+**Palet plan bazında hesaplanır, teslimat bazında değil.** Aynı ürünün farklı
+teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi 16
+olan bir üründen 13 + 3 adetlik iki teslimat, iki kırık palet yerine **tek dolu palet**
+kaplar. Yerleştirme algoritması da bunu gözetir: bir teslimat, plandaki kırık paleti
+tamamladığı için maliyeti sıfıra inen plana öncelikle konur. Amaç depodaki elleçlemeyi
+azaltmaktır.
 
 **Veriyle doğrulanan:**
 * Depo 64 planlarının palet dağılımında en yüksek tepe **tam 20 palet** (1.370 planın
@@ -54,24 +61,29 @@ altında da plan açılmış. Bunu karşılamak için alt limitin iki esneme yol
 2. **Kullanıcı isteği (manuel).** Planlama ekranındaki *"Kalanları da planla"* seçeneği
    işaretlenerek alt limit tamamen devre dışı bırakılır.
 
+**Açık konu:** SKU bazlı planlamada her ürün kodu kendi grubunu oluşturduğu için
+kalıntılar parçalanır. Termini geçmiş çok sayıda küçük sipariş olduğunda esneme, her
+biri için ayrı ve neredeyse boş bir plan açabilir (Ağustos 2026 verisinde 49 planın
+27'si bu şekilde, bazıları %1'in altında doluluk). İki çözüm var: `ESNETME_ASGARI_ORAN`
+ile bir taban doluluk koymak, ya da yalnızca esnetilen kalıntıların ürün grubu içinde
+birleşmesine izin vermek. Karar bekleniyor.
+
 Her iki durumda da plan `alt_limit_esnetildi` olarak işaretlenir; listede **ESNETİLDİ**
 rozetiyle görünür ve plan detayında gerekçesi yazar. Esnetme yapılsa bile
 `ESNETME_ASGARI_ORAN` altındaki kalıntılar beklemede bırakılır (varsayılan 0 = sınır yok).
 
 ## 3. Planlama anahtarı: bir planın içinde ne aynı kalır?
 
-Ayar: `app/config.py` → `PLANLAMA_SEVIYESI`
+**Varsayılan: SKU.** Bir planda tek ürün kodu bulunur.
 
-| Değer | Anlamı |
-|---|---|
-| `URUN_GRUBU` *(varsayılan)* | Aynı gruptaki farklı SKU'lar tek planda birleşir |
-| `SKU` | Planda tek bir ürün kodu bulunur |
+Planlama ekranındaki **"Mix plan yap"** kutusu işaretlendiğinde seviye ürün grubuna
+çıkar: aynı gruptaki farklı ürün kodları (ör. farklı ölçülerdeki paneller) tek planda
+birleşebilir. Farklı ürün grupları mix'te bile birleşmez; onun için "Seçilerek mix
+plan" kutusundan teslimat numaraları elle girilir.
 
-**Veriyle doğrulanan — varsayılanın gerekçesi:** 2025'te üretilen 2.578 planın
-sadece 395'inde tek SKU var. 955 PANEL planı birden fazla SKU içeriyor (farklı
-ölçülerdeki paneller aynı plana konmuş). Buna karşılık planların 1.668'i **tek ürün
-grubundan** oluşuyor; iki gruplu olanların çoğu `AKSESUAR + KOMBİ` gibi ana ürün +
-aksesuar eşleşmesi. Yani sahadaki kural SKU değil, **ürün grubu** seviyesinde.
+*Not:* 2025 verisinde üretilen 2.578 planın sadece 395'i tek SKU'lu; 955 PANEL planı
+çok SKU'lu. Yani geçmişte fiilen ürün grubu seviyesinde çalışılmış. Sistemde varsayılan
+SKU olarak belirlendi, mix kutusu geçmişteki davranışı tek tıkla veriyor.
 
 Anahtar belirleme sırası (`app/services/planlama_anahtari.py`):
 1. Teslimatta header kodu tanımlı ürün varsa → **header kodu**
@@ -143,7 +155,8 @@ Sipariş statüleri: `BEKLEMEDE` → `PLANLANDI` → `TAMAMLANDI` (+ `HATALI`).
 | 1 | Sefer numarası sayacı | **Karar verildi:** tek sayaç, her ay 1001'den |
 | 2 | Alt limit esnetmesi | **Karar verildi:** aciliyet (3 gün) + manuel "kalanları planla" |
 | 3 | Depo 3, 03, 34, 36, 44 | **Eklendi**, anahtar ölçüsüyle (34/36/44 varsayım) |
-| 4 | Planlama anahtarı ürün grubu mu, SKU mu? (veri ürün grubunu gösteriyor) | Varsayılan URUN_GRUBU |
+| 4 | Planlama anahtarı | **Karar verildi:** varsayılan SKU, mix kutusuyla ürün grubu |
+| 8 | Esneme, SKU bazlı planlamada çok sayıda küçük plan üretebiliyor | **Cevap bekliyor** (bkz. aşağı) |
 | 5 | Mail alıcı listesi ve SMTP bilgileri | **Cevap bekliyor** |
 | 6 | Form üzerindeki "PLANLAYAN" alanı — kullanıcı yönetimi gerekli mi? | Şu an plan oluşturan yazılıyor |
 | 7 | Esneme eşiği 3 gün doğru mu, ürün grubuna göre değişmeli mi? | Varsayılan 3 gün |

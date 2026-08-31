@@ -18,16 +18,9 @@ VERITABANI_URL = os.environ.get(
 
 # ---------------------------------------------------------------- planlama ayarları
 
-PLANLAMA_SEVIYESI = os.environ.get("SEVKPLAN_PLANLAMA_SEVIYESI", "URUN_GRUBU")
-"""Bir planın içinde neyin aynı olacağını belirler.
-
-  URUN_GRUBU : Aynı ürün grubundaki farklı SKU'lar tek planda birleşebilir
-               (ör. farklı ölçülerdeki paneller). 2025 planlarının davranışı budur.
-  SKU        : Planda tek bir ürün kodu bulunur.
-
-Değiştirmek için bu satırı düzenleyin ya da SEVKPLAN_PLANLAMA_SEVIYESI ortam
-değişkenini kullanın.
-"""
+# Planlama varsayılan olarak SKU bazlıdır: bir planda tek ürün kodu bulunur.
+# Planlama ekranındaki "Mix plan yap" kutusu işaretlendiğinde seviye ürün grubuna
+# çıkar ve aynı gruptaki farklı ürün kodları tek planda birleşebilir.
 
 from app.models import AKSESUAR_GRUPLARI  # noqa: E402,F401  (tek tanım models.py'de)
 
@@ -35,13 +28,14 @@ from app.models import AKSESUAR_GRUPLARI  # noqa: E402,F401  (tek tanım models.
 #
 # Ölçüler 2025 verisinden doğrulandı:
 #   64 / 64-V / 64-P  -> anahtar medyanı 0,15-0,38 · palet dağılımının tepesi 20 → PALET
+#     (Yükleme formundaki "64-D DEPO" satırı ayrı bir depo değil, depo 64'ün form
+#      üzerindeki adıdır; "64-V DEPO" ise gerçekten ayrı bir depo kodudur.)
 #   74 / 3 / 03       -> planların %91-95'i anahtar 1,0 civarında            → ANAHTAR
 #   34 / 36 / 44      -> 2025'te örnek az; Ağustos 2026'da anahtar ~1,0 civarı olduğu
 #                        için ANAHTAR kabul edildi. Palet ölçüsüne geçmesi gerekiyorsa
 #                        aşağıdaki satırı RING_PALET yapmak yeterli.
 DEPO_PROFILLERI: dict[str, KapasiteProfili] = {
     "64": RING_PALET,
-    "64-D": RING_PALET,
     "64-V": RING_PALET,
     "64-P": RING_PALET,
     "74": RING_ANAHTAR,
@@ -73,6 +67,10 @@ ESNETME_ASGARI_ORAN = Decimal(os.environ.get("SEVKPLAN_ESNETME_ASGARI_ORAN", "0"
 Örnek: 0.25 verilirse depo 64'te 5 paletin (20 x 0,25) altındaki kalıntılar
 beklemeye devam eder.
 """
+
+
+TUM_DEPOLAR = "TUMU"
+"""Planlama ekranında "Tüm depolar" seçeneğinin değeri."""
 
 
 def depo_profili(depo_kodu: str) -> KapasiteProfili | None:

@@ -26,8 +26,7 @@
   <h2>Ring planı üret</h2>
   <p class="soluk">
     Depo 64 palet ölçüsüyle (18–20 palet), depo 74 ve diğerleri anahtar değerle
-    (%90–100) planlanır. Teslimatlar bölünmez; bir planda tek
-    {{ 'ürün grubu' if planlama_seviyesi == 'URUN_GRUBU' else 'ürün kodu' }} bulunur.
+    (%90–100) planlanır. Teslimatlar bölünmez; bir planda tek ürün kodu bulunur.
     Termine {{ esnetme_gun }} gün kalan siparişler alt limiti esnetir.
   </p>
   <form class="satir" method="post" action="/planlar/uret">
@@ -38,6 +37,7 @@
         <div>
       <label for="depo_kodu_g">Depo</label>
       <select id="depo_kodu_g" name="depo_kodu">
+        <option value="{{ tum_depolar }}">Tüm depolar</option>
         {% for kod, profil in depolar.items() %}
         <option value="{{ kod }}" {{ 'selected' if kod == ring_depo }}>{{ kod }} — {{ profil.ad }}</option>
         {% endfor %}
@@ -47,6 +47,10 @@
       <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
         <input type="checkbox" name="kalanlari_zorla" value="true">
         Kalanları da planla (alt limiti uygulama)
+      </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="mix" value="true">
+        Mix plan yap (aynı gruptaki farklı ürünleri birleştir)
       </label>
     </div>
     <button type="submit">Planlamayı çalıştır</button>

@@ -19,8 +19,8 @@ from app.config import (
     CIKTI_DIZIN,
     DEPO_PROFILLERI,
     ESNETME_GUN_ESIGI,
-    PLANLAMA_SEVIYESI,
     RING_DEPO_KODU,
+    TUM_DEPOLAR,
 )
 from app.db import oturum_bagimliligi, semayi_olustur
 from app.models import PlanDurumu, SevkiyatPlani, SiparisDurumu, Urun
@@ -51,8 +51,8 @@ def sayfa(istek: Request, ad: str, **baglam):
     baglam.setdefault("bugun", date.today())
     baglam.setdefault("ring_depo", RING_DEPO_KODU)
     baglam.setdefault("depolar", DEPO_PROFILLERI)
-    baglam.setdefault("planlama_seviyesi", PLANLAMA_SEVIYESI)
     baglam.setdefault("esnetme_gun", ESNETME_GUN_ESIGI)
+    baglam.setdefault("tum_depolar", TUM_DEPOLAR)
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
 
@@ -194,13 +194,23 @@ def planlari_uret(
     plan_tarihi: str = Form(""),
     depo_kodu: str = Form(RING_DEPO_KODU),
     kalanlari_zorla: bool = Form(False),
+    mix: bool = Form(False),
     db: Session = Depends(oturum_bagimliligi),
 ):
     tarih = datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
     try:
-        sonuc = plan_servisi.plan_uret(
-            db, plan_tarihi=tarih, depo_kodu=depo_kodu, kalanlari_zorla=kalanlari_zorla
-        )
+        if depo_kodu == TUM_DEPOLAR:
+            sonuc = plan_servisi.tum_depolari_planla(
+                db, plan_tarihi=tarih, kalanlari_zorla=kalanlari_zorla, mix=mix
+            )
+        else:
+            sonuc = plan_servisi.plan_uret(
+                db,
+                plan_tarihi=tarih,
+                depo_kodu=depo_kodu,
+                kalanlari_zorla=kalanlari_zorla,
+                mix=mix,
+            )
         db.commit()
     except PlanHatasi as hata:
         db.rollback()
@@ -328,6 +338,7 @@ def raporlar(istek: Request, db: Session = Depends(oturum_bagimliligi)):
         aylik=rapor_servisi.aylik_ozet(db),
         urun_bazli=rapor_servisi.urun_bazli_ozet(db),
         bekleyenler=rapor_servisi.bekleyen_ozeti(db),
+        sevk_durumu=rapor_servisi.sevk_durumu(db),
     )
 
 

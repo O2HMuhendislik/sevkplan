@@ -7,9 +7,12 @@ teslimatları döner. Bu sayede kurallar tek başına test edilebilir.
 from __future__ import annotations
 
 import math
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Protocol
 
 from app.domain.kapasite import KapasiteProfili
 
@@ -36,6 +39,8 @@ class Teslimat:
     anahtar: Decimal = Decimal(0)
     agirlik: Decimal = Decimal(0)
     """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
+    sku_miktarlari: dict[str, Decimal] = field(default_factory=dict)
+    """SKU -> miktar kırılımı. Palet ölçüsünde plan bazında toplanıp yuvarlanır."""
 
     @property
     def kodlar(self) -> tuple[str, ...]:
@@ -48,12 +53,56 @@ class Teslimat:
             )
 
 
+def palet_hesapla(miktar: Decimal, palet_ici_adet: int) -> Decimal:
+    """Kırık palet bir tam palet sayılır: yarım palet de bir palet gözü kaplar."""
+    if palet_ici_adet <= 0:
+        raise ValueError("palet içi adet sıfır veya negatif olamaz")
+    return Decimal(math.ceil(Decimal(miktar) / Decimal(palet_ici_adet)))
+
+
+class BirimHesaplayici(Protocol):
+    """Bir plandaki teslimatların toplam kapasite büyüklüğünü hesaplar."""
+
+    def __call__(self, teslimatlar: Sequence[Teslimat]) -> Decimal: ...
+
+
+def toplam_birim(teslimatlar: Sequence[Teslimat]) -> Decimal:
+    """Toplanabilir ölçüler (anahtar değer) için: teslimat büyüklüklerinin toplamı."""
+    return sum((t.birim for t in teslimatlar), Decimal(0))
+
+
+@dataclass(frozen=True)
+class PaletBirimi:
+    """Palet ölçüsünü **plan bazında** hesaplar.
+
+    Palet, teslimat teslimat yuvarlanmaz: aynı SKU'nun farklı teslimatlardaki
+    miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi 16 olan bir
+    üründen 13 + 3 adetlik iki teslimat böylece iki kırık palet yerine tek dolu palet
+    kaplar; depodaki elleçleme buna göre azalır.
+    """
+
+    palet_ici: Mapping[str, int]
+
+    def __call__(self, teslimatlar: Sequence[Teslimat]) -> Decimal:
+        toplamlar: dict[str, Decimal] = defaultdict(Decimal)
+        for teslimat in teslimatlar:
+            for sku, miktar in teslimat.sku_miktarlari.items():
+                toplamlar[sku] += miktar
+        palet = Decimal(0)
+        for sku, miktar in toplamlar.items():
+            adet = self.palet_ici.get(sku)
+            if adet:
+                palet += palet_hesapla(miktar, adet)
+        return palet
+
+
 @dataclass
 class TaslakPlan:
     depo_kodu: str
     planlama_anahtari: str
     profil: KapasiteProfili
     teslimatlar: list[Teslimat] = field(default_factory=list)
+    hesaplayici: BirimHesaplayici = toplam_birim
     istisna_asim: bool = False
     """Tek teslimat üst limiti aştığı için açılan istisna planı."""
     alt_limit_esnetildi: bool = False
@@ -61,7 +110,19 @@ class TaslakPlan:
 
     @property
     def toplam_birim(self) -> Decimal:
-        return sum((t.birim for t in self.teslimatlar), Decimal(0))
+        return self.hesaplayici(self.teslimatlar)
+
+    def eklenince_birim(self, teslimat: Teslimat) -> Decimal:
+        """Teslimat eklenirse planın toplam büyüklüğü ne olur?"""
+        return self.hesaplayici([*self.teslimatlar, teslimat])
+
+    def artis(self, teslimat: Teslimat) -> Decimal:
+        """Teslimatı bu plana eklemenin maliyeti.
+
+        Palet ölçüsünde, plandaki kırık paleti tamamlayan bir teslimatın maliyeti
+        sıfıra kadar inebilir; yerleştirme önce bu artışa göre karar verir.
+        """
+        return self.eklenince_birim(teslimat) - self.toplam_birim
 
     @property
     def toplam_palet(self) -> Decimal:
@@ -103,7 +164,10 @@ class TaslakPlan:
         self.teslimatlar.append(teslimat)
 
     def sigar_mi(self, teslimat: Teslimat) -> bool:
-        return not self.istisna_asim and teslimat.birim <= self.bos_alan
+        return (
+            not self.istisna_asim
+            and self.eklenince_birim(teslimat) <= self.profil.ust_limit
+        )
 
 
 @dataclass(frozen=True)
@@ -150,17 +214,11 @@ class PlanlamaSonucu:
         return sum(len(plan.teslimatlar) for plan in self.planlar)
 
 
-def palet_hesapla(miktar: Decimal, palet_ici_adet: int) -> Decimal:
-    """Kırık palet bir tam palet sayılır: yarım palet de bir palet gözü kaplar."""
-    if palet_ici_adet <= 0:
-        raise ValueError("palet içi adet sıfır veya negatif olamaz")
-    return Decimal(math.ceil(Decimal(miktar) / Decimal(palet_ici_adet)))
-
-
 def planla(
     teslimatlar: list[Teslimat],
     profil: KapasiteProfili,
     esnetme: EsnetmeKurali | None = None,
+    hesaplayici: BirimHesaplayici | None = None,
 ) -> PlanlamaSonucu:
     """Teslimatları kapasite profiline göre planlara yerleştirir.
 
@@ -171,13 +229,14 @@ def planla(
       * Alt limitin altında kalan planlar dağıtılır, teslimatları beklemede kalır —
         `esnetme` kuralı devreye girmediği sürece.
     """
+    hesaplayici = hesaplayici or toplam_birim
     sonuc = PlanlamaSonucu()
     for anahtar in sorted({(t.depo_kodu, t.planlama_anahtari) for t in teslimatlar}):
         grup = [
             t for t in teslimatlar
             if (t.depo_kodu, t.planlama_anahtari) == anahtar
         ]
-        _grubu_planla(grup, profil, sonuc, esnetme)
+        _grubu_planla(grup, profil, sonuc, esnetme, hesaplayici)
     sonuc.planlar.sort(key=lambda p: (p.depo_kodu, p.planlama_anahtari))
     return sonuc
 
@@ -187,19 +246,22 @@ def _grubu_planla(
     profil: KapasiteProfili,
     sonuc: PlanlamaSonucu,
     esnetme: EsnetmeKurali | None = None,
+    hesaplayici: BirimHesaplayici | None = None,
 ) -> None:
+    hesaplayici = hesaplayici or toplam_birim
     depo_kodu = grup[0].depo_kodu
     planlama_anahtari = grup[0].planlama_anahtari
 
     normal: list[Teslimat] = []
     for teslimat in grup:
-        if teslimat.birim > profil.ust_limit:
+        if hesaplayici([teslimat]) > profil.ust_limit:
             # Kural 5: bölünemeyen teslimat üst limiti aşıyorsa tek başına planlanır.
             sonuc.planlar.append(
                 TaslakPlan(
                     depo_kodu=depo_kodu,
                     planlama_anahtari=planlama_anahtari,
                     profil=profil,
+                    hesaplayici=hesaplayici,
                     teslimatlar=[teslimat],
                     istisna_asim=True,
                 )
@@ -213,12 +275,18 @@ def _grubu_planla(
     for teslimat in sirali:
         adaylar = [k for k in kutular if k.sigar_mi(teslimat)]
         if adaylar:
-            hedef = min(adaylar, key=lambda k: (k.bos_alan, k.teslimatlar[0].teslimat_no))
+            # Önce en az yer kaplayacağı plan seçilir: palet ölçüsünde bu, teslimatın
+            # plandaki kırık paletleri tamamlaması demektir. Eşitlikte en dolu plan.
+            hedef = min(
+                adaylar,
+                key=lambda k: (k.artis(teslimat), k.bos_alan, k.teslimatlar[0].teslimat_no),
+            )
         else:
             hedef = TaslakPlan(
                 depo_kodu=depo_kodu,
                 planlama_anahtari=planlama_anahtari,
                 profil=profil,
+                hesaplayici=hesaplayici,
             )
             kutular.append(hedef)
         hedef.ekle(teslimat)

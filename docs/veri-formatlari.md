@@ -87,7 +87,10 @@ Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir �
 * Sağ üstte `FORM NO : 8101058099.01`
 * `SEFER NO` kutusu, `Plan Sevk Tarihi ve Günü`
 * Depo/AXATA kutusu: `34-DEPO`, `44-DEPO`, `64-D DEPO`, `64-V DEPO`, `74-DEPO` —
-  Axata numarası planın deposuna karşılık gelen satıra yazılır
+  Axata numarası planın deposuna karşılık gelen satıra yazılır. `64-D DEPO` satırı
+  ayrı bir depo değil, **depo 64**'ün form üzerindeki adıdır. Kutuda karşılığı olmayan
+  bir depo (03, 36 gibi) için kutuya o deponun satırı eklenir; ayrıca Axata numarası
+  formun üst bölümünde ikinci kez yazılır, böylece hiçbir durumda kaybolmaz
 * Eksik ürün çıkışı uyarı metni
 * Satır tablosu: No · İl Adı · Sipariş No · Belge No · Depo · Ürün Kodu · Ürün Adı ·
   Adet · Bayii Adı · adres · ilçe · Teslimat

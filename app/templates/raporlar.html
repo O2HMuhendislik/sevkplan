@@ -45,6 +45,37 @@
 </div>
 
 <div class="kart">
+  <h2>Sevk durumu — Axata ve gönderim takibi</h2>
+  <p class="soluk">
+    Axata numarası girilmemiş planlar listenin başındadır; numara girilmeden yükleme
+    formu depoya gönderilmiş sayılmaz.
+  </p>
+  {% if sevk_durumu %}
+  <table>
+    <thead><tr>
+      <th>Sefer No</th><th>Tarih</th><th>Depo</th><th>Ürün(ler)</th>
+      <th class="sag">Büyüklük</th><th>Axata No</th><th>Durum</th><th>Mail Tarihi</th>
+    </tr></thead>
+    <tbody>
+    {% for plan in sevk_durumu %}
+      <tr>
+        <td><a href="/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
+        <td>{{ plan.plan_tarihi | tarih }}</td>
+        <td>{{ plan.depo_kodu }}</td>
+        <td>{{ plan.urun_kodlari }}</td>
+        <td class="sag">{{ plan.birim_metni }}</td>
+        <td>{% if plan.axata_no %}<b>{{ plan.axata_no }}</b>
+            {% else %}<span class="rozet TASLAK">GİRİLMEDİ</span>{% endif %}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+        <td>{{ plan.mail_gonderim_tarihi | zaman }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Plan yok.</div>{% endif %}
+</div>
+
+<div class="kart">
   <h2>Bekleyen siparişler — neden planlanamıyor?</h2>
   <p class="soluk">
     Bu ürünlerdeki teslimatlar 18 palet alt limitini dolduramadığı için beklemede.

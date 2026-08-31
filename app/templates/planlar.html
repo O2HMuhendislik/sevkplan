@@ -8,9 +8,10 @@
     <h2>Otomatik Ring planlaması</h2>
     <p class="soluk">
       Depo 64 → 18–20 palet · depo 74 ve diğerleri → %90–100 anahtar değer ·
-      planda tek {{ 'ürün grubu' if planlama_seviyesi == 'URUN_GRUBU' else 'ürün kodu' }} ·
-      teslimat bölünmez. Alt limiti dolduramayan kalıntılar, aralarında termine
-      {{ esnetme_gun }} gün veya daha az kalmış teslimat varsa kendiliğinden planlanır.
+      planda tek ürün kodu · teslimat bölünmez. Palet, plan bazında hesaplanır: aynı
+      ürünün farklı teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır.
+      Alt limiti dolduramayan kalıntılar, aralarında termine {{ esnetme_gun }} gün veya
+      daha az kalmış teslimat varsa kendiliğinden planlanır.
     </p>
     <form class="satir" method="post" action="/planlar/uret">
       <div><label for="plan_tarihi">Plan tarihi</label>
@@ -18,6 +19,7 @@
           <div>
       <label for="depo_kodu_p">Depo</label>
       <select id="depo_kodu_p" name="depo_kodu">
+        <option value="{{ tum_depolar }}">Tüm depolar</option>
         {% for kod, profil in depolar.items() %}
         <option value="{{ kod }}" {{ 'selected' if kod == ring_depo }}>{{ kod }} — {{ profil.ad }}</option>
         {% endfor %}
@@ -28,15 +30,21 @@
         <input type="checkbox" name="kalanlari_zorla" value="true">
         Kalanları da planla (alt limiti uygulama)
       </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="mix" value="true">
+        Mix plan yap (aynı gruptaki farklı ürünleri birleştir)
+      </label>
     </div>
     <button type="submit">Planlamayı çalıştır</button>
     </form>
   </div>
   <div class="kart">
-    <h2>Manuel mix plan</h2>
+    <h2>Seçilerek mix plan</h2>
     <p class="soluk">
-      Farklı ürün gruplarını tek plana koymak sadece burada mümkündür. Teslimat
-      numaralarını virgülle ayırarak girin; toplam üst limiti aşamaz.
+      Belirli teslimatları elle tek plana koymak için. Farklı ürün gruplarını da
+      birleştirebilir. Teslimat numaralarını virgülle ayırarak girin; toplam üst limiti
+      aşamaz. (Aynı gruptaki ürünleri toplu birleştirmek için soldaki
+      <b>Mix plan yap</b> kutusunu kullanın.)
     </p>
     <form class="satir" method="post" action="/planlar/mix">
       <div><label for="teslimat_nolar">Teslimat numaraları</label>

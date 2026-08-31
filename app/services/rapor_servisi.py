@@ -186,6 +186,25 @@ def aylik_ozet(db: Session) -> list[dict]:
     ]
 
 
+def sevk_durumu(db: Session, limit: int = 200) -> list[SevkiyatPlani]:
+    """Axata ve gönderim takibi için plan listesi.
+
+    Henüz tamamlanmamış planlar önce gelir; böylece Axata numarası girilmeyi bekleyen
+    planlar listenin başında görünür.
+    """
+    sorgu = (
+        select(SevkiyatPlani)
+        .where(SevkiyatPlani.durum != PlanDurumu.IPTAL)
+        .order_by(
+            SevkiyatPlani.durum == PlanDurumu.TAMAMLANDI,
+            SevkiyatPlani.axata_no.isnot(None),
+            SevkiyatPlani.plan_tarihi.desc(),
+            SevkiyatPlani.sefer_no.desc(),
+        )
+    )
+    return list(db.scalars(sorgu.limit(limit)).all())
+
+
 def bekleyen_ozeti(db: Session) -> list[dict]:
     """Neden planlanamadığını gösteren bekleyen sipariş özeti (ürün bazında)."""
     satirlar = db.execute(

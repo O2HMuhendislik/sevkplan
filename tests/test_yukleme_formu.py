@@ -94,3 +94,42 @@ def test_depo_etiketi_eslesmesi():
     assert yukleme_formu.depo_etiketi("64-V") == "64-V DEPO"
     assert yukleme_formu.depo_etiketi("74") == "74-DEPO"
     assert yukleme_formu.depo_etiketi("34") == "34-DEPO"
+
+
+def test_kutuda_satiri_olmayan_depo_icin_ek_satir_acilir(db, tmp_path):
+    """Depo 03/36 gibi formun standart kutusunda bulunmayan depolarda Axata kaybolmaz."""
+    urun_ekle(db, "KMB-24", palet_ici_adet=10, tir_yukleme_adeti=100)
+    for i in range(4):
+        satir_ekle(db, f"TSL-{i}", "KMB-24", 25, depo_kodu="03", siparis_no=f"S{i}")
+    plan = plan_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 8, 31), depo_kodu="03"
+    ).planlar[0]
+    plan_servisi.axata_no_gir(db, plan, "5202")
+
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+    kutu = {
+        sayfa.cell(row=3 + i, column=5).value: sayfa.cell(row=3 + i, column=6).value
+        for i in range(6)
+    }
+    assert kutu["03-DEPO"] == "5202"
+    assert kutu["64-D DEPO"] is None
+
+
+def test_axata_numarasi_kutunun_disinda_da_yazilir(db, tmp_path):
+    """Kutu gözden kaçsa bile numara formun üst bölümünde görünür."""
+    plan = _plan_hazirla(db)
+    plan_servisi.axata_no_gir(db, plan, "5202")
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+    assert sayfa["G3"].value == "AXATA NO"
+    assert sayfa["H3"].value == "5202"
+
+
+def test_axata_girilmemis_planda_alanlar_bos_kalir(db, tmp_path):
+    plan = _plan_hazirla(db)
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+    assert not sayfa["H3"].value
+    kutu = {
+        sayfa.cell(row=3 + i, column=5).value: sayfa.cell(row=3 + i, column=6).value
+        for i in range(5)
+    }
+    assert not kutu["64-D DEPO"]

@@ -19,11 +19,13 @@ from app.domain.kapasite import RING_PALET, AracTipi, KapasiteProfili, Olcu
 from app.domain.planlama import (
     BekleyenTeslimat,
     EsnetmeKurali,
+    PaletBirimi,
     PlanlamaSonucu,
     TaslakPlan,
     Teslimat,
     palet_hesapla,
     planla,
+    toplam_birim as planlama_toplam_birim,
 )
 from app.services.planlama_anahtari import teslimat_anahtari
 from app.models import (
@@ -113,6 +115,7 @@ class TeslimatOlculeri:
     anahtar: Decimal
     adet: Decimal
     agirlik: Decimal
+    sku_miktarlari: dict[str, Decimal]
 
 
 def teslimat_olculeri(
@@ -146,12 +149,24 @@ def teslimat_olculeri(
         anahtar=anahtar.quantize(Decimal("0.000001")),
         adet=sum(sku_miktarlari.values(), Decimal(0)),
         agirlik=agirlik.quantize(Decimal("0.001")),
+        sku_miktarlari=sku_miktarlari,
     )
 
 
+def palet_haritasi(urunler: dict[str, Urun]) -> dict[str, int]:
+    return {
+        kod: urun.palet_ici_adet
+        for kod, urun in urunler.items()
+        if urun.palet_ici_adet
+    }
+
+
 def teslimatlari_hazirla(
-    db: Session, satirlar: list[SiparisSatiri], profil: KapasiteProfili
-) -> tuple[list[Teslimat], list[tuple[str, str]]]:
+    db: Session,
+    satirlar: list[SiparisSatiri],
+    profil: KapasiteProfili,
+    seviye: str | None = None,
+) -> tuple[list[Teslimat], list[tuple[str, str]], dict[str, Urun]]:
     """Sipariş satırlarını planlanabilir teslimatlara dönüştürür.
 
     Master datası eksik olan ya da kapasite ölçüsü için gerekli alanı bulunmayan
@@ -191,7 +206,9 @@ def teslimatlari_hazirla(
                 )
                 break
 
-        anahtar = teslimat_anahtari(urun_haritasi.get(s.urun_kodu) for s in grup)
+        anahtar = teslimat_anahtari(
+            (urun_haritasi.get(s.urun_kodu) for s in grup), seviye
+        )
         if hata is None and anahtar and " + " in anahtar:
             hata = f"Teslimat birden fazla ürün grubu içeriyor ({anahtar})"
 
@@ -225,13 +242,14 @@ def teslimatlari_hazirla(
                 birim=birim,
                 oncelik_tarihi=min(s.oncelik_tarihi for s in grup),
                 satir_idleri=tuple(s.id for s in grup),
-                sku_kodlari=tuple(sorted({s.urun_kodu for s in grup})),
+                sku_kodlari=tuple(sorted(olculer.sku_miktarlari)),
+                sku_miktarlari=dict(olculer.sku_miktarlari),
                 palet=olculer.palet,
                 anahtar=olculer.anahtar,
                 agirlik=olculer.agirlik,
             )
         )
-    return teslimatlar, hatalilar
+    return teslimatlar, hatalilar, urun_haritasi
 
 
 def plan_uret(
@@ -241,6 +259,7 @@ def plan_uret(
     profil: KapasiteProfili | None = None,
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
+    mix: bool = False,
 ) -> PlanUretimSonucu:
     """Beklemedeki siparişlerden taslak sevkiyat planları üretir.
 
@@ -250,6 +269,9 @@ def plan_uret(
     Alt limiti dolduramayan kalıntılar normalde beklemede bırakılır. İçlerinde termini
     yaklaşmış teslimat varsa (ESNETME_GUN_ESIGI) ya da `kalanlari_zorla` verildiyse
     alt limit esnetilir ve plan "alt limit esnetildi" olarak işaretlenir.
+
+    `mix=True` verildiğinde planlama anahtarı SKU yerine ürün grubu olur: aynı gruptaki
+    farklı ürün kodları tek planda birleşir.
     """
     plan_tarihi = plan_tarihi or date.today()
     profil = profil or depo_profili(depo_kodu)
@@ -267,7 +289,10 @@ def plan_uret(
         )
     ).all()
 
-    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar), profil)
+    seviye = "URUN_GRUBU" if mix else "SKU"
+    teslimatlar, hatalilar, urun_haritasi = teslimatlari_hazirla(
+        db, list(satirlar), profil, seviye
+    )
     sonuc = PlanUretimSonucu(
         hatali_teslimatlar=hatalilar,
         degerlendirilen_teslimat=len(teslimatlar),
@@ -283,16 +308,57 @@ def plan_uret(
         gun_esigi=ESNETME_GUN_ESIGI,
         asgari_oran=ESNETME_ASGARI_ORAN,
     )
-    planlama: PlanlamaSonucu = planla(teslimatlar, profil, esnetme)
+    hesaplayici = (
+        PaletBirimi(palet_haritasi(urun_haritasi))
+        if profil.olcu is Olcu.PALET
+        else None
+    )
+    planlama: PlanlamaSonucu = planla(teslimatlar, profil, esnetme, hesaplayici)
     satir_haritasi = {satir.id: satir for satir in satirlar}
 
+    palet_hesaplayici = PaletBirimi(palet_haritasi(urun_haritasi))
     for taslak in planlama.planlar:
         sonuc.planlar.append(
-            _plani_kaydet(db, taslak, satir_haritasi, plan_tarihi, profil, kullanici)
+            _plani_kaydet(
+                db, taslak, satir_haritasi, plan_tarihi, profil, kullanici,
+                mix_mi=mix, palet_hesaplayici=palet_hesaplayici,
+            )
         )
     sonuc.bekleyenler = planlama.bekleyenler
     db.flush()
     return sonuc
+
+
+def tum_depolari_planla(
+    db: Session,
+    plan_tarihi: date | None = None,
+    kullanici: str = "sistem",
+    kalanlari_zorla: bool = False,
+    mix: bool = False,
+) -> PlanUretimSonucu:
+    """Tanımlı bütün depolar için sırayla planlama çalıştırır.
+
+    Her depo kendi kapasite profiliyle planlanır; sonuçlar tek özet altında toplanır.
+    Sefer numaraları tek sayaçtan verildiği için depolar arası numara çakışmaz.
+    """
+    from app.config import DEPO_PROFILLERI
+
+    plan_tarihi = plan_tarihi or date.today()
+    toplam = PlanUretimSonucu()
+    for depo_kodu in DEPO_PROFILLERI:
+        parca = plan_uret(
+            db,
+            plan_tarihi=plan_tarihi,
+            depo_kodu=depo_kodu,
+            kullanici=kullanici,
+            kalanlari_zorla=kalanlari_zorla,
+            mix=mix,
+        )
+        toplam.planlar.extend(parca.planlar)
+        toplam.bekleyenler.extend(parca.bekleyenler)
+        toplam.hatali_teslimatlar.extend(parca.hatali_teslimatlar)
+        toplam.degerlendirilen_teslimat += parca.degerlendirilen_teslimat
+    return toplam
 
 
 def _plani_kaydet(
@@ -303,6 +369,7 @@ def _plani_kaydet(
     profil: KapasiteProfili,
     kullanici: str,
     mix_mi: bool = False,
+    palet_hesaplayici: PaletBirimi | None = None,
 ) -> SevkiyatPlani:
     sefer = sonraki_sefer_no(db, plan_tarihi, profil.belge_kodu)
     plan = SevkiyatPlani(
@@ -314,7 +381,11 @@ def _plani_kaydet(
         urun_kodlari=", ".join(taslak.urun_kodlari),
         olcu=profil.olcu.value,
         toplam_birim=taslak.toplam_birim,
-        toplam_palet=taslak.toplam_palet,
+        toplam_palet=(
+            palet_hesaplayici(taslak.teslimatlar)
+            if palet_hesaplayici is not None
+            else taslak.toplam_palet
+        ),
         toplam_anahtar=taslak.toplam_anahtar,
         toplam_adet=taslak.toplam_adet,
         toplam_agirlik=taslak.toplam_agirlik,
@@ -390,7 +461,9 @@ def mix_plan_olustur(
             f"{next(iter(depolar_ham))} deposu için kapasite profili tanımlı değil."
         )
 
-    teslimatlar, hatalilar = teslimatlari_hazirla(db, list(satirlar), profil)
+    teslimatlar, hatalilar, urun_haritasi = teslimatlari_hazirla(
+        db, list(satirlar), profil, "URUN_GRUBU"
+    )
     if hatalilar:
         raise PlanHatasi("; ".join(f"{no}: {mesaj}" for no, mesaj in hatalilar))
 
@@ -401,15 +474,20 @@ def mix_plan_olustur(
             f"üst limit {profil.bicimle(profil.ust_limit)}."
         )
 
+    palet_hesaplayici = PaletBirimi(palet_haritasi(urun_haritasi))
     taslak = TaslakPlan(
         depo_kodu=teslimatlar[0].depo_kodu,
         planlama_anahtari="MIX",
         profil=profil,
         teslimatlar=teslimatlar,
+        hesaplayici=(
+            palet_hesaplayici if profil.olcu is Olcu.PALET else planlama_toplam_birim
+        ),
     )
     satir_haritasi = {satir.id: satir for satir in satirlar}
     plan = _plani_kaydet(
-        db, taslak, satir_haritasi, plan_tarihi, profil, kullanici, mix_mi=True
+        db, taslak, satir_haritasi, plan_tarihi, profil, kullanici, mix_mi=True,
+        palet_hesaplayici=palet_hesaplayici,
     )
     db.flush()
     return plan

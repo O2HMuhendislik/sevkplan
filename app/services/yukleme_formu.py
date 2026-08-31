@@ -48,7 +48,12 @@ BASLIK_DOLGU = PatternFill("solid", fgColor="D9D9D9")
 
 
 def depo_etiketi(depo_kodu: str) -> str | None:
-    """Plan deposunu formdaki depo kutusunun satırlarından biriyle eşler."""
+    """Plan deposunu formdaki depo kutusunun satırlarından biriyle eşler.
+
+    Eşleşme bulunamazsa None döner; o durumda kutuya deponun kendi kodu için ek bir
+    satır açılır (bkz. `_depo_satirlari`). Böylece Axata numarası hiçbir depoda
+    kaybolmaz.
+    """
     kod = (depo_kodu or "").strip().upper()
     for etiket in DEPO_SATIRLARI:
         if etiket.replace(" DEPO", "").replace("-DEPO", "") == kod:
@@ -59,6 +64,15 @@ def depo_etiketi(depo_kodu: str) -> str | None:
         if etiket.split("-")[0] == kod.split("-")[0]:
             return etiket
     return None
+
+
+def _depo_satirlari(depo_kodu: str) -> tuple[list[str], str]:
+    """Formun depo/AXATA kutusundaki satırlar ve Axata'nın yazılacağı satır."""
+    etiket = depo_etiketi(depo_kodu)
+    if etiket is not None:
+        return list(DEPO_SATIRLARI), etiket
+    ek = f"{(depo_kodu or '').strip().upper()}-DEPO"
+    return [*DEPO_SATIRLARI, ek], ek
 
 
 def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
@@ -80,7 +94,7 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     uyari = sayfa.cell(row=ust + 1, column=7, value=UYARI_METNI)
     uyari.font = Font(bold=True, size=9, color="C00000")
     uyari.alignment = ORTALI
-    sayfa.merge_cells(start_row=ust + 1, start_column=7, end_row=ust + 3, end_column=12)
+    sayfa.merge_cells(start_row=ust + 1, start_column=7, end_row=ust + 1, end_column=12)
 
     etiket = sayfa.cell(row=ust + 2, column=2, value="SEFER NO")
     etiket.font = KALIN
@@ -91,8 +105,8 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sefer.alignment = ORTALI
     sayfa.merge_cells(start_row=ust + 2, start_column=3, end_row=ust + 3, end_column=4)
 
-    hedef_etiket = depo_etiketi(plan.depo_kodu)
-    for sira, depo_adi in enumerate(DEPO_SATIRLARI):
+    depo_satirlari, hedef_etiket = _depo_satirlari(plan.depo_kodu)
+    for sira, depo_adi in enumerate(depo_satirlari):
         satir = ust + 2 + sira
         hucre = sayfa.cell(row=satir, column=5, value=depo_adi)
         hucre.font = KALIN
@@ -105,6 +119,13 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
             axata.value = plan.axata_no or ""
             axata.font = KALIN
 
+    # Axata numarası kutunun dışında da yazılır: kutuda satırı olmayan bir depo ya da
+    # kutunun gözden kaçması hâlinde numara yine formda görünür.
+    axata_etiketi = sayfa.cell(row=ust + 2, column=7, value="AXATA NO")
+    axata_etiketi.font = KALIN
+    axata_degeri = sayfa.cell(row=ust + 2, column=8, value=plan.axata_no or "")
+    axata_degeri.font = Font(bold=True, size=12)
+
     tarih_etiketi = sayfa.cell(row=ust + 4, column=2, value="Plan Sevk Tarihi ve Günü")
     tarih_etiketi.font = KALIN
     tarih_etiketi.alignment = ORTALI
@@ -115,7 +136,9 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     tarih.font = KALIN
     sayfa.merge_cells(start_row=ust + 5, start_column=2, end_row=ust + 6, end_column=4)
 
-    baslik_satiri = ust + 7
+    # Depo kutusu 5 satırdan uzunsa (kutuda karşılığı olmayan bir depo eklendiyse)
+    # tablo aşağı kayar; başlık satırının kutunun üzerine yazması engellenir.
+    baslik_satiri = ust + max(7, 2 + len(depo_satirlari))
     for sutun, ad in enumerate(BASLIKLAR, start=1):
         hucre = sayfa.cell(row=baslik_satiri, column=sutun, value=ad)
         hucre.font = KALIN
