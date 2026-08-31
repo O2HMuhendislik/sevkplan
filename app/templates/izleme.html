@@ -1,0 +1,60 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'izleme' %}
+{% block icerik %}
+<h1>Sipariş / Teslimat İzleme</h1>
+
+<div class="kart">
+  <form class="satir" method="get" action="/izleme">
+    <div><label for="anahtar">Sipariş no veya teslimat no</label>
+      <input id="anahtar" name="anahtar" value="{{ anahtar }}" style="width:340px"
+             placeholder="SIP-2026-000145 / TSL-8800123" required></div>
+    <button type="submit">Sorgula</button>
+  </form>
+</div>
+
+{% if sonuc %}
+  {% if sonuc.satirlar %}
+  <div class="kart">
+    <h2>Sipariş satırları</h2>
+    <table>
+      <thead><tr><th>Sipariş</th><th>Teslimat</th><th>Ürün</th><th class="sag">Miktar</th>
+        <th>Depo</th><th>Termin</th><th>Durum</th><th>Sefer No</th></tr></thead>
+      <tbody>
+      {% for satir in sonuc.satirlar %}
+        <tr>
+          <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
+          <td><b>{{ satir.teslimat_no }}</b></td>
+          <td>{{ satir.urun_kodu }}</td>
+          <td class="sag">{{ satir.miktar }}</td>
+          <td>{{ satir.depo_kodu }}</td>
+          <td>{{ satir.termin_tarihi | tarih }}</td>
+          <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
+          <td>{% if satir.plan %}<a href="/planlar/{{ satir.plan.id }}">{{ satir.plan.sefer_no }}</a>
+              {% else %}—{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% for plan in sonuc.planlar %}
+  <div class="kart">
+    <h2>{{ plan.sefer_no }} geçmişi
+      <span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></h2>
+    <table>
+      <thead><tr><th>Tarih</th><th>Durum</th><th>Açıklama</th><th>Kullanıcı</th></tr></thead>
+      <tbody>
+      {% for hareket in plan.hareketler|sort(attribute='id') %}
+        <tr><td>{{ hareket.tarih | zaman }}</td>
+            <td><span class="rozet {{ hareket.yeni_durum }}">{{ hareket.yeni_durum }}</span></td>
+            <td>{{ hareket.aciklama or '' }}</td><td>{{ hareket.kullanici }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="kart"><div class="bos">"{{ anahtar }}" için kayıt bulunamadı.</div></div>
+  {% endif %}
+{% endif %}
+{% endblock %}

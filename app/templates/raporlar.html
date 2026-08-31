@@ -1,0 +1,66 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'raporlar' %}
+{% block icerik %}
+<h1>Raporlar</h1>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Toplam plan</div><div class="deger">{{ ozet.toplam_plan }}</div></div>
+  <div class="metrik"><div class="etiket">Ortalama doluluk</div><div class="deger">%{{ ozet.ortalama_doluluk }}</div></div>
+  <div class="metrik"><div class="etiket">Bekleyen satır</div><div class="deger">{{ ozet.siparis.get('BEKLEMEDE', 0) }}</div></div>
+  <div class="metrik"><div class="etiket">Hatalı satır</div><div class="deger">{{ ozet.siparis.get('HATALI', 0) }}</div></div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Aylık plan özeti</h2>
+    {% if aylik %}
+    <table>
+      <thead><tr><th>Dönem</th><th class="sag">Plan</th><th class="sag">Toplam Palet</th><th class="sag">Ort. Doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in aylik %}
+        <tr><td>{{ satir.donem }}</td><td class="sag">{{ satir.plan_sayisi }}</td>
+            <td class="sag">{{ satir.toplam_palet }}</td><td class="sag">%{{ satir.ortalama_doluluk }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Veri yok.</div>{% endif %}
+  </div>
+
+  <div class="kart">
+    <h2>Ürün bazında planlama</h2>
+    {% if urun_bazli %}
+    <table>
+      <thead><tr><th>Planlama Anahtarı</th><th>Ürün(ler)</th><th class="sag">Plan</th>
+        <th class="sag">Palet</th><th class="sag">Ort. Doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in urun_bazli %}
+        <tr><td><b>{{ satir.anahtar }}</b></td><td>{{ satir.urunler }}</td>
+            <td class="sag">{{ satir.plan_sayisi }}</td><td class="sag">{{ satir.toplam_palet }}</td>
+            <td class="sag">%{{ satir.ortalama_doluluk }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Veri yok.</div>{% endif %}
+  </div>
+</div>
+
+<div class="kart">
+  <h2>Bekleyen siparişler — neden planlanamıyor?</h2>
+  <p class="soluk">
+    Bu ürünlerdeki teslimatlar 18 palet alt limitini dolduramadığı için beklemede.
+    Hacim biriktikçe bir sonraki planlama çalıştırmasında otomatik olarak plana girerler.
+  </p>
+  {% if bekleyenler %}
+  <table>
+    <thead><tr><th>Ürün Kodu</th><th class="sag">Teslimat Sayısı</th>
+      <th class="sag">Toplam Miktar</th><th>En Eski Termin</th></tr></thead>
+    <tbody>
+    {% for satir in bekleyenler %}
+      <tr><td>{{ satir.urun_kodu }}</td><td class="sag">{{ satir.teslimat_sayisi }}</td>
+          <td class="sag">{{ satir.toplam_miktar }}</td><td>{{ satir.en_eski_termin | tarih }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Bekleyen sipariş yok.</div>{% endif %}
+</div>
+{% endblock %}

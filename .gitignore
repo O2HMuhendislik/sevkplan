@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.db
+*.db-journal
+.pytest_cache/
+veri/yuklemeler/
+veri/ciktilar/
+.DS_Store

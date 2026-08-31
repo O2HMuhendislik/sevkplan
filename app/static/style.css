@@ -1,0 +1,89 @@
+:root {
+  --ana: #1f4e79;
+  --ana-acik: #2f6ea8;
+  --zemin: #f4f6f9;
+  --kart: #ffffff;
+  --kenar: #dde3ea;
+  --metin: #1c2530;
+  --soluk: #6b7785;
+  --yesil: #1e7a48;
+  --sari: #9a6700;
+  --kirmizi: #b42318;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--zemin); color: var(--metin);
+  font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+header.ust {
+  background: var(--ana); color: #fff; padding: 0 24px;
+  display: flex; align-items: center; gap: 28px; height: 56px;
+}
+header.ust .marka { font-weight: 700; font-size: 16px; letter-spacing: .3px; }
+header.ust nav { display: flex; gap: 4px; }
+header.ust nav a {
+  color: #dce7f2; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: 500;
+}
+header.ust nav a:hover { background: var(--ana-acik); color: #fff; }
+header.ust nav a.aktif { background: var(--ana-acik); color: #fff; }
+main { padding: 24px; max-width: 1500px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 18px; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+.kart {
+  background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px;
+  padding: 18px; margin-bottom: 18px;
+}
+.izgara { display: grid; gap: 16px; }
+.izgara.iki { grid-template-columns: 1fr 1fr; }
+.izgara.dort { grid-template-columns: repeat(4, 1fr); }
+.metrik { background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px; padding: 16px; }
+.metrik .deger { font-size: 26px; font-weight: 700; color: var(--ana); }
+.metrik .etiket { color: var(--soluk); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kenar); }
+th { background: #eef2f7; font-weight: 600; color: #35434f; white-space: nowrap; }
+tbody tr:hover { background: #f7fafc; }
+td.sag, th.sag { text-align: right; }
+a { color: var(--ana); }
+.rozet {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; border: 1px solid;
+}
+.rozet.TASLAK, .rozet.BEKLEMEDE { color: var(--sari); border-color: #e6c86a; background: #fdf6e3; }
+.rozet.AXATA_BEKLIYOR { color: #7a4b00; border-color: #e0a458; background: #fdf0dd; }
+.rozet.MAIL_GONDERILDI, .rozet.PLANLANDI { color: var(--ana); border-color: #a9c6e0; background: #eaf2f9; }
+.rozet.TAMAMLANDI { color: var(--yesil); border-color: #9ccfb4; background: #e9f6ef; }
+.rozet.IPTAL, .rozet.HATALI { color: var(--kirmizi); border-color: #edb0aa; background: #fdedeb; }
+button, .dugme {
+  background: var(--ana); color: #fff; border: 0; border-radius: 6px;
+  padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  text-decoration: none; display: inline-block;
+}
+button:hover, .dugme:hover { background: var(--ana-acik); }
+button.ikincil, .dugme.ikincil { background: #fff; color: var(--ana); border: 1px solid var(--kenar); }
+button.tehlike { background: var(--kirmizi); }
+input, select {
+  padding: 7px 10px; border: 1px solid var(--kenar); border-radius: 6px;
+  font-size: 13px; font-family: inherit; background: #fff;
+}
+label { display: block; font-size: 12px; color: var(--soluk); margin-bottom: 4px; font-weight: 600; }
+form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.uyari { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-weight: 500; }
+.uyari.basari { background: #e9f6ef; color: var(--yesil); border: 1px solid #9ccfb4; }
+.uyari.hata { background: #fdedeb; color: var(--kirmizi); border: 1px solid #edb0aa; }
+.doluluk { position: relative; background: #e8edf3; border-radius: 4px; height: 16px; min-width: 90px; }
+.doluluk span {
+  position: absolute; inset: 0 auto 0 0; background: var(--ana); border-radius: 4px;
+}
+.doluluk b {
+  position: relative; font-size: 11px; color: #fff; mix-blend-mode: difference;
+  display: block; text-align: center; line-height: 16px;
+}
+.soluk { color: var(--soluk); font-size: 12px; }
+.sekmeler { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.sekmeler a {
+  padding: 6px 13px; border-radius: 999px; text-decoration: none;
+  background: #fff; border: 1px solid var(--kenar); color: var(--metin); font-size: 13px;
+}
+.sekmeler a.aktif { background: var(--ana); color: #fff; border-color: var(--ana); }
+.bos { padding: 34px; text-align: center; color: var(--soluk); }

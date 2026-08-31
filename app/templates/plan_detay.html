@@ -1,0 +1,96 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>{{ plan.sefer_no }}
+  <span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span>
+  {% if plan.mix_mi %}<span class="rozet PLANLANDI">MIX PLAN</span>{% endif %}
+</h1>
+
+{% if plan.istisna_asim %}
+<div class="uyari hata">
+  Bu plan üst limit istisnasıdır: tek teslimat 20 paletten büyük olduğu için bölünemedi.
+</div>
+{% endif %}
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Toplam palet</div>
+    <div class="deger">{{ plan.toplam_palet }}</div><div class="soluk">üst limit 20</div></div>
+  <div class="metrik"><div class="etiket">Doluluk</div>
+    <div class="deger">%{{ plan.doluluk_yuzdesi }}</div></div>
+  <div class="metrik"><div class="etiket">Teslimat sayısı</div>
+    <div class="deger">{{ plan.teslimat_sayisi }}</div></div>
+  <div class="metrik"><div class="etiket">Axata iş emri</div>
+    <div class="deger" style="font-size:19px">{{ plan.axata_no or '—' }}</div></div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Axata iş emri numarası</h2>
+    <p class="soluk">WMS'te üretilen iş emri numarası. Yükleme formuna işlenir; girilmeden mail gönderilemez.</p>
+    <form class="satir" method="post" action="/planlar/{{ plan.id }}/axata">
+      <div><label for="axata_no">Axata No</label>
+        <input id="axata_no" name="axata_no" value="{{ plan.axata_no or '' }}" required></div>
+      <button type="submit">Kaydet</button>
+    </form>
+  </div>
+
+  <div class="kart">
+    <h2>İşlemler</h2>
+    <div class="satir">
+      <a class="dugme ikincil" href="/planlar/{{ plan.id }}/form">Yükleme formunu indir</a>
+      <form method="post" action="/planlar/{{ plan.id }}/mail"><button type="submit">Depoya gönder</button></form>
+      <form method="post" action="/planlar/{{ plan.id }}/tamamla">
+        <button type="submit" class="ikincil">Tamamlandı işaretle</button></form>
+    </div>
+    <form class="satir" method="post" action="/planlar/{{ plan.id }}/iptal" style="margin-top:14px">
+      <div><label for="aciklama">İptal açıklaması</label>
+        <input id="aciklama" name="aciklama" style="width:260px"></div>
+      <button type="submit" class="tehlike"
+              onclick="return confirm('Plan iptal edilecek, siparişler beklemeye dönecek. Sefer numarası geri kullanılmaz. Onaylıyor musunuz?')">
+        Planı iptal et</button>
+    </form>
+  </div>
+</div>
+
+<div class="kart">
+  <h2>Plan içeriği</h2>
+  <table>
+    <thead><tr>
+      <th>Teslimat</th><th>Sipariş</th><th>Müşteri</th><th>Ürün Kodu</th>
+      <th>Ürün Adı</th><th class="sag">Miktar</th><th>Termin</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in plan.satirlar|sort(attribute='teslimat_no') %}
+      <tr>
+        <td><b>{{ satir.teslimat_no }}</b></td>
+        <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
+        <td>{{ satir.musteri_adi or satir.musteri_kodu or '—' }}</td>
+        <td>{{ satir.urun_kodu }}</td>
+        <td>{{ satir.urun_adi or '—' }}</td>
+        <td class="sag">{{ satir.miktar }} {{ satir.birim_kodu }}</td>
+        <td>{{ satir.termin_tarihi | tarih }}</td>
+        <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart">
+  <h2>Plan geçmişi</h2>
+  <table>
+    <thead><tr><th>Tarih</th><th>Önceki</th><th>Yeni</th><th>Açıklama</th><th>Kullanıcı</th></tr></thead>
+    <tbody>
+    {% for hareket in plan.hareketler|sort(attribute='id') %}
+      <tr>
+        <td>{{ hareket.tarih | zaman }}</td>
+        <td>{{ hareket.onceki_durum or '—' }}</td>
+        <td><span class="rozet {{ hareket.yeni_durum }}">{{ hareket.yeni_durum }}</span></td>
+        <td>{{ hareket.aciklama or '' }}</td>
+        <td>{{ hareket.kullanici }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

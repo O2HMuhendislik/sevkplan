@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block baslik %}Sevkiyat Planlama{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="ust">
+  <span class="marka">SEVKİYAT PLANLAMA</span>
+  <nav>
+    <a href="/" class="{{ 'aktif' if aktif_menu == 'gosterge' }}">Gösterge Paneli</a>
+    <a href="/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Siparişler</a>
+    <a href="/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
+    <a href="/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Master Data</a>
+    <a href="/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
+    <a href="/izleme" class="{{ 'aktif' if aktif_menu == 'izleme' }}">Sipariş İzleme</a>
+  </nav>
+</header>
+<main>
+  {% if mesaj %}<div class="uyari basari">{{ mesaj }}</div>{% endif %}
+  {% if hata %}<div class="uyari hata">{{ hata }}</div>{% endif %}
+  {% block icerik %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,68 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'siparisler' %}
+{% block icerik %}
+<h1>Siparişler</h1>
+
+<div class="kart">
+  <h2>Excel ile sipariş aktarımı</h2>
+  <p class="soluk">
+    Sisteme yalnızca tek ürün içeren teslimatlar yüklenebilir. Çok ürünlü teslimatlar
+    HATALI statüsüne düşer. Planlanmış satırlar yeniden yüklemeyle bozulmaz.
+  </p>
+  <form class="satir" method="post" action="/siparisler/yukle" enctype="multipart/form-data">
+    <div><label for="dosya">Excel dosyası</label>
+      <input type="file" id="dosya" name="dosya" accept=".xlsx,.xlsm" required></div>
+    <button type="submit">Yükle</button>
+    <a class="dugme ikincil" href="/siparisler/sablon">Şablonu indir</a>
+  </form>
+</div>
+
+<div class="sekmeler">
+  <a href="/siparisler" class="{{ 'aktif' if durum == '' }}">Tümü</a>
+  {% for d in durumlar %}
+    <a href="/siparisler?durum={{ d }}" class="{{ 'aktif' if durum == d }}">{{ d|capitalize }}</a>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/siparisler" style="margin-bottom:14px">
+    <input type="hidden" name="durum" value="{{ durum }}">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Sipariş no, teslimat no, ürün, müşteri" style="width:320px"></div>
+    <button type="submit">Filtrele</button>
+    {% if arama %}<a class="dugme ikincil" href="/siparisler?durum={{ durum }}">Temizle</a>{% endif %}
+  </form>
+
+  {% if satirlar %}
+  <table>
+    <thead><tr>
+      <th>Sipariş</th><th>Teslimat</th><th>Müşteri</th><th>Ürün</th>
+      <th class="sag">Miktar</th><th>Depo</th><th>Termin</th><th>Durum</th><th>Plan</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in satirlar %}
+      <tr>
+        <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
+        <td><b>{{ satir.teslimat_no }}</b></td>
+        <td>{{ satir.musteri_adi or satir.musteri_kodu or '—' }}</td>
+        <td>{{ satir.urun_kodu }}</td>
+        <td class="sag">{{ satir.miktar }} {{ satir.birim_kodu }}</td>
+        <td>{{ satir.depo_kodu }}</td>
+        <td>{{ satir.termin_tarihi | tarih }}</td>
+        <td>
+          <span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span>
+          {% if satir.hata_aciklamasi %}
+            <div class="soluk" style="max-width:340px">{{ satir.hata_aciklamasi }}</div>
+          {% endif %}
+        </td>
+        <td>{% if satir.plan %}<a href="/planlar/{{ satir.plan.id }}">{{ satir.plan.sefer_no }}</a>
+            {% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk" style="margin-top:12px">{{ satirlar|length }} satır listeleniyor.</p>
+  {% else %}<div class="bos">Kayıt bulunamadı.</div>{% endif %}
+</div>
+{% endblock %}

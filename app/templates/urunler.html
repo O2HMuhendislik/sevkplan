@@ -1,0 +1,77 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'urunler' %}
+{% block icerik %}
+<h1>Ürün Master Data</h1>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Excel ile toplu tanımlama</h2>
+    <p class="soluk">
+      Şablonu indirip doldurun. Aynı ürün kodu tekrar yüklenirse kayıt güncellenir.
+      Palet içi adet, planlamanın tek girdisidir.
+    </p>
+    <form class="satir" method="post" action="/urunler/yukle" enctype="multipart/form-data">
+      <div><label for="dosya">Excel dosyası</label>
+        <input type="file" id="dosya" name="dosya" accept=".xlsx,.xlsm" required></div>
+      <button type="submit">Yükle</button>
+      <a class="dugme ikincil" href="/urunler/sablon">Şablonu indir</a>
+    </form>
+  </div>
+
+  <div class="kart">
+    <h2>Tek ürün tanımla / güncelle</h2>
+    <form method="post" action="/urunler/yeni">
+      <div class="izgara iki">
+        <div><label for="urun_kodu">Ürün Kodu (SKU)</label>
+          <input id="urun_kodu" name="urun_kodu" required style="width:100%"></div>
+        <div><label for="urun_adi">Ürün Adı</label>
+          <input id="urun_adi" name="urun_adi" required style="width:100%"></div>
+        <div><label for="urun_grubu">Ürün Grubu</label>
+          <input id="urun_grubu" name="urun_grubu" placeholder="Kombi, Radyatör..." required style="width:100%"></div>
+        <div><label for="palet_ici_adet">Palet İçi Adet</label>
+          <input id="palet_ici_adet" name="palet_ici_adet" type="number" min="1" required style="width:100%"></div>
+        <div><label for="header_kod">Header Kod (opsiyonel)</label>
+          <input id="header_kod" name="header_kod" style="width:100%"></div>
+        <div style="display:flex; gap:18px; align-items:flex-end; padding-bottom:6px">
+          <label style="display:flex; gap:6px; align-items:center; margin:0">
+            <input type="checkbox" name="aksesuar_mi" value="true"> Aksesuar</label>
+          <label style="display:flex; gap:6px; align-items:center; margin:0">
+            <input type="checkbox" name="aktif" value="true" checked> Aktif</label>
+        </div>
+      </div>
+      <div style="margin-top:12px"><button type="submit">Kaydet</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/urunler" style="margin-bottom:14px">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}" placeholder="Ürün kodu veya adı"></div>
+    <button type="submit">Filtrele</button>
+    {% if arama %}<a class="dugme ikincil" href="/urunler">Temizle</a>{% endif %}
+  </form>
+  {% if urunler %}
+  <table>
+    <thead><tr>
+      <th>Ürün Kodu</th><th>Ürün Adı</th><th>Grup</th>
+      <th class="sag">Palet İçi Adet</th><th>Header Kod</th><th>Aksesuar</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for urun in urunler %}
+      <tr>
+        <td><b>{{ urun.urun_kodu }}</b></td>
+        <td>{{ urun.urun_adi }}</td>
+        <td>{{ urun.urun_grubu }}</td>
+        <td class="sag">{{ urun.palet_ici_adet }}</td>
+        <td>{{ urun.header_kod or '—' }}</td>
+        <td>{{ 'Evet' if urun.aksesuar_mi else '—' }}</td>
+        <td><span class="rozet {{ 'TAMAMLANDI' if urun.aktif else 'IPTAL' }}">
+          {{ 'Aktif' if urun.aktif else 'Pasif' }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Tanımlı ürün yok. Excel ile toplu yükleme yapabilirsiniz.</div>{% endif %}
+</div>
+{% endblock %}
