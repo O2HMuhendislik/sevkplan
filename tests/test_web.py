@@ -64,8 +64,8 @@ def test_ekranlar_acilir(istemci, yol):
 
 def test_uctan_uca_akis(istemci):
     urun_dosyasi = kitap(
-        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet"],
-        [["KMB-24", "Kombi 24 kW", "KOMBİ", 10]],
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["KMB-24", "Kombi 24 kW", "KOMBİ", 10, 100]],
     )
     cevap = istemci.post(
         "/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)}
@@ -74,7 +74,7 @@ def test_uctan_uca_akis(istemci):
 
     siparis_dosyasi = kitap(
         ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "Termin Tarihi"],
-        [[f"SIP-{i}", f"TSL-{i}", "KMB-24", 50, "64", "05.09.2026"] for i in range(4)],
+        [[f"SIP-{i}", f"TSL-{i}", "KMB-24", 25, "64", "05.09.2026"] for i in range(4)],
     )
     istemci.post("/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparis_dosyasi)})
 

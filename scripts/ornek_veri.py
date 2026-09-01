@@ -56,10 +56,12 @@ def ornek_dosyalar(hedef_dizin: Path) -> tuple[Path, Path]:
         depo = "64" if sayac % 3 else "74"
         # Depo 64 palet, depo 74 anahtar ölçüsüyle planlandığı için miktarlar farklı
         # büyüklüklerde üretilir.
-        if depo == "64":
-            miktar = rastgele.randint(2, 8) * urun[3]
-        else:
-            miktar = int(urun[5] * rastgele.choice((0.2, 0.25, 0.33, 0.5)))
+        # Tam palet katları üretilir; motorun palet birleştirmesi gözlenebilsin diye
+        # bir kısmı kasten kırık palet bırakır.
+        palet_adedi = rastgele.randint(1, 6)
+        miktar = palet_adedi * urun[3]
+        if rastgele.random() < 0.35 and urun[3] > 1:
+            miktar -= rastgele.randint(1, urun[3] - 1)
         sayfa.append([
             "ESKİŞEHİR", 2010420000 + sayac, 2013620000 + sayac, depo,
             urun[0], urun[1], miktar,
@@ -81,17 +83,20 @@ def main() -> None:
         siparis_sonucu = ice_aktarim.siparisleri_aktar(db, siparis_dosyasi, siparis_dosyasi.name)
         print("Ürünler   :", urun_sonucu.ozet())
         print("Siparişler:", siparis_sonucu.ozet())
-        for depo in ("64", "74"):
-            plan_sonucu = plan_servisi.plan_uret(
-                db, plan_tarihi=date(2026, 8, 31), depo_kodu=depo
+        plan_sonucu = plan_servisi.tum_depolari_planla(db, plan_tarihi=date(2026, 8, 31))
+        print("\nPlanlama :", plan_sonucu.ozet())
+        for plan in plan_sonucu.planlar:
+            israf = (
+                "tam palet"
+                if plan.kirik_palet_israfi == 0
+                else f"{plan.kirik_palet_israfi} palet israf"
             )
-            print(f"\nDepo {depo}:", plan_sonucu.ozet())
-            for plan in plan_sonucu.planlar:
-                print(
-                    f"  {plan.sefer_no}  {plan.planlama_anahtari:<14} "
-                    f"{plan.birim_metni:>16}  %{plan.doluluk_yuzdesi}  "
-                    f"{plan.teslimat_sayisi} teslimat"
-                )
+            print(
+                f"  {plan.sefer_no}  depo {plan.depo_kodu:<3} "
+                f"{plan.planlama_anahtari:<12} {plan.birim_metni:>16}  "
+                f"%{plan.doluluk_yuzdesi:>6}  {plan.toplam_palet:>3} palet  {israf}"
+                + ("  MIX" if plan.mix_mi else "")
+            )
 
 
 if __name__ == "__main__":

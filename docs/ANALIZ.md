@@ -13,87 +13,76 @@ belirtildi.
 **Faz 1 (bu sürüm):** Ring planlaması — depo 64 ve 74.
 **Faz 2:** Tır planlaması (aynı anahtar değer altyapısı, farklı belge kodu).
 
-## 2. Kapasite: iki ayrı ölçü
+## 2. Kapasite: anahtar değer
 
-Sahada iki farklı ölçü kullanılıyor ve ikisi de `app/domain/kapasite.py` içindeki tek
-soyutlamayla ele alınıyor.
+Bütün ring planlamaları **tır bazında, anahtar değerle** yapılır. Depo ayrımı yoktur.
 
-| Depo | Ölçü | Üst limit | Alt limit | Kaynağı |
-|---|---|---|---|---|
-| 64, 64-D, 64-V, 64-P | **Palet** | 20 | 18 | `Palet içi adet` |
-| 74, 74-V, 3, 03, 34, 36, 44 | **Anahtar değer** | 1.00 (%100) | 0.90 | `Tır yükleme adeti` |
+| Ölçü | Üst limit | Alt limit | Kaynağı |
+|---|---|---|---|
+| Anahtar değer | 1,00 (%100) | 0,90 | `Tır yükleme adeti` |
 
 ```
-palet   = yukarı yuvarla( planda o SKU'dan toplam miktar / palet içi adet )
-anahtar = Σ ( miktar / tır yükleme adeti )                # 1.0 = araç %100 dolu
+anahtar = Σ ( miktar / tır yükleme adeti )      # 1,00 = araç %100 dolu
+palet   = Σ_SKU yukarı yuvarla( plandaki toplam miktar / palet içi adet )
 ```
 
-**Palet plan bazında hesaplanır, teslimat bazında değil.** Aynı ürünün farklı
-teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi 16
-olan bir üründen 13 + 3 adetlik iki teslimat, iki kırık palet yerine **tek dolu palet**
-kaplar. Yerleştirme algoritması da bunu gözetir: bir teslimat, plandaki kırık paleti
-tamamladığı için maliyeti sıfıra inen plana öncelikle konur. Amaç depodaki elleçlemeyi
-azaltmaktır.
+**Palet kapasite kısıtı değil, kalite ölçüsüdür.** Aracın dolduğunu anahtar değer
+söyler; palet ise yüklemenin ne kadar düzgün olduğunu gösterir. Motor bu ikisini
+birlikte gözetir (bkz. §3).
 
-**Veriyle doğrulanan:**
-* Depo 64 planlarının palet dağılımında en yüksek tepe **tam 20 palet** (1.370 planın
-  103'ü). "20 palet" kuralı doğrulandı.
-* Depo 74 planlarının anahtar değer **medyanı tam 1.000**, palet medyanı 27.
-  Bu depoda ölçü palet değil, anahtar değer.
-* Kaynak dosyadaki `Kamyon anahtar` sütunu tırın yaklaşık yarısıdır
-  (tır yükleme adeti ≈ 2 × kamyon yükleme adeti); depo 74 planları kamyon ölçüsünde
-  ≈ 2.0, tır ölçüsünde ≈ 1.0 verir. Sistem tır ölçüsünü kullanır.
+Kapasite soyutlaması (`app/domain/kapasite.py`) palet ölçüsünü de destekler; bir depo
+palet bazına dönerse `app/config.py` → `DEPO_PROFILLERI` içinde profili değiştirmek
+yeterlidir.
 
-**Depo ölçüleri nasıl belirlendi:** 2025'te depo 3 planlarının %95'i, depo 03'ün %95'i,
-depo 74'ün %91'i anahtar değeri 1,0 civarında; depo 64/64-V/64-P'nin anahtar medyanı
-0,15–0,38 ama palet dağılımının tepesi tam 20. Depo 34, 36 ve 44 için 2025'te yeterli
-örnek yok; Ağustos 2026 planlarında anahtar değerleri 1,0 civarında olduğu için anahtar
-ölçüsü kabul edildi. Değiştirmek için `app/config.py` → `DEPO_PROFILLERI`.
+**Depolar:** 64, 64-V, 64-P, 74, 74-V, 3, 03, 34, 36, 44. Yükleme formundaki
+`64-D DEPO` satırı ayrı bir depo değil, depo 64'ün form üzerindeki adıdır.
 
-### Alt limit esnetmesi
+### Alt limit ve esnetme
 
-2025 verisinde depo 64 planlarının palet medyanı 10,8 — yani pratikte alt limitin çok
-altında da plan açılmış. Bunu karşılamak için alt limitin iki esneme yolu var:
+Alt limiti (0,90) dolduramayan teslimatlar `BEKLEMEDE` kalır; hacim biriktikçe bir
+sonraki çalıştırmada plana girerler. Termin tarihine bağlı otomatik esnetme **yoktur**.
 
-1. **Aciliyet (otomatik).** Alt limiti dolduramayan kalıntılar arasında termin tarihine
-   `ESNETME_GUN_ESIGI` gün veya daha az kalmış (ya da termini geçmiş) bir teslimat varsa,
-   kalanlar alt limite bakılmadan planlanır. Varsayılan eşik **3 gün**.
-2. **Kullanıcı isteği (manuel).** Planlama ekranındaki *"Kalanları da planla"* seçeneği
-   işaretlenerek alt limit tamamen devre dışı bırakılır.
+Kullanıcı planlama ekranındaki **"Kalanları da planla"** kutusunu işaretlerse alt limit
+aranmaz; bu planlar `alt_limit_esnetildi` olarak işaretlenir ve listede **ESNETİLDİ**
+rozetiyle görünür. `ESNETME_ASGARI_ORAN` ile bu durumda bile açılmayacak asgari doluluk
+tanımlanabilir (varsayılan 0 = sınır yok).
 
-**Açık konu:** SKU bazlı planlamada her ürün kodu kendi grubunu oluşturduğu için
-kalıntılar parçalanır. Termini geçmiş çok sayıda küçük sipariş olduğunda esneme, her
-biri için ayrı ve neredeyse boş bir plan açabilir (Ağustos 2026 verisinde 49 planın
-27'si bu şekilde, bazıları %1'in altında doluluk). İki çözüm var: `ESNETME_ASGARI_ORAN`
-ile bir taban doluluk koymak, ya da yalnızca esnetilen kalıntıların ürün grubu içinde
-birleşmesine izin vermek. Karar bekleniyor.
+## 3. Planlama anahtarı ve tam palet hedefi
 
-Her iki durumda da plan `alt_limit_esnetildi` olarak işaretlenir; listede **ESNETİLDİ**
-rozetiyle görünür ve plan detayında gerekçesi yazar. Esnetme yapılsa bile
-`ESNETME_ASGARI_ORAN` altındaki kalıntılar beklemede bırakılır (varsayılan 0 = sınır yok).
+Hedef sırası:
 
-## 3. Planlama anahtarı: bir planın içinde ne aynı kalır?
+1. **Aracı doldurmak** — anahtar değer üst limite yaklaşmalı.
+2. **Tam palet yüklemek** — kırık palet israfı en aza inmeli.
+3. **Planı saf tutmak** — mümkün olduğunca tek ürün kodu.
 
-**Varsayılan: SKU.** Bir planda tek ürün kodu bulunur.
+### İki fazlı planlama
 
-Planlama ekranındaki **"Mix plan yap"** kutusu işaretlendiğinde seviye ürün grubuna
-çıkar: aynı gruptaki farklı ürün kodları (ör. farklı ölçülerdeki paneller) tek planda
-birleşebilir. Farklı ürün grupları mix'te bile birleşmez; onun için "Seçilerek mix
-plan" kutusundan teslimat numaraları elle girilir.
+* **Faz 1 — SKU saf.** Her ürün kodu kendi içinde paketlenir. Aracı dolduran planlar
+  tek ürünlüdür.
+* **Faz 2 — grup içi karışık.** Faz 1'den artan teslimatlar, aynı depo ve aynı **ürün
+  grubu** içinde birleştirilerek yeniden paketlenir (ör. farklı ölçülerdeki paneller).
+  Bu planlar `mix` olarak işaretlenir. Planlama ekranındaki kutu ile kapatılabilir.
+* **Farklı ürün grupları otomatik birleşmez.** Onun için "Seçilerek mix plan"
+  kutusundan teslimat numaraları elle girilir.
 
-*Not:* 2025 verisinde üretilen 2.578 planın sadece 395'i tek SKU'lu; 955 PANEL planı
-çok SKU'lu. Yani geçmişte fiilen ürün grubu seviyesinde çalışılmış. Sistemde varsayılan
-SKU olarak belirlendi, mix kutusu geçmişteki davranışı tek tıkla veriyor.
+Header kodu tanımlı ürünler ve aksesuar nitelikli gruplar (`AKSESUAR`, `BACA`,
+`DİRSEK`) her zaman ana ürünün planındadır; aksesuar tek başına plan açmaz.
 
-Anahtar belirleme sırası (`app/services/planlama_anahtari.py`):
-1. Teslimatta header kodu tanımlı ürün varsa → **header kodu**
-2. Yoksa aksesuar nitelikli gruplar (`AKSESUAR`, `BACA`, `DİRSEK`) yok sayılır,
-   kalan ana ürünün anahtarı kullanılır
-3. Ayara göre ürün grubu ya da ürün kodu
+### Kırık palet israfı
 
-Ürün grupları (master datadan): PANEL, KLİMA, AKSESUAR, BACA, KOMBİ, TANK,
-TERMOSİFON, BANYOPAN, KAZAN, ŞOFBEN, BOYLER, VRF, SOLAR, KOLLEKTÖR, ISI POMPASI,
-DİRSEK, Header.
+```
+israf = Σ_SKU ( yukarı yuvarla(miktar / palet içi) - miktar / palet içi )
+```
+
+Sıfır israf, plandaki her üründen tam palet yüklendiği anlamına gelir. Yerleştirme
+kararı **önce israfı düşürür**, sonra aracı en çok dolduran plana yönelir: palet içi
+adedi 16 olan bir üründen 13 adetlik bir teslimat varsa, 3 adetlik teslimat o plana
+gider ve paleti tamamlar. Değer plana `kirik_palet_israfi` olarak yazılır, listede
+israfsız planlar **TAM PALET** rozetiyle görünür.
+
+**Ağustos 2026 verisiyle sonuç:** 89 teslimattan 25 plan; hepsi %90 üzeri dolu,
+17'sinde hiç kırık palet yok, toplam israf 7,15 palet. (Önceki palet bazlı kurguda
+49 plan çıkıyor ve 27'si neredeyse boş kalıyordu.)
 
 ## 4. Diğer planlama kuralları
 
@@ -101,10 +90,8 @@ DİRSEK, Header.
 2. **Aksesuar ana ürünle birlikte gider.** Header kod veya aksesuar grubu üzerinden.
 3. **Üst limiti tek başına aşan teslimat** kendi istisna planına konur
    (`istisna_asim = True`), plana ve yükleme formuna uyarı yazılır.
-4. **Sıralama** termin tarihine göredir (yoksa sipariş tarihi); eski olan önce planlanır.
-   Alt limit yüzünden dışarıda kalan eski bir teslimat, plandaki aynı büyüklükteki
-   daha yeni bir teslimatla yer değiştirir.
-5. **Yerleştirme** Best-Fit Decreasing'dir.
+4. **Sıralama** büyüklüğe göredir; termin tarihi planlamayı etkilemez.
+5. **Yerleştirme** Best-Fit Decreasing'dir; kırık palet israfını en aza indirir.
 6. **Ağırlık/tonaj ve rota kısıtı yoktur** — hareket depo içi forklift taşımasıdır.
    Ağırlık yine de hesaplanıp plana yazılır (bilgi amaçlı).
 
@@ -153,10 +140,10 @@ Sipariş statüleri: `BEKLEMEDE` → `PLANLANDI` → `TAMAMLANDI` (+ `HATALI`).
 | # | Konu | Durum |
 |---|---|---|
 | 1 | Sefer numarası sayacı | **Karar verildi:** tek sayaç, her ay 1001'den |
-| 2 | Alt limit esnetmesi | **Karar verildi:** aciliyet (3 gün) + manuel "kalanları planla" |
-| 3 | Depo 3, 03, 34, 36, 44 | **Eklendi**, anahtar ölçüsüyle (34/36/44 varsayım) |
-| 4 | Planlama anahtarı | **Karar verildi:** varsayılan SKU, mix kutusuyla ürün grubu |
-| 8 | Esneme, SKU bazlı planlamada çok sayıda küçük plan üretebiliyor | **Cevap bekliyor** (bkz. aşağı) |
+| 2 | Alt limit esnetmesi | **Karar verildi:** yalnızca manuel "Kalanları da planla" |
+| 3 | Kapasite ölçüsü | **Karar verildi:** bütün depolar tır/anahtar değer |
+| 4 | Planlama anahtarı | **Karar verildi:** faz 1 SKU saf, faz 2 grup içi karışık |
+| 5 | Termin tarihine göre önceliklendirme | **Kaldırıldı** — kullanılmıyor |
 | 5 | Mail alıcı listesi ve SMTP bilgileri | **Cevap bekliyor** |
 | 6 | Form üzerindeki "PLANLAYAN" alanı — kullanıcı yönetimi gerekli mi? | Şu an plan oluşturan yazılıyor |
 | 7 | Esneme eşiği 3 gün doğru mu, ürün grubuna göre değişmeli mi? | Varsayılan 3 gün |

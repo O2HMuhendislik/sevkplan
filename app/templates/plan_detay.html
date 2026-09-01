@@ -25,6 +25,11 @@
     <div class="soluk">üst limit {{ plan.profil.ust_limit }} {{ plan.profil.olcu_adi }}</div></div>
   <div class="metrik"><div class="etiket">Doluluk</div>
     <div class="deger">%{{ plan.doluluk_yuzdesi }}</div></div>
+  <div class="metrik"><div class="etiket">Palet</div>
+    <div class="deger">{{ plan.toplam_palet }}</div>
+    <div class="soluk">
+      {% if plan.kirik_palet_israfi == 0 %}tam palet — kırık palet yok
+      {% else %}{{ plan.kirik_palet_israfi }} palet israf{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Teslimat / adet</div>
     <div class="deger">{{ plan.teslimat_sayisi }}</div>
     <div class="soluk">{{ plan.toplam_adet }} adet · {{ plan.toplam_agirlik }} kg</div></div>

@@ -135,9 +135,9 @@ def test_planlanmis_satir_yeniden_yuklemeyle_bozulmaz(db):
     from datetime import date
     from app.services import plan_servisi
 
-    ice_aktarim.urunleri_aktar(db, kitap(URUN_BASLIK, [["KMB-24", "Kombi", "KOMBİ", 10, None, 468]]), "u.xlsx")
+    ice_aktarim.urunleri_aktar(db, kitap(URUN_BASLIK, [["KMB-24", "Kombi", "KOMBİ", 10, None, 100]]), "u.xlsx")
     satirlar = [
-        [f"SIP-{i}", f"TSL-{i}", "KMB-24", 50, "64", "05.09.2026"] for i in range(4)
+        [f"SIP-{i}", f"TSL-{i}", "KMB-24", 25, "64", "05.09.2026"] for i in range(4)
     ]
     ice_aktarim.siparisleri_aktar(db, kitap(SIPARIS_BASLIK, satirlar), "s.xlsx")
     plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))

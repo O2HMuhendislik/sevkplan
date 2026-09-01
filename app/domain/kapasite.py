@@ -58,10 +58,11 @@ class KapasiteProfili:
         return f"{Decimal(birim).quantize(Decimal('0.001'))} anahtar"
 
 
-# Depo 64 ring planı: 20 palet gözü, 18 palet alt limit.
+# Palet ölçüsüyle planlama profili. Şu an hiçbir depo bunu kullanmıyor; bir depo palet
+# bazına dönerse app/config.py içindeki DEPO_PROFILLERI'ne eklenmesi yeterli.
 RING_PALET = KapasiteProfili(
     kod="RING_PALET",
-    ad="Ring — 20 palet (depo 64)",
+    ad="Ring — 20 palet",
     belge_kodu="D",
     olcu=Olcu.PALET,
     arac_tipi=AracTipi.KAMYON,
@@ -69,10 +70,10 @@ RING_PALET = KapasiteProfili(
     alt_limit=Decimal(18),
 )
 
-# Depo 74 ring planı: tır anahtar değeri 1.0 = %100 dolu.
+# Ring planlaması: tır anahtar değeri 1,00 = %100 dolu. Bütün depolar bunu kullanır.
 RING_ANAHTAR = KapasiteProfili(
     kod="RING_ANAHTAR",
-    ad="Ring — anahtar değer %100 (depo 74)",
+    ad="Ring — tır / anahtar değer",
     belge_kodu="D",
     olcu=Olcu.ANAHTAR,
     arac_tipi=AracTipi.TIR,

@@ -62,28 +62,29 @@ gerekçesiyle listeler.
 ## Planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
-2. Bir planda **tek ürün kodu (SKU)** bulunur. Planlama ekranındaki **"Mix plan yap"**
-   kutusu işaretlenirse seviye ürün grubuna çıkar ve aynı gruptaki farklı ürün kodları
-   birleşebilir. Farklı grupları birleştirmek için "Seçilerek mix plan" kullanılır.
-3. **Header code**'lu ürünler ve **aksesuarlar** (AKSESUAR, BACA, DİRSEK) her zaman
-   ana ürünle aynı plandadır.
-4. Kapasite depoya göre iki ölçüden biriyle hesaplanır:
+2. **Kapasite anahtar değerdir.** Bütün depolar tır bazında planlanır:
+   `anahtar = miktar / tır yükleme adeti`, toplam **1,00 = araç %100 dolu**.
+   Alt limit **0,90**.
+3. **Hedef tam palet.** Palet, plan bazında hesaplanır: aynı ürünün farklı
+   teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi
+   16 olan bir üründen 13 + 3 adet, iki kırık palet değil **tek dolu palet**tir.
+   Yerleştirme, kırık palet israfını en aza indirecek plana yönelir.
+4. **İki fazlı gruplama:**
+   - *Faz 1* — her ürün kodu kendi içinde paketlenir (SKU saf planlar).
+   - *Faz 2* — aracı dolduramayan artıklar aynı **ürün grubu** içinde birleştirilir
+     (farklı ölçülerdeki paneller gibi). Planlama ekranındaki kutuyla kapatılabilir.
+   - Farklı ürün grupları otomatik birleşmez; onun için "Seçilerek mix plan" kullanılır.
+5. **Header code'lu ürünler ve aksesuarlar** (AKSESUAR, BACA, DİRSEK) her zaman ana
+   ürünle aynı plandadır; aksesuar tek başına plan açmaz.
+6. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
+7. Alt limiti dolduramayan teslimatlar `BEKLEMEDE` kalır. Planlama ekranındaki
+   **"Kalanları da planla"** kutusu işaretlenirse alt limit aranmaz; bu planlar
+   **ESNETİLDİ** rozetiyle işaretlenir.
+8. **Termin tarihi planlamayı etkilemez.**
 
-   | Depo | Ölçü | Üst / alt limit | Kullanılan master data alanı |
-   |---|---|---|---|
-   | 64, 64-V, 64-P | Palet | 20 / 18 | Palet içi adet |
-   | 74, 74-V, 3, 03, 34, 36, 44 | Anahtar değer | 1.00 / 0.90 | Tır yükleme adeti |
-
-   `palet = yukarı yuvarla(plandaki toplam miktar / palet içi adet)` — palet **plan
-   bazında** hesaplanır: aynı ürünün farklı teslimatlardaki miktarları önce toplanır,
-   sonra yuvarlanır. 13 + 3 adet, iki kırık palet değil tek dolu palettir.
-   `anahtar = miktar / tır yükleme adeti` — toplam 1.0 olunca araç %100 dolu.
-5. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
-6. Sıralama termin tarihine göredir; eski siparişler önce planlanır.
-7. Alt limitin altında kalan teslimatlar `BEKLEMEDE` kalır — iki istisna dışında:
-   termine 3 gün veya daha az kalmış bir teslimat varsa alt limit **kendiliğinden**
-   esner; ya da planlama ekranındaki *"Kalanları da planla"* seçeneğiyle **manuel**
-   olarak devre dışı bırakılır. Bu planlar **ESNETİLDİ** rozetiyle işaretlenir.
+**Depolar:** 64, 64-V, 64-P, 74, 74-V, 3, 03, 34, 36, 44 — hepsi anahtar ölçüsüyle.
+Yükleme formundaki `64-D DEPO` satırı ayrı bir depo değil, depo 64'ün form üzerindeki
+adıdır.
 
 ## Sefer numarası
 

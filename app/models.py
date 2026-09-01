@@ -138,6 +138,8 @@ class SevkiyatPlani(Temel):
     teslimat_sayisi: Mapped[int] = mapped_column(Integer, default=0)
     istisna_asim: Mapped[bool] = mapped_column(Boolean, default=False)
     alt_limit_esnetildi: Mapped[bool] = mapped_column(Boolean, default=False)
+    kirik_palet_israfi: Mapped[Decimal] = mapped_column(Numeric(10, 3), default=0)
+    """Boşa giden palet payı; 0 ise plandaki her üründen tam palet yükleniyor."""
     mix_mi: Mapped[bool] = mapped_column(Boolean, default=False)
     durum: Mapped[PlanDurumu] = mapped_column(
         Enum(PlanDurumu), default=PlanDurumu.TASLAK, index=True

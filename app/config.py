@@ -5,7 +5,7 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
-from app.domain.kapasite import RING_ANAHTAR, RING_PALET, KapasiteProfili
+from app.domain.kapasite import RING_ANAHTAR, KapasiteProfili
 
 KOK_DIZIN = Path(__file__).resolve().parent.parent
 VERI_DIZIN = Path(os.environ.get("SEVKPLAN_VERI_DIZIN", KOK_DIZIN / "veri"))
@@ -24,41 +24,32 @@ VERITABANI_URL = os.environ.get(
 
 from app.models import AKSESUAR_GRUPLARI  # noqa: E402,F401  (tek tanım models.py'de)
 
-# Depo kodu -> kapasite profili. Listede olmayan depolar planlamaya girmez.
+# Depo kodu -> kapasite profili.
 #
-# Ölçüler 2025 verisinden doğrulandı:
-#   64 / 64-V / 64-P  -> anahtar medyanı 0,15-0,38 · palet dağılımının tepesi 20 → PALET
-#     (Yükleme formundaki "64-D DEPO" satırı ayrı bir depo değil, depo 64'ün form
-#      üzerindeki adıdır; "64-V DEPO" ise gerçekten ayrı bir depo kodudur.)
-#   74 / 3 / 03       -> planların %91-95'i anahtar 1,0 civarında            → ANAHTAR
-#   34 / 36 / 44      -> 2025'te örnek az; Ağustos 2026'da anahtar ~1,0 civarı olduğu
-#                        için ANAHTAR kabul edildi. Palet ölçüsüne geçmesi gerekiyorsa
-#                        aşağıdaki satırı RING_PALET yapmak yeterli.
+# Sahadaki güncel kural: bütün ring planlamaları tır bazında, anahtar değerle yapılır.
+# Anahtar değer = miktar / tır yükleme adeti; toplam 1,00 olunca araç %100 doludur.
+# Palet, kapasite kısıtı değil ama planlamanın birincil kalite ölçüsüdür: motor kırık
+# palet israfını en aza indirecek şekilde yerleştirir.
+#
+# (Yükleme formundaki "64-D DEPO" satırı ayrı bir depo değil, depo 64'ün form
+#  üzerindeki adıdır; "64-V" ise gerçekten ayrı bir depo kodudur.)
 DEPO_PROFILLERI: dict[str, KapasiteProfili] = {
-    "64": RING_PALET,
-    "64-V": RING_PALET,
-    "64-P": RING_PALET,
-    "74": RING_ANAHTAR,
-    "74-V": RING_ANAHTAR,
-    "3": RING_ANAHTAR,
-    "03": RING_ANAHTAR,
-    "34": RING_ANAHTAR,
-    "36": RING_ANAHTAR,
-    "44": RING_ANAHTAR,
+    depo: RING_ANAHTAR
+    for depo in ("64", "64-V", "64-P", "74", "74-V", "3", "03", "34", "36", "44")
 }
 
 RING_DEPO_KODU = "64"
 """Arayüzde varsayılan olarak seçili gelen depo."""
 
-# ------------------------------------------------------------- alt limit esnetmesi
+# ------------------------------------------------------- karışık plan ve alt limit
 
-ESNETME_GUN_ESIGI = int(os.environ.get("SEVKPLAN_ESNETME_GUN_ESIGI", "3"))
-"""Alt limitin kendiliğinden esneyeceği aciliyet eşiği (gün).
+GRUP_ICI_MIX = os.environ.get("SEVKPLAN_GRUP_ICI_MIX", "1") not in {"0", "false", "False"}
+"""Faz 2'nin varsayılan durumu.
 
-Alt limiti dolduramayan teslimatlar normalde beklemede kalır. Ancak aralarında termin
-tarihine bu kadar veya daha az gün kalan (ya da termini geçmiş) bir teslimat varsa,
-kalanlar alt limite bakılmadan planlanır ve plan "alt limit esnetildi" olarak
-işaretlenir. 0 verilirse yalnızca termini gelmiş/geçmiş teslimatlar esnetir.
+Planlama önce ürün kodu bazında yapılır. Aracı dolduramayan artıklar, bu ayar açıkken
+aynı ürün grubu içinde birleştirilerek yeniden paketlenir (ör. farklı ölçülerdeki
+paneller). Kapalıyken artıklar beklemede kalır. Planlama ekranındaki kutu ile her
+çalıştırmada ayrıca seçilebilir.
 """
 
 ESNETME_ASGARI_ORAN = Decimal(os.environ.get("SEVKPLAN_ESNETME_ASGARI_ORAN", "0"))

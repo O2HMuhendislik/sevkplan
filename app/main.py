@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import (
     CIKTI_DIZIN,
     DEPO_PROFILLERI,
-    ESNETME_GUN_ESIGI,
+    GRUP_ICI_MIX,
     RING_DEPO_KODU,
     TUM_DEPOLAR,
 )
@@ -51,7 +51,7 @@ def sayfa(istek: Request, ad: str, **baglam):
     baglam.setdefault("bugun", date.today())
     baglam.setdefault("ring_depo", RING_DEPO_KODU)
     baglam.setdefault("depolar", DEPO_PROFILLERI)
-    baglam.setdefault("esnetme_gun", ESNETME_GUN_ESIGI)
+    baglam.setdefault("grup_ici_mix_varsayilan", GRUP_ICI_MIX)
     baglam.setdefault("tum_depolar", TUM_DEPOLAR)
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
@@ -194,14 +194,17 @@ def planlari_uret(
     plan_tarihi: str = Form(""),
     depo_kodu: str = Form(RING_DEPO_KODU),
     kalanlari_zorla: bool = Form(False),
-    mix: bool = Form(False),
+    grup_ici_mix: bool = Form(False),
     db: Session = Depends(oturum_bagimliligi),
 ):
     tarih = datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
     try:
         if depo_kodu == TUM_DEPOLAR:
             sonuc = plan_servisi.tum_depolari_planla(
-                db, plan_tarihi=tarih, kalanlari_zorla=kalanlari_zorla, mix=mix
+                db,
+                plan_tarihi=tarih,
+                kalanlari_zorla=kalanlari_zorla,
+                grup_ici_mix=grup_ici_mix,
             )
         else:
             sonuc = plan_servisi.plan_uret(
@@ -209,7 +212,7 @@ def planlari_uret(
                 plan_tarihi=tarih,
                 depo_kodu=depo_kodu,
                 kalanlari_zorla=kalanlari_zorla,
-                mix=mix,
+                grup_ici_mix=grup_ici_mix,
             )
         db.commit()
     except PlanHatasi as hata:

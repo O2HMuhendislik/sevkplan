@@ -25,9 +25,9 @@
 <div class="kart">
   <h2>Ring planı üret</h2>
   <p class="soluk">
-    Depo 64 palet ölçüsüyle (18–20 palet), depo 74 ve diğerleri anahtar değerle
-    (%90–100) planlanır. Teslimatlar bölünmez; bir planda tek ürün kodu bulunur.
-    Termine {{ esnetme_gun }} gün kalan siparişler alt limiti esnetir.
+    Bütün depolar tır bazında, anahtar değerle planlanır (%90–100 dolu). Önce ürün
+    kodu bazında saf planlar kurulur, dolmayanlar aynı ürün grubunda birleştirilir.
+    Hedef tam palet: kırık palet israfı en aza indirilir.
   </p>
   <form class="satir" method="post" action="/planlar/uret">
     <div>
@@ -49,8 +49,9 @@
         Kalanları da planla (alt limiti uygulama)
       </label>
       <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
-        <input type="checkbox" name="mix" value="true">
-        Mix plan yap (aynı gruptaki farklı ürünleri birleştir)
+        <input type="checkbox" name="grup_ici_mix" value="true"
+               {{ 'checked' if grup_ici_mix_varsayilan }}>
+        Dolmayan planlarda aynı ürün grubunda karışık yap
       </label>
     </div>
     <button type="submit">Planlamayı çalıştır</button>

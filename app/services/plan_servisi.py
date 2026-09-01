@@ -3,23 +3,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import (
     ESNETME_ASGARI_ORAN,
-    ESNETME_GUN_ESIGI,
+    GRUP_ICI_MIX,
     RING_DEPO_KODU,
     depo_profili,
 )
 from app.domain import sefer_no as sefer_no_modulu
-from app.domain.kapasite import RING_PALET, AracTipi, KapasiteProfili, Olcu
+from app.domain.kapasite import AracTipi, KapasiteProfili, Olcu
 from app.domain.planlama import (
     BekleyenTeslimat,
     EsnetmeKurali,
     PaletBirimi,
+    PaletIsrafi,
     PlanlamaSonucu,
     TaslakPlan,
     Teslimat,
@@ -244,6 +245,7 @@ def teslimatlari_hazirla(
                 satir_idleri=tuple(s.id for s in grup),
                 sku_kodlari=tuple(sorted(olculer.sku_miktarlari)),
                 sku_miktarlari=dict(olculer.sku_miktarlari),
+                urun_grubu=(ana_urun.urun_grubu or ana_urun.urun_kodu),
                 palet=olculer.palet,
                 anahtar=olculer.anahtar,
                 agirlik=olculer.agirlik,
@@ -259,19 +261,19 @@ def plan_uret(
     profil: KapasiteProfili | None = None,
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
-    mix: bool = False,
+    grup_ici_mix: bool | None = None,
 ) -> PlanUretimSonucu:
     """Beklemedeki siparişlerden taslak sevkiyat planları üretir.
 
     Kapasite profili depo koduna göre seçilir: 64 palet ölçüsüyle, 74 anahtar
     değerle planlanır (bkz. app/config.py DEPO_PROFILLERI).
 
-    Alt limiti dolduramayan kalıntılar normalde beklemede bırakılır. İçlerinde termini
-    yaklaşmış teslimat varsa (ESNETME_GUN_ESIGI) ya da `kalanlari_zorla` verildiyse
-    alt limit esnetilir ve plan "alt limit esnetildi" olarak işaretlenir.
+    Planlama iki fazlıdır: önce ürün kodu bazında saf planlar kurulur, aracı
+    dolduramayan artıklar `grup_ici_mix` açıkken aynı ürün grubu içinde birleştirilir.
+    Yerleştirme kararı önce kırık palet israfını düşürür — amaç tam palet yüklemektir.
 
-    `mix=True` verildiğinde planlama anahtarı SKU yerine ürün grubu olur: aynı gruptaki
-    farklı ürün kodları tek planda birleşir.
+    Alt limiti yine de dolduramayan kalıntılar beklemede kalır; `kalanlari_zorla`
+    verildiğinde alt limit aranmaz ve plan "alt limit esnetildi" olarak işaretlenir.
     """
     plan_tarihi = plan_tarihi or date.today()
     profil = profil or depo_profili(depo_kodu)
@@ -289,9 +291,9 @@ def plan_uret(
         )
     ).all()
 
-    seviye = "URUN_GRUBU" if mix else "SKU"
+    grup_ici_mix = GRUP_ICI_MIX if grup_ici_mix is None else grup_ici_mix
     teslimatlar, hatalilar, urun_haritasi = teslimatlari_hazirla(
-        db, list(satirlar), profil, seviye
+        db, list(satirlar), profil, "SKU"
     )
     sonuc = PlanUretimSonucu(
         hatali_teslimatlar=hatalilar,
@@ -302,26 +304,25 @@ def plan_uret(
         db.flush()
         return sonuc
 
-    esnetme = EsnetmeKurali(
-        bugun=plan_tarihi,
-        zorla=kalanlari_zorla,
-        gun_esigi=ESNETME_GUN_ESIGI,
-        asgari_oran=ESNETME_ASGARI_ORAN,
+    esnetme = EsnetmeKurali(zorla=kalanlari_zorla, asgari_oran=ESNETME_ASGARI_ORAN)
+    palet_haritasi_ = palet_haritasi(urun_haritasi)
+    palet_hesaplayici = PaletBirimi(palet_haritasi_)
+    hesaplayici = palet_hesaplayici if profil.olcu is Olcu.PALET else None
+    planlama: PlanlamaSonucu = planla(
+        teslimatlar,
+        profil,
+        esnetme,
+        hesaplayici,
+        israf_hesaplayici=PaletIsrafi(palet_haritasi_),
+        grup_ici_mix=grup_ici_mix,
     )
-    hesaplayici = (
-        PaletBirimi(palet_haritasi(urun_haritasi))
-        if profil.olcu is Olcu.PALET
-        else None
-    )
-    planlama: PlanlamaSonucu = planla(teslimatlar, profil, esnetme, hesaplayici)
     satir_haritasi = {satir.id: satir for satir in satirlar}
 
-    palet_hesaplayici = PaletBirimi(palet_haritasi(urun_haritasi))
     for taslak in planlama.planlar:
         sonuc.planlar.append(
             _plani_kaydet(
                 db, taslak, satir_haritasi, plan_tarihi, profil, kullanici,
-                mix_mi=mix, palet_hesaplayici=palet_hesaplayici,
+                mix_mi=taslak.grup_ici_mix, palet_hesaplayici=palet_hesaplayici,
             )
         )
     sonuc.bekleyenler = planlama.bekleyenler
@@ -334,7 +335,7 @@ def tum_depolari_planla(
     plan_tarihi: date | None = None,
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
-    mix: bool = False,
+    grup_ici_mix: bool | None = None,
 ) -> PlanUretimSonucu:
     """Tanımlı bütün depolar için sırayla planlama çalıştırır.
 
@@ -352,7 +353,7 @@ def tum_depolari_planla(
             depo_kodu=depo_kodu,
             kullanici=kullanici,
             kalanlari_zorla=kalanlari_zorla,
-            mix=mix,
+            grup_ici_mix=grup_ici_mix,
         )
         toplam.planlar.extend(parca.planlar)
         toplam.bekleyenler.extend(parca.bekleyenler)
@@ -384,8 +385,9 @@ def _plani_kaydet(
         toplam_palet=(
             palet_hesaplayici(taslak.teslimatlar)
             if palet_hesaplayici is not None
-            else taslak.toplam_palet
+            else Decimal(0)
         ),
+        kirik_palet_israfi=taslak.israf.quantize(Decimal("0.001"), ROUND_HALF_UP),
         toplam_anahtar=taslak.toplam_anahtar,
         toplam_adet=taslak.toplam_adet,
         toplam_agirlik=taslak.toplam_agirlik,
@@ -483,6 +485,7 @@ def mix_plan_olustur(
         hesaplayici=(
             palet_hesaplayici if profil.olcu is Olcu.PALET else planlama_toplam_birim
         ),
+        israf_hesaplayici=PaletIsrafi(palet_haritasi(urun_haritasi)),
     )
     satir_haritasi = {satir.id: satir for satir in satirlar}
     plan = _plani_kaydet(

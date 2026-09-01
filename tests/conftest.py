@@ -28,10 +28,15 @@ def urun_ekle(
     grup="KOMBİ",
     header_kod=None,
     kamyon_yukleme_adeti=None,
-    tir_yukleme_adeti=None,
+    tir_yukleme_adeti=100,
     agirlik=None,
     aktif=True,
 ):
+    """Varsayılan ürün: bir tıra 100 adet, bir palete 10 adet sığar.
+
+    Yani tam tır = 100 adet = 10 palet; %10 doluluk = 1 palet. Testlerdeki sayılar
+    bu ölçeğe göre okunmalıdır.
+    """
     urun = models.Urun(
         urun_kodu=urun_kodu,
         urun_adi=f"{urun_kodu} ürünü",

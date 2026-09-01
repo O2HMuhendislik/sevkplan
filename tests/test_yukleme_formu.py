@@ -9,8 +9,8 @@ from app.services import plan_servisi, yukleme_formu
 from tests.conftest import satir_ekle, urun_ekle
 
 
-def _plan_hazirla(db, depo_kodu="64", miktar=50):
-    urun_ekle(db, "KMB-24", palet_ici_adet=10, tir_yukleme_adeti=468)
+def _plan_hazirla(db, depo_kodu="64", miktar=25):
+    urun_ekle(db, "KMB-24", palet_ici_adet=10, tir_yukleme_adeti=100)
     for i in range(4):
         satir_ekle(db, f"TSL-{i}", "KMB-24", miktar, depo_kodu=depo_kodu, siparis_no=f"S{i}")
     return plan_servisi.plan_uret(
@@ -51,18 +51,18 @@ def test_form_duzeni_ve_alanlari(db, tmp_path):
     assert sayfa["A9"].value == "RİNG"
     assert sayfa["D9"].value == "2608D1001"
     assert sayfa["F9"].value == "KMB-24"
-    assert sayfa["H9"].value == 50
+    assert sayfa["H9"].value == 25
 
     # Toplam adet ve imza alanları
     metinler = {h.value for satir in sayfa.iter_rows() for h in satir}
     assert "TOPLAM ADET" in metinler
-    assert 200 in metinler
+    assert 100 in metinler
     assert "PLANLAYAN" in metinler
     assert "Sevk Kontrol" in metinler
 
 
 def test_74_deposu_axata_numarasini_kendi_satirina_yazar(db, tmp_path):
-    plan = _plan_hazirla(db, depo_kodu="74", miktar=117)  # 4x117 = 468 = %100
+    plan = _plan_hazirla(db, depo_kodu="74")
     plan_servisi.axata_no_gir(db, plan, "7788")
     sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
     depo_kutusu = {sayfa.cell(row=3 + i, column=5).value: sayfa.cell(row=3 + i, column=6).value
@@ -74,7 +74,7 @@ def test_74_deposu_axata_numarasini_kendi_satirina_yazar(db, tmp_path):
 def test_birden_cok_plan_tek_kitapta_alt_alta_yazilir(db, tmp_path):
     urun_ekle(db, "KMB-24", palet_ici_adet=10)
     for i in range(8):
-        satir_ekle(db, f"TSL-{i}", "KMB-24", 50, siparis_no=f"S{i}")
+        satir_ekle(db, f"TSL-{i}", "KMB-24", 25, siparis_no=f"S{i}")
     planlar = plan_servisi.plan_uret(
         db, plan_tarihi=date(2026, 8, 31), depo_kodu="64"
     ).planlar
@@ -98,7 +98,7 @@ def test_depo_etiketi_eslesmesi():
 
 def test_kutuda_satiri_olmayan_depo_icin_ek_satir_acilir(db, tmp_path):
     """Depo 03/36 gibi formun standart kutusunda bulunmayan depolarda Axata kaybolmaz."""
-    urun_ekle(db, "KMB-24", palet_ici_adet=10, tir_yukleme_adeti=100)
+    urun_ekle(db, "KMB-24", palet_ici_adet=10)
     for i in range(4):
         satir_ekle(db, f"TSL-{i}", "KMB-24", 25, depo_kodu="03", siparis_no=f"S{i}")
     plan = plan_servisi.plan_uret(
