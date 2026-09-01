@@ -44,12 +44,37 @@
 
 <div class="izgara iki">
   <div class="kart">
-    <h2>Axata iş emri numarası</h2>
-    <p class="soluk">WMS'te üretilen iş emri numarası. Yükleme formuna işlenir; girilmeden mail gönderilemez.</p>
+    <h2>Axata iş emri numaraları</h2>
+    <p class="soluk">
+      WMS'te üretilen iş emri numaraları. Depo toplama işini kolaylaştırmak için ürünler
+      gruplanıp aynı plana birden fazla numara verilebilir. Virgülle ayırarak birden
+      çok numara girebilirsiniz. En az bir numara girilmeden plan depoya gönderilemez.
+    </p>
+    {% if plan.axata_numaralari %}
+    <table style="margin-bottom:12px">
+      <thead><tr><th>Numara</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr></thead>
+      <tbody>
+      {% for axata in plan.axata_numaralari %}
+        <tr>
+          <td><b>{{ axata.numara }}</b></td>
+          <td>{{ axata.aciklama or '—' }}</td>
+          <td class="soluk">{{ axata.kullanici }} · {{ axata.olusturma_tarihi | zaman }}</td>
+          <td><form method="post"
+                    action="/ring/planlar/{{ plan.id }}/axata/{{ axata.id }}/sil">
+            <button type="submit" class="ikincil"
+                    onclick="return confirm('{{ axata.numara }} silinecek. Onaylıyor musunuz?')">
+              Sil</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
     <form class="satir" method="post" action="/ring/planlar/{{ plan.id }}/axata">
       <div><label for="axata_no">Axata No</label>
-        <input id="axata_no" name="axata_no" value="{{ plan.axata_no or '' }}" required></div>
-      <button type="submit">Kaydet</button>
+        <input id="axata_no" name="axata_no" placeholder="5322 veya 5322, 5323" required></div>
+      <div><label for="aciklama">Açıklama (opsiyonel)</label>
+        <input id="aciklama" name="aciklama" placeholder="Panel grubu" style="width:200px"></div>
+      <button type="submit">Ekle</button>
     </form>
   </div>
 
@@ -94,6 +119,31 @@
     {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="kart">
+  <h2>Navlun fatura dağıtımı</h2>
+  <p class="soluk">
+    Marka payı, ürünlerin yüklendiği depo koduna göre belirlenir (sonu <b>-V</b> ya da
+    <b>-P</b> olan depolar Vaillant, diğerleri DemirDöküm) ve araçta kapladıkları
+    <b>anahtar değere</b> göre paylaştırılır.
+  </p>
+  {% if plan.marka_paylari %}
+  <table>
+    <thead><tr><th>Marka</th><th class="sag">Pay</th><th>Dağılım</th></tr></thead>
+    <tbody>
+    {% for ad, oran in plan.marka_paylari.items() %}
+      <tr>
+        <td><b>{{ ad }}</b></td>
+        <td class="sag">%{{ (oran * 100) | sayi }}</td>
+        <td><div class="doluluk" style="max-width:220px">
+          <span style="width: {{ (oran * 100) | float }}%"></span>
+          <b>%{{ (oran * 100) | sayi }}</b></div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Marka payı hesaplanamadı.</div>{% endif %}
 </div>
 
 <div class="kart">

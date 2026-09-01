@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
+import pytest
 from openpyxl import load_workbook
 
 from app.services import plan_servisi, yukleme_formu
@@ -133,3 +135,67 @@ def test_axata_girilmemis_planda_alanlar_bos_kalir(db, tmp_path):
         for i in range(5)
     }
     assert not kutu["64-D DEPO"]
+
+
+def test_birden_fazla_axata_numarasi_girilebilir(db, tmp_path):
+    """Depo toplama işini kolaylaştırmak için plana birden çok numara verilebilir."""
+    plan = _plan_hazirla(db)
+    plan_servisi.axata_no_gir(db, plan, "5322, 5323", aciklama="Panel grubu")
+    plan_servisi.axata_no_gir(db, plan, "5324", aciklama="Kombi grubu")
+
+    assert [a.numara for a in plan.axata_numaralari] == ["5322", "5323", "5324"]
+    assert plan.axata_ozeti == "5322, 5323, 5324"
+    assert plan.axata_no == "5322, 5323, 5324"  # arama için birleşik hâli
+
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+    metinler = {str(h.value) for satir in sayfa.iter_rows() for h in satir if h.value}
+    assert "AXATA NUMARALARI" in metinler
+    assert any("5322 — Panel grubu" == m for m in metinler)
+    assert "5322, 5323, 5324" in metinler
+
+
+def test_mukerrer_axata_numarasi_eklenmez(db):
+    plan = _plan_hazirla(db)
+    plan_servisi.axata_no_gir(db, plan, "5322")
+    with pytest.raises(plan_servisi.PlanHatasi, match="zaten kayıtlı"):
+        plan_servisi.axata_no_gir(db, plan, "5322")
+
+
+def test_axata_numarasi_silinebilir(db):
+    plan = _plan_hazirla(db)
+    plan_servisi.axata_no_gir(db, plan, "5322, 5323")
+    silinecek = plan.axata_numaralari[0]
+    plan_servisi.axata_no_sil(db, plan, silinecek.id)
+    assert [a.numara for a in plan.axata_numaralari] == ["5323"]
+    assert plan.axata_no == "5323"
+
+
+def test_marka_payi_yukleme_formuna_yazilir(db, tmp_path):
+    """Navlun faturası dağıtımı için marka yüzdeleri forma işlenir.
+
+    Ring planları tek depodan yüklendiği için pay %100 tek markadır. Karışık pay,
+    çok depolu ortak yükleme yapılan iç piyasa planlarında oluşacak.
+    """
+    plan = _plan_hazirla(db, depo_kodu="64-V")
+    plan_servisi.axata_no_gir(db, plan, "5322")
+
+    assert plan.marka_paylari == {"VAİLLANT": Decimal("1.0000")}
+    assert plan.marka_ozeti == "VAİLLANT %100"
+
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+    metinler = {str(h.value) for satir in sayfa.iter_rows() for h in satir if h.value}
+    assert "FATURA YÜZDESİ" in metinler
+    assert "VAİLLANT" in metinler
+
+
+def test_marka_payi_depo_koduna_gore_bolunur():
+    """Çok depolu araçta pay, anahtar değere göre markalar arasında paylaşılır."""
+    from app.domain.marka import marka, paylari_hesapla
+
+    assert marka("64") == "DEMİRDÖKÜM"
+    assert marka("-1") == "DEMİRDÖKÜM"
+    assert marka("64-V") == "VAİLLANT"
+    assert marka("64-P") == "VAİLLANT"
+
+    paylar = paylari_hesapla({"64": Decimal("0.25"), "64-V": Decimal("0.75")})
+    assert paylar == {"DEMİRDÖKÜM": Decimal("0.2500"), "VAİLLANT": Decimal("0.7500")}

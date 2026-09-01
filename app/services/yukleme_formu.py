@@ -116,14 +116,14 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
         axata.border = KENAR
         axata.alignment = ORTALI
         if depo_adi == hedef_etiket:
-            axata.value = plan.axata_no or ""
+            axata.value = plan.axata_ozeti or ""
             axata.font = KALIN
 
     # Axata numarası kutunun dışında da yazılır: kutuda satırı olmayan bir depo ya da
     # kutunun gözden kaçması hâlinde numara yine formda görünür.
     axata_etiketi = sayfa.cell(row=ust + 2, column=7, value="AXATA NO")
     axata_etiketi.font = KALIN
-    axata_degeri = sayfa.cell(row=ust + 2, column=8, value=plan.axata_no or "")
+    axata_degeri = sayfa.cell(row=ust + 2, column=8, value=plan.axata_ozeti or "")
     axata_degeri.font = Font(bold=True, size=12)
 
     tarih_etiketi = sayfa.cell(row=ust + 4, column=2, value="Plan Sevk Tarihi ve Günü")
@@ -200,7 +200,31 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
         )
         uyari.font = Font(bold=True, size=9, color="C00000")
 
-    imza_basi = toplam_satiri + 2
+    # Navlun faturasının markalar arasında dağıtımı.
+    marka_satiri = toplam_satiri + 1
+    if plan.marka_paylari:
+        etiket = sayfa.cell(row=marka_satiri, column=4, value="FATURA YÜZDESİ")
+        etiket.font = KALIN
+        for sira, (ad, oran) in enumerate(plan.marka_paylari.items()):
+            sayfa.cell(row=marka_satiri + sira, column=5, value=ad).font = KUCUK
+            yuzde = sayfa.cell(row=marka_satiri + sira, column=6, value=float(oran))
+            yuzde.number_format = "0%"
+            yuzde.font = KALIN
+        marka_satiri += len(plan.marka_paylari) - 1
+
+    # Depo operasyonu birden fazla Axata numarası verebiliyor; hepsi listelenir.
+    if len(plan.axata_numaralari) > 1:
+        etiket = sayfa.cell(row=marka_satiri + 1, column=4, value="AXATA NUMARALARI")
+        etiket.font = KALIN
+        for sira, axata in enumerate(plan.axata_numaralari):
+            sayfa.cell(
+                row=marka_satiri + 1 + sira,
+                column=5,
+                value=f"{axata.numara}" + (f" — {axata.aciklama}" if axata.aciklama else ""),
+            ).font = KUCUK
+        marka_satiri += len(plan.axata_numaralari)
+
+    imza_basi = marka_satiri + 3
     for sira, etiket in enumerate(("Sevk Kontrol", "Adı Soyadı:", "İmzası:")):
         sayfa.cell(row=imza_basi + sira, column=2, value=etiket).font = KALIN
     return imza_basi + 2
@@ -245,7 +269,8 @@ def plan_listesi_disa_aktar(planlar: list[SevkiyatPlani], hedef: Path) -> Path:
     kitap = yeni_kitap()
     sayfa = kitap.create_sheet("Planlar")
     basliklar = [
-        "Sefer No", "Plan Tarihi", "Durum", "Axata No", "Depo", "Ürün Grubu / Anahtar",
+        "Sefer No", "Plan Tarihi", "Durum", "Axata No", "Marka Payı", "Depo",
+        "Ürün Grubu / Anahtar",
         "Ürünler", "Teslimat Sayısı", "Ölçü", "Toplam Palet", "Toplam Anahtar",
         "Doluluk %", "Toplam Adet", "Toplam Ağırlık", "Mix", "İstisna",
         "Mail Tarihi", "Oluşturan",
@@ -255,7 +280,8 @@ def plan_listesi_disa_aktar(planlar: list[SevkiyatPlani], hedef: Path) -> Path:
             plan.sefer_no,
             plan.plan_tarihi.strftime("%d.%m.%Y") if plan.plan_tarihi else "",
             plan.durum.value,
-            plan.axata_no or "",
+            plan.axata_ozeti or "",
+            plan.marka_ozeti,
             plan.depo_kodu,
             plan.planlama_anahtari,
             plan.urun_kodlari,

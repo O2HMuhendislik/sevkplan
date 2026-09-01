@@ -65,7 +65,7 @@
         <td>{{ plan.depo_kodu }}</td>
         <td>{{ plan.urun_kodlari }}</td>
         <td class="sag">{{ plan.birim_metni }}</td>
-        <td>{% if plan.axata_no %}<b>{{ plan.axata_no }}</b>
+        <td>{% if plan.axata_ozeti %}<b>{{ plan.axata_ozeti }}</b>
             {% else %}<span class="rozet TASLAK">GİRİLMEDİ</span>{% endif %}</td>
         <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
         <td>{{ plan.mail_gonderim_tarihi | zaman }}</td>

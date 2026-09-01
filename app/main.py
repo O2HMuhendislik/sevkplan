@@ -403,17 +403,39 @@ def plan_detay(
 def axata_kaydet(
     plan_id: int,
     axata_no: str = Form(...),
+    aciklama: str = Form(""),
     kullanici: Kullanici = Depends(modul_yetkisi("RING", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     plan = plan_getir(db, plan_id)
     try:
-        plan_servisi.axata_no_gir(db, plan, axata_no, kullanici.kullanici_adi)
+        plan_servisi.axata_no_gir(
+            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+        )
         db.commit()
     except PlanHatasi as hata:
         db.rollback()
         return yonlendir(f"/ring/planlar/{plan_id}", hata=str(hata))
-    return yonlendir(f"/ring/planlar/{plan_id}", mesaj=f"Axata no kaydedildi: {plan.axata_no}")
+    return yonlendir(
+        f"/ring/planlar/{plan_id}", mesaj=f"Axata numaraları: {plan.axata_ozeti}"
+    )
+
+
+@uygulama.post("/ring/planlar/{plan_id}/axata/{axata_id}/sil")
+def axata_sil(
+    plan_id: int,
+    axata_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("RING", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = plan_getir(db, plan_id)
+    try:
+        plan_servisi.axata_no_sil(db, plan, axata_id, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ring/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/ring/planlar/{plan_id}", mesaj="Axata numarası silindi.")
 
 
 @uygulama.post("/ring/planlar/{plan_id}/mail")

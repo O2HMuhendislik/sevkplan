@@ -45,6 +45,8 @@ class Teslimat:
     """Faz 2'de karışık plana izin verilen kapsam."""
     karma_mi: bool = False
     """Teslimat birden fazla ürün içeriyor; tek ürünlü plana giremez."""
+    depo_katkilari: dict[str, Decimal] = field(default_factory=dict)
+    """Depo kodu -> anahtar değer. Marka payı (navlun dağıtımı) buradan hesaplanır."""
     palet: Decimal = Decimal(0)
     anahtar: Decimal = Decimal(0)
     agirlik: Decimal = Decimal(0)
@@ -218,6 +220,14 @@ class TaslakPlan:
     @property
     def toplam_anahtar(self) -> Decimal:
         return sum((t.anahtar for t in self.teslimatlar), Decimal(0))
+
+    @property
+    def depo_katkilari(self) -> dict[str, Decimal]:
+        toplamlar: dict[str, Decimal] = defaultdict(Decimal)
+        for teslimat in self.teslimatlar:
+            for depo_kodu, deger in teslimat.depo_katkilari.items():
+                toplamlar[depo_kodu] += deger
+        return dict(toplamlar)
 
     @property
     def bos_alan(self) -> Decimal:

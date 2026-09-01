@@ -101,7 +101,8 @@
           {% if plan.kirik_palet_israfi > 0 %}
             <div class="soluk">{{ plan.kirik_palet_israfi | sayi }} palet israf</div>
           {% endif %}</td>
-        <td>{{ plan.axata_no or '—' }}</td>
+        <td>{{ plan.axata_ozeti or '—' }}
+          {% if plan.marka_ozeti %}<div class="soluk">{{ plan.marka_ozeti }}</div>{% endif %}</td>
         <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
       </tr>
     {% endfor %}

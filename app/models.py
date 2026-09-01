@@ -224,11 +224,14 @@ class SevkiyatPlani(Temel):
     alt_limit_esnetildi: Mapped[bool] = mapped_column(Boolean, default=False)
     kirik_palet_israfi: Mapped[Decimal] = mapped_column(Numeric(10, 3), default=0)
     """Boşa giden palet payı; 0 ise plandaki her üründen tam palet yükleniyor."""
+    marka_paylari_metni: Mapped[str | None] = mapped_column(String(200), default=None)
+    """Navlun faturasının markalar arasında dağıtımı: 'DEMİRDÖKÜM:0.25|VAİLLANT:0.75'."""
     mix_mi: Mapped[bool] = mapped_column(Boolean, default=False)
     durum: Mapped[PlanDurumu] = mapped_column(
         Enum(PlanDurumu, native_enum=False, length=20), default=PlanDurumu.TASLAK, index=True
     )
-    axata_no: Mapped[str | None] = mapped_column(String(50), index=True, default=None)
+    axata_no: Mapped[str | None] = mapped_column(String(200), index=True, default=None)
+    """Girilen Axata numaralarının birleşik hâli; arama ve dışa aktarım için tutulur."""
     plan_tarihi: Mapped[date] = mapped_column(Date, index=True)
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     mail_gonderim_tarihi: Mapped[datetime | None] = mapped_column(DateTime, default=None)
@@ -240,6 +243,31 @@ class SevkiyatPlani(Temel):
     hareketler: Mapped[list[PlanHareketi]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
+    axata_numaralari: Mapped[list[AxataNumarasi]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="AxataNumarasi.id",
+    )
+
+    @property
+    def marka_paylari(self) -> dict[str, Decimal]:
+        """Marka -> oran. Navlun faturasının dağıtımında kullanılır."""
+        from app.domain.marka import paylari_coz
+
+        return paylari_coz(self.marka_paylari_metni)
+
+    @property
+    def marka_ozeti(self) -> str:
+        """Ekranda ve formda gösterilecek biçim: 'DEMİRDÖKÜM %25 · VAİLLANT %75'."""
+        return " · ".join(
+            f"{ad} %{(oran * 100).quantize(Decimal('0.01')).normalize():f}"
+            for ad, oran in self.marka_paylari.items()
+        )
+
+    @property
+    def axata_ozeti(self) -> str:
+        return ", ".join(a.numara for a in self.axata_numaralari)
 
     @property
     def profil(self):
@@ -257,6 +285,29 @@ class SevkiyatPlani(Temel):
     @property
     def teslimat_nolar(self) -> list[str]:
         return sorted({satir.teslimat_no for satir in self.satirlar})
+
+
+class AxataNumarasi(Temel):
+    """Bir plana ait WMS iş emri numarası.
+
+    Depo operasyonu toplama işini kolaylaştırmak için ürünleri gruplayıp aynı plana
+    birden fazla Axata numarası verebiliyor; bu yüzden numara plan başına tek değildir.
+    """
+
+    __tablename__ = "axata_numaralari"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "numara", name="uq_plan_axata"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("sevkiyat_planlari.id"), index=True)
+    numara: Mapped[str] = mapped_column(String(50), index=True)
+    aciklama: Mapped[str | None] = mapped_column(String(200), default=None)
+    """Numaranın hangi ürün grubunu kapsadığı (depo operasyonunun notu)."""
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    kullanici: Mapped[str] = mapped_column(String(100), default="sistem")
+
+    plan: Mapped[SevkiyatPlani] = relationship(back_populates="axata_numaralari")
 
 
 class SiparisSatiri(Temel):

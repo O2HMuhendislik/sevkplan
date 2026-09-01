@@ -29,8 +29,10 @@ from app.domain.planlama import (
     planla,
     toplam_birim as planlama_toplam_birim,
 )
+from app.domain.marka import paylari_hesapla, paylari_metne_cevir
 from app.services.planlama_anahtari import teslimat_anahtari, urun_grubu
 from app.models import (
+    AxataNumarasi,
     PlanDurumu,
     PlanHareketi,
     SeferSayaci,
@@ -118,6 +120,8 @@ class TeslimatOlculeri:
     adet: Decimal
     agirlik: Decimal
     sku_miktarlari: dict[str, Decimal]
+    depo_katkilari: dict[str, Decimal]
+    """Depo kodu -> anahtar değer. Marka payının hesaplandığı yer."""
 
 
 def teslimat_olculeri(
@@ -131,12 +135,18 @@ def teslimat_olculeri(
     aksesuarın palet içi adedi ana üründen farklıdır.
     """
     sku_miktarlari: dict[str, Decimal] = {}
+    sku_depolari: dict[str, dict[str, Decimal]] = {}
     for satir in satirlar:
         sku_miktarlari[satir.urun_kodu] = (
             sku_miktarlari.get(satir.urun_kodu, Decimal(0)) + Decimal(satir.miktar)
         )
+        depolar = sku_depolari.setdefault(satir.urun_kodu, {})
+        depolar[satir.depo_kodu] = depolar.get(satir.depo_kodu, Decimal(0)) + Decimal(
+            satir.miktar
+        )
 
     palet = anahtar = agirlik = Decimal(0)
+    depo_katkilari: dict[str, Decimal] = {}
     for urun_kodu, miktar in sku_miktarlari.items():
         urun = urun_haritasi[urun_kodu]
         if urun.palet_ici_adet:
@@ -149,7 +159,15 @@ def teslimat_olculeri(
                 if urun.palet_ici_adet
                 else miktar
             )
-            anahtar += Decimal(islenen) / Decimal(yukleme)
+            sku_anahtar = Decimal(islenen) / Decimal(yukleme)
+            anahtar += sku_anahtar
+            # Anahtar değeri, o SKU'nun geldiği depolara miktar oranında paylaştır.
+            depolar = sku_depolari.get(urun_kodu) or {}
+            sku_toplam = sum(depolar.values(), Decimal(0)) or Decimal(1)
+            for depo_kodu, depo_miktari in depolar.items():
+                depo_katkilari[depo_kodu] = depo_katkilari.get(
+                    depo_kodu, Decimal(0)
+                ) + sku_anahtar * depo_miktari / sku_toplam
         if urun.agirlik:
             agirlik += miktar * Decimal(urun.agirlik)
     return TeslimatOlculeri(
@@ -158,6 +176,7 @@ def teslimat_olculeri(
         adet=sum(sku_miktarlari.values(), Decimal(0)),
         agirlik=agirlik.quantize(Decimal("0.001")),
         sku_miktarlari=sku_miktarlari,
+        depo_katkilari=depo_katkilari,
     )
 
 
@@ -258,6 +277,7 @@ def teslimatlari_hazirla(
                 satir_idleri=tuple(s.id for s in grup),
                 sku_kodlari=tuple(sorted(olculer.sku_miktarlari)),
                 sku_miktarlari=dict(olculer.sku_miktarlari),
+                depo_katkilari=dict(olculer.depo_katkilari),
                 urun_grubu=grup_adi,
                 karma_mi=karma_mi,
                 palet=olculer.palet,
@@ -408,6 +428,10 @@ def _plani_kaydet(
             else Decimal(0)
         ),
         kirik_palet_israfi=taslak.israf.quantize(Decimal("0.001"), ROUND_HALF_UP),
+        marka_paylari_metni=paylari_metne_cevir(
+            paylari_hesapla(taslak.depo_katkilari)
+        )
+        or None,
         toplam_anahtar=(
             taslak.toplam_birim
             if profil.olcu is Olcu.ANAHTAR
@@ -528,28 +552,77 @@ def plan_onayla(db: Session, plan: SevkiyatPlani, kullanici: str = "sistem") -> 
 
 
 def axata_no_gir(
-    db: Session, plan: SevkiyatPlani, axata_no: str, kullanici: str = "sistem"
+    db: Session,
+    plan: SevkiyatPlani,
+    axata_no: str,
+    kullanici: str = "sistem",
+    aciklama: str | None = None,
 ) -> None:
-    axata_no = (axata_no or "").strip()
-    if not axata_no:
-        raise PlanHatasi("Axata numarası boş olamaz.")
+    """Plana bir ya da birden fazla Axata numarası ekler.
+
+    Depo operasyonu toplama işini kolaylaştırmak için ürünleri gruplayıp aynı plana
+    birden çok numara verebiliyor. Virgül, boşluk ya da noktalı virgülle ayrılmış
+    numaralar tek seferde girilebilir.
+    """
     if plan.durum in {PlanDurumu.IPTAL, PlanDurumu.TAMAMLANDI}:
         raise PlanHatasi(f"{plan.sefer_no} {plan.durum.value} durumunda, değiştirilemez.")
-    plan.axata_no = axata_no
-    if plan.durum == PlanDurumu.TASLAK:
-        _durum_degistir(
-            db, plan, PlanDurumu.AXATA_BEKLIYOR, f"Axata no girildi: {axata_no}", kullanici
+
+    ham = (axata_no or "").replace(";", ",").replace(" ", ",")
+    numaralar = [parca.strip() for parca in ham.split(",") if parca.strip()]
+    if not numaralar:
+        raise PlanHatasi("Axata numarası boş olamaz.")
+
+    mevcutlar = {a.numara for a in plan.axata_numaralari}
+    eklenenler = []
+    for numara in numaralar:
+        if numara in mevcutlar:
+            continue
+        plan.axata_numaralari.append(
+            AxataNumarasi(numara=numara, aciklama=aciklama, kullanici=kullanici)
         )
+        mevcutlar.add(numara)
+        eklenenler.append(numara)
+    if not eklenenler:
+        raise PlanHatasi("Girilen Axata numaraları zaten kayıtlı.")
+
+    db.flush()
+    plan.axata_no = plan.axata_ozeti
+    aciklama_metni = f"Axata no eklendi: {', '.join(eklenenler)}"
+    if plan.durum == PlanDurumu.TASLAK:
+        _durum_degistir(db, plan, PlanDurumu.AXATA_BEKLIYOR, aciklama_metni, kullanici)
     else:
         db.add(
             PlanHareketi(
                 plan=plan,
                 onceki_durum=plan.durum.value,
                 yeni_durum=plan.durum.value,
-                aciklama=f"Axata no güncellendi: {axata_no}",
+                aciklama=aciklama_metni,
                 kullanici=kullanici,
             )
         )
+    db.flush()
+
+
+def axata_no_sil(
+    db: Session, plan: SevkiyatPlani, axata_id: int, kullanici: str = "sistem"
+) -> None:
+    if plan.durum in {PlanDurumu.IPTAL, PlanDurumu.TAMAMLANDI}:
+        raise PlanHatasi(f"{plan.sefer_no} {plan.durum.value} durumunda, değiştirilemez.")
+    kayit = next((a for a in plan.axata_numaralari if a.id == axata_id), None)
+    if kayit is None:
+        raise PlanHatasi("Axata numarası bulunamadı.")
+    plan.axata_numaralari.remove(kayit)
+    db.flush()
+    plan.axata_no = plan.axata_ozeti or None
+    db.add(
+        PlanHareketi(
+            plan=plan,
+            onceki_durum=plan.durum.value,
+            yeni_durum=plan.durum.value,
+            aciklama=f"Axata no silindi: {kayit.numara}",
+            kullanici=kullanici,
+        )
+    )
     db.flush()
 
 
@@ -561,7 +634,7 @@ def mail_gonderildi_isaretle(
     Axata numarası yükleme formunun zorunlu alanı olduğundan, numarası olmayan plan
     için mail gönderilemez.
     """
-    if not plan.axata_no:
+    if not plan.axata_numaralari:
         raise PlanHatasi(
             f"{plan.sefer_no} için Axata iş emri numarası girilmeden mail gönderilemez."
         )
