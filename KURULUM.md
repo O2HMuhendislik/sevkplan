@@ -128,6 +128,49 @@ uvicorn app.main:uygulama --reload
 
 ---
 
+## Geçmiş verileri nasıl silerim?
+
+Programdaki **Veri Yönetimi** ekranından. Üstte hangi veriden kaç kayıt olduğunu
+görürsün, altında dört ayrı silme seçeneği vardır. Her biri için onay kutusuna büyük
+harfle **SIL** yazman gerekir.
+
+| Seçenek | Ne siler | Ne kalır |
+|---|---|---|
+| **1 · Planlanmamış siparişleri sil** | Beklemede ve hatalı sipariş satırları | Planlar ve planlanmış siparişler |
+| **2 · Planları sil** | Seçilen tarih aralığındaki planlar | Siparişler (beklemeye döner), tamamlanmış planlar |
+| **3 · Bütün sipariş ve planları sil** | Tüm sipariş ve planlar | **Ürün master datası** |
+| **4 · Her şeyi sil** | Her şey, master data dahil | Boş sistem |
+
+**Hangisini ne zaman:**
+
+* Yanlış sipariş dosyası yüklediysen → **1**
+* Planlamayı baştan denemek istiyorsan → **2** (siparişler beklemeye döner, tekrar
+  planlarsın)
+* Sıfırdan deneme yapacaksan → **3** (master datayı yeniden yüklemene gerek kalmaz)
+* Sistemi kurulum anındaki hâline döndürmek istiyorsan → **4**
+
+**Sefer numarası sayacı:** plan sildiğinde numaralar geri kullanılmaz, sayaç kaldığı
+yerden devam eder — bu bilerek böyle, izlenebilirlik için. Deneme sırasında numaraların
+yeniden `1001`'den başlamasını istiyorsan 3. seçenekteki *"Sefer numarası sayacı da
+sıfırlansın"* kutusunu işaretle.
+
+**Silmeden önce yedek:** silme işlemleri geri alınamaz. Emin değilsen program kapalıyken
+`C:\sevkplan\veri\sevkplan.db` dosyasının bir kopyasını al; geri dönmek istersen
+kopyayı aynı isimle geri koyman yeterli.
+
+### Komut satırından tam sıfırlama
+
+Programı hiç açmadan her şeyi silmek istersen:
+
+```
+cd C:\sevkplan
+.venv\Scripts\python -m scripts.veritabani_sifirla
+```
+
+Bu komut mevcut veritabanını tarihli olarak yedekler ve boş bir tane oluşturur.
+
+---
+
 ## Yeni sürüm geldiğinde nasıl güncellenir?
 
 Sana yeni bir `sevkplan.zip` geldiğinde izleyeceğin yol. **Verilerin kaybolmaz** —

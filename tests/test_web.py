@@ -54,7 +54,8 @@ def kitap(basliklar, satirlar) -> BytesIO:
 
 
 @pytest.mark.parametrize(
-    "yol", ["/", "/urunler", "/siparisler", "/planlar", "/raporlar", "/izleme"]
+    "yol",
+    ["/", "/urunler", "/siparisler", "/planlar", "/raporlar", "/izleme", "/veri-yonetimi"],
 )
 def test_ekranlar_acilir(istemci, yol):
     cevap = istemci.get(yol)
@@ -106,3 +107,27 @@ def test_uctan_uca_akis(istemci):
 
     izleme = istemci.get("/izleme", params={"anahtar": "TSL-1"})
     assert "2608D1001" in izleme.text
+
+
+def test_veri_silme_onay_ister(istemci):
+    cevap = istemci.post("/veri-yonetimi/sil", data={"islem": "bekleyen", "onay": "evet"})
+    assert "SIL yazmalısınız" in sorgu(cevap)
+
+
+def test_veri_silme_onayla_calisir(istemci):
+    urun_dosyasi = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["KMB-24", "Kombi 24 kW", "KOMBİ", 10, 100]],
+    )
+    istemci.post("/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)})
+    siparis_dosyasi = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "Termin Tarihi"],
+        [["SIP-1", "TSL-1", "KMB-24", 25, "64", "05.09.2026"]],
+    )
+    istemci.post("/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparis_dosyasi)})
+
+    cevap = istemci.post(
+        "/veri-yonetimi/sil", data={"islem": "bekleyen", "onay": "SIL"}
+    )
+    assert "1 sipariş satırı" in sorgu(cevap)
+    assert "0" in istemci.get("/veri-yonetimi").text

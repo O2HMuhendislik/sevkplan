@@ -58,6 +58,7 @@ gerekçesiyle listeler.
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
+| **Veri Yönetimi** | Seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 
 ## Planlama kuralları (özet)
 

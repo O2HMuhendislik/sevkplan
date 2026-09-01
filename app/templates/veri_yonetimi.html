@@ -1,0 +1,113 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'veri' %}
+{% block icerik %}
+<h1>Veri Yönetimi</h1>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Ürün</div><div class="deger">{{ sayimlar.urun }}</div></div>
+  <div class="metrik"><div class="etiket">Sipariş satırı</div>
+    <div class="deger">{{ sayimlar.siparis }}</div>
+    <div class="soluk">{{ sayimlar.bekleyen }} tanesi planlanmamış</div></div>
+  <div class="metrik"><div class="etiket">Plan</div>
+    <div class="deger">{{ sayimlar.plan }}</div>
+    <div class="soluk">{{ sayimlar.tamamlanan_plan }} tanesi tamamlanmış</div></div>
+  <div class="metrik"><div class="etiket">Aktarım kaydı</div>
+    <div class="deger">{{ sayimlar.aktarim }}</div></div>
+</div>
+
+<div class="uyari hata">
+  <b>Silme işlemleri geri alınamaz.</b> Her işlem için onay kutusuna büyük harfle
+  <b>SIL</b> yazmanız gerekir. Emin değilseniz önce <code>veri</code> klasöründeki
+  <code>sevkplan.db</code> dosyasının bir kopyasını alın.
+</div>
+
+<div class="kart">
+  <h2>1 · Planlanmamış siparişleri sil</h2>
+  <p class="soluk">
+    Beklemede ve hatalı sipariş satırlarını siler. <b>Planlara ve planlanmış
+    siparişlere dokunmaz.</b> Yanlış dosya yüklediğinizde ya da deneme verisini
+    temizlerken en güvenli seçenek budur.
+    Şu an silinecek: <b>{{ sayimlar.bekleyen }}</b> satır.
+  </p>
+  <form class="satir" method="post" action="/veri-yonetimi/sil">
+    <input type="hidden" name="islem" value="bekleyen">
+    <div><label for="onay1">Onay</label>
+      <input id="onay1" name="onay" placeholder="SIL" required style="width:110px"></div>
+    <button type="submit" class="tehlike"
+            onclick="return confirm('Planlanmamış sipariş satırları silinecek. Onaylıyor musunuz?')">
+      Sil</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>2 · Planları sil</h2>
+  <p class="soluk">
+    Seçilen tarih aralığındaki planları siler. Tamamlanmış planlar sevk edilmiş işin
+    kaydı olduğu için varsayılan olarak korunur. Siparişler silinmez, beklemeye döner —
+    yeniden planlayabilirsiniz. Sefer numaraları geri kullanılmaz.
+  </p>
+  <form method="post" action="/veri-yonetimi/sil">
+    <input type="hidden" name="islem" value="planlar">
+    <div style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:12px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="tamamlananlar_dahil" value="true">
+        Tamamlanmış planlar da silinsin</label>
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="siparisleri_de_sil" value="true">
+        İçindeki siparişler de silinsin (beklemeye döndürmek yerine)</label>
+    </div>
+    <div class="satir">
+      <div><label for="baslangic">Başlangıç tarihi</label>
+        <input type="date" id="baslangic" name="baslangic"></div>
+      <div><label for="bitis">Bitiş tarihi</label>
+        <input type="date" id="bitis" name="bitis"></div>
+      <div><label for="onay2">Onay</label>
+        <input id="onay2" name="onay" placeholder="SIL" required style="width:110px"></div>
+      <button type="submit" class="tehlike"
+              onclick="return confirm('Seçilen planlar silinecek. Onaylıyor musunuz?')">
+        Sil</button>
+    </div>
+    <p class="soluk" style="margin:10px 0 0">
+      Tarih boş bırakılırsa bütün planlar kapsama girer.
+    </p>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>3 · Bütün sipariş ve planları sil</h2>
+  <p class="soluk">
+    Sipariş satırlarının, planların ve sipariş aktarım kayıtlarının tamamını siler.
+    <b>Ürün master datası korunur</b>, yeniden yüklemeniz gerekmez.
+    Sıfırdan deneme yapmak için uygundur.
+  </p>
+  <form class="satir" method="post" action="/veri-yonetimi/sil">
+    <input type="hidden" name="islem" value="siparis_ve_planlar">
+    <div style="padding-bottom:8px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="sayaci_sifirla" value="true">
+        Sefer numarası sayacı da sıfırlansın (yeniden 1001'den başlar)</label>
+    </div>
+    <div><label for="onay3">Onay</label>
+      <input id="onay3" name="onay" placeholder="SIL" required style="width:110px"></div>
+    <button type="submit" class="tehlike"
+            onclick="return confirm('BÜTÜN sipariş ve planlar silinecek. Ürünler kalacak. Onaylıyor musunuz?')">
+      Sil</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>4 · Her şeyi sil</h2>
+  <p class="soluk">
+    Ürün master datası dahil bütün verileri siler ve sefer sayacını sıfırlar.
+    Sistem ilk kurulduğu hâle döner; master datayı yeniden yüklemeniz gerekir.
+  </p>
+  <form class="satir" method="post" action="/veri-yonetimi/sil">
+    <input type="hidden" name="islem" value="hepsi">
+    <div><label for="onay4">Onay</label>
+      <input id="onay4" name="onay" placeholder="SIL" required style="width:110px"></div>
+    <button type="submit" class="tehlike"
+            onclick="return confirm('MASTER DATA DAHİL her şey silinecek. Onaylıyor musunuz?')">
+      Sil</button>
+  </form>
+</div>
+{% endblock %}

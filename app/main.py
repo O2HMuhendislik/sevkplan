@@ -24,7 +24,14 @@ from app.config import (
 )
 from app.db import oturum_bagimliligi, semayi_olustur
 from app.models import PlanDurumu, SevkiyatPlani, SiparisDurumu, Urun
-from app.services import ice_aktarim, plan_servisi, rapor_servisi, sablonlar, yukleme_formu
+from app.services import (
+    ice_aktarim,
+    plan_servisi,
+    rapor_servisi,
+    sablonlar,
+    temizleme,
+    yukleme_formu,
+)
 from app.services.excel import ExcelHatasi
 from app.services.plan_servisi import PlanHatasi
 from app.services.rapor_servisi import PlanFiltresi
@@ -354,6 +361,53 @@ def plan_excel(durum: str = "", arama: str = "", db: Session = Depends(oturum_ba
         planlar_listesi, CIKTI_DIZIN / "plan_listesi.xlsx"
     )
     return FileResponse(hedef, filename=hedef.name)
+
+
+# ------------------------------------------------------------------ veri yönetimi
+@uygulama.get("/veri-yonetimi")
+def veri_yonetimi(istek: Request, db: Session = Depends(oturum_bagimliligi)):
+    return sayfa(istek, "veri_yonetimi.html", sayimlar=temizleme.sayimlar(db))
+
+
+@uygulama.post("/veri-yonetimi/sil")
+def veri_sil(
+    islem: str = Form(...),
+    baslangic: str = Form(""),
+    bitis: str = Form(""),
+    tamamlananlar_dahil: bool = Form(False),
+    siparisleri_de_sil: bool = Form(False),
+    sayaci_sifirla: bool = Form(False),
+    onay: str = Form(""),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    if onay.strip().upper() != "SIL":
+        return yonlendir(
+            "/veri-yonetimi",
+            hata="Silme işlemi için onay kutusuna büyük harfle SIL yazmalısınız.",
+        )
+
+    def tarihe_cevir(deger: str):
+        return datetime.strptime(deger, "%Y-%m-%d").date() if deger else None
+
+    if islem == "bekleyen":
+        sonuc = temizleme.bekleyen_siparisleri_sil(db)
+    elif islem == "planlar":
+        sonuc = temizleme.planlari_sil(
+            db,
+            baslangic=tarihe_cevir(baslangic),
+            bitis=tarihe_cevir(bitis),
+            tamamlananlar_dahil=tamamlananlar_dahil,
+            siparisleri_de_sil=siparisleri_de_sil,
+        )
+    elif islem == "siparis_ve_planlar":
+        sonuc = temizleme.siparis_ve_planlari_sil(db, sayaci_sifirla=sayaci_sifirla)
+    elif islem == "hepsi":
+        sonuc = temizleme.her_seyi_sil(db)
+    else:
+        return yonlendir("/veri-yonetimi", hata=f"Bilinmeyen işlem: {islem}")
+
+    db.commit()
+    return yonlendir("/veri-yonetimi", mesaj=sonuc.ozet())
 
 
 @uygulama.get("/izleme")
