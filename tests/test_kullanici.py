@@ -178,3 +178,54 @@ def test_ilk_kurulumda_yonetici_olusur(db):
     assert yonetici.rol is Rol.YONETICI and yonetici.parola_degistirmeli
     # İkinci çağrı yeni kullanıcı açmaz.
     assert kullanici_servisi.varsayilan_yoneticiyi_olustur(db) is None
+
+
+# ------------------------------------------------------- komut satırı yönetici aracı
+def test_yonetici_araci_admin_yoksa_olusturur(db, monkeypatch, capsys):
+    from scripts import yonetici
+
+    monkeypatch.setattr(yonetici, "oturum", lambda: _sahte_oturum(db))
+    yonetici.sifirla("admin", None)
+    cikti = capsys.readouterr().out
+    assert "Yeni parola" in cikti
+    assert kullanici_servisi.kullanici_getir(db, "admin").rol is Rol.YONETICI
+
+
+def test_yonetici_araci_belirlenen_parolayi_ayarlar(db, monkeypatch):
+    from scripts import yonetici
+
+    kullanici_ekle(db, "admin", Rol.YONETICI)
+    monkeypatch.setattr(yonetici, "oturum", lambda: _sahte_oturum(db))
+    yonetici.sifirla("admin", "YeniYonetici1!")
+    assert kullanici_servisi.giris_yap(db, "admin", "YeniYonetici1!")
+
+
+def test_yonetici_araci_zayif_parolayi_reddeder(db, monkeypatch):
+    from scripts import yonetici
+
+    kullanici_ekle(db, "admin", Rol.YONETICI)
+    monkeypatch.setattr(yonetici, "oturum", lambda: _sahte_oturum(db))
+    with pytest.raises(guvenlik.ParolaHatasi):
+        yonetici.sifirla("admin", "kolay")
+
+
+def test_yonetici_araci_olmayan_kullaniciyi_reddeder(db, monkeypatch):
+    from scripts import yonetici
+
+    monkeypatch.setattr(yonetici, "oturum", lambda: _sahte_oturum(db))
+    with pytest.raises(SystemExit):
+        yonetici.sifirla("olmayan", None)
+
+
+class _sahte_oturum:
+    """Komut satırı aracının `oturum()` bağlam yöneticisini teste bağlar."""
+
+    def __init__(self, db):
+        self.db = db
+
+    def __enter__(self):
+        return self.db
+
+    def __exit__(self, *_):
+        self.db.flush()
+        return False

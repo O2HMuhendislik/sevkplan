@@ -25,7 +25,8 @@
         <tr>
           <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
           <td><b>{{ satir.teslimat_no }}</b></td>
-          <td>{{ satir.urun_kodu }}</td>
+          <td><b>{{ satir.urun_kodu }}</b>
+            <div class="soluk">{{ satir.gosterilecek_urun_adi }}</div></td>
           <td class="sag">{{ satir.miktar | sayi }}</td>
           <td>{{ satir.depo_kodu }}</td>
           <td>{{ satir.termin_tarihi | tarih }}</td>

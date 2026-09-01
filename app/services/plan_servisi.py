@@ -29,7 +29,7 @@ from app.domain.planlama import (
     planla,
     toplam_birim as planlama_toplam_birim,
 )
-from app.services.planlama_anahtari import teslimat_anahtari
+from app.services.planlama_anahtari import teslimat_anahtari, urun_grubu
 from app.models import (
     PlanDurumu,
     PlanHareketi,
@@ -222,12 +222,6 @@ def teslimatlari_hazirla(
                 )
                 break
 
-        anahtar = teslimat_anahtari(
-            (urun_haritasi.get(s.urun_kodu) for s in grup), seviye
-        )
-        if hata is None and anahtar and " + " in anahtar:
-            hata = f"Teslimat birden fazla ürün grubu içeriyor ({anahtar})"
-
         if hata is not None:
             for satir in grup:
                 satir.durum = SiparisDurumu.HATALI
@@ -235,7 +229,11 @@ def teslimatlari_hazirla(
             hatalilar.append((teslimat_no, hata))
             continue
 
+        urunler = [urun_haritasi.get(s.urun_kodu) for s in grup]
         olculer = teslimat_olculeri(grup, urun_haritasi, profil.arac_tipi)
+        anahtar = teslimat_anahtari(urunler, seviye)
+        grup_adi = urun_grubu(urunler, olculer.sku_miktarlari)
+        karma_mi = anahtar is None
         birim = olculer.palet if profil.olcu is Olcu.PALET else olculer.anahtar
         if birim <= 0:
             hata = "Teslimatın kapasite büyüklüğü sıfır hesaplandı"
@@ -251,7 +249,7 @@ def teslimatlari_hazirla(
             Teslimat(
                 teslimat_no=teslimat_no,
                 depo_kodu=ana_satir.depo_kodu,
-                planlama_anahtari=anahtar or ana_urun.urun_kodu,
+                planlama_anahtari=anahtar or grup_adi or ana_urun.urun_kodu,
                 urun_kodu=ana_urun.urun_kodu,
                 urun_adi=ana_urun.urun_adi,
                 miktar=olculer.adet,
@@ -260,7 +258,8 @@ def teslimatlari_hazirla(
                 satir_idleri=tuple(s.id for s in grup),
                 sku_kodlari=tuple(sorted(olculer.sku_miktarlari)),
                 sku_miktarlari=dict(olculer.sku_miktarlari),
-                urun_grubu=(ana_urun.urun_grubu or ana_urun.urun_kodu),
+                urun_grubu=grup_adi,
+                karma_mi=karma_mi,
                 palet=olculer.palet,
                 anahtar=olculer.anahtar,
                 agirlik=olculer.agirlik,

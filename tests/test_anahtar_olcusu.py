@@ -163,3 +163,52 @@ def test_tum_depolar_tek_seferde_planlanir(db):
     assert {p.depo_kodu for p in sonuc.planlar} == {"64", "74"}
     assert all(p.toplam_birim == 1 for p in sonuc.planlar)
     assert sorted(p.sefer_no for p in sonuc.planlar) == ["2608D1001", "2608D1002"]
+
+
+def test_cok_urunlu_teslimat_karma_plana_girer(db):
+    """Bir teslimatta birden fazla ürün olması hata değil; saf plana giremez, mix'e girer."""
+    urun_ekle(db, "PNL-600", grup="PANEL")
+    urun_ekle(db, "PNL-400", grup="PANEL")
+    # Tek teslimatta iki farklı panel: 40 + 50 = 0,90 anahtar.
+    satir_ekle(db, "TSL-1", "PNL-600", 40, siparis_no="S1")
+    satir_ekle(db, "TSL-1", "PNL-400", 50, siparis_no="S2")
+
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    assert sonuc.hatali_teslimatlar == []
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    assert plan.mix_mi is True
+    assert plan.planlama_anahtari == "PANEL"
+    assert plan.urun_kodlari == "PNL-400, PNL-600"
+
+
+def test_cok_urunlu_teslimat_baskin_grubuna_yazilir(db):
+    """Farklı gruplardan ürün içeren teslimat, en çok adede sahip grubun planına gider."""
+    urun_ekle(db, "KMB-24", grup="KOMBİ")
+    urun_ekle(db, "PNL-600", grup="PANEL")
+    satir_ekle(db, "KARMA", "KMB-24", 60, siparis_no="S1")   # baskın
+    satir_ekle(db, "KARMA", "PNL-600", 10, siparis_no="S2")
+    satir_ekle(db, "SAF", "KMB-24", 20, siparis_no="S3")
+
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    assert sonuc.hatali_teslimatlar == []
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    assert plan.planlama_anahtari == "KOMBİ"
+    assert {s.teslimat_no for s in plan.satirlar} == {"KARMA", "SAF"}
+
+
+def test_cok_urunlu_teslimat_saf_plani_bozmaz(db):
+    """Tek ürünlü teslimatlar aracı doldurabiliyorsa karma teslimat araya girmez."""
+    urun_ekle(db, "KMB-24", grup="KOMBİ")
+    urun_ekle(db, "PNL-600", grup="PANEL")
+    for i in range(4):
+        satir_ekle(db, f"SAF-{i}", "KMB-24", 25, siparis_no=f"S{i}")
+    satir_ekle(db, "KARMA", "KMB-24", 30, siparis_no="SK1")
+    satir_ekle(db, "KARMA", "PNL-600", 10, siparis_no="SK2")
+
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    saf = [p for p in sonuc.planlar if not p.mix_mi]
+    assert len(saf) == 1
+    assert saf[0].urun_kodlari == "KMB-24"
+    assert saf[0].toplam_birim == 1

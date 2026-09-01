@@ -10,7 +10,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import IceAktarim, SiparisDurumu, SiparisSatiri, Urun
-from app.services.planlama_anahtari import teslimat_anahtari
 from app.services import excel
 from app.services.excel import ExcelHatasi
 from app.services.veri_formatlari import (
@@ -250,11 +249,10 @@ def siparisleri_aktar(
 
 
 def _teslimatlari_dogrula(db: Session, teslimat_nolar: set[str]) -> list[SatirHatasi]:
-    """Bir teslimat tek planlama anahtarına ve tek depoya ait olmak zorunda.
+    """Bir teslimat tek depoya ait olmak zorunda.
 
-    Planlama anahtarı ürün grubu (ayarlanmışsa SKU) olduğundan, ana ürün ile
-    aksesuarının aynı teslimatta gelmesi normaldir: aksesuar grupları ana ürünün
-    anahtarına yazılır.
+    Teslimatın birden fazla ürün içermesi hata değildir: saf plana giremez ama baskın
+    ürün grubunun karma planına yazılır (bkz. app/services/planlama_anahtari.py).
     """
     hatalar: list[SatirHatasi] = []
     if not teslimat_nolar:
@@ -279,14 +277,7 @@ def _teslimatlari_dogrula(db: Session, teslimat_nolar: set[str]) -> list[SatirHa
     for teslimat_no, grup in gruplar.items():
         mesaj = None
         depolar = {satir.depo_kodu for satir in grup}
-        anahtar = teslimat_anahtari(urun_haritasi.get(s.urun_kodu) for s in grup)
-
-        if anahtar and " + " in anahtar:
-            mesaj = (
-                f"Teslimat birden fazla ürün grubu içeriyor ({anahtar}). "
-                "Bir teslimat tek planlama anahtarına ait olmalıdır."
-            )
-        elif len(depolar) > 1:
+        if len(depolar) > 1:
             mesaj = (
                 f"Teslimat birden fazla depo kodu içeriyor ({', '.join(sorted(depolar))})."
             )

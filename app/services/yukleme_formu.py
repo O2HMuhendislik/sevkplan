@@ -156,7 +156,7 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
             plan.sefer_no,
             satir.depo_kodu,
             satir.urun_kodu,
-            satir.urun_adi,
+            satir.gosterilecek_urun_adi,
             float(satir.miktar),
             satir.bayi_adi,
             satir.alici_firma,

@@ -69,7 +69,10 @@ ve bir özel karakter. Parolalar scrypt ile saklanır. 5 hatalı denemede hesap 
 kilidi yönetici açar. Yeni kullanıcı ve parola sıfırlamada geçici parola üretilir ve ilk
 girişte değiştirilmesi zorunludur.
 
-İlk çalıştırmada `admin` hesabı ve geçici parolası konsola yazılır.
+İlk çalıştırmada `admin` hesabı ve geçici parolası konsola yazılır. Kaçırılırsa ya da
+unutulursa program kapalıyken `python -m scripts.yonetici` komutu yeni bir geçici parola
+üretir (`--parola "..."` ile kendi parolanızı belirleyebilirsiniz, `--liste` kullanıcıları
+gösterir).
 
 ## Sunucuya kurulum
 

@@ -128,6 +128,47 @@ uvicorn app.main:uygulama --reload
 
 ---
 
+## Yönetici parolasını unuttum / göremedim
+
+Program **ilk çalıştırıldığında** konsola bir yönetici hesabı ve geçici parola yazar:
+
+```
+========================================================================
+İLK KURULUM — yönetici hesabı oluşturuldu
+  Kullanıcı adı : admin
+  Geçici parola : ...
+========================================================================
+```
+
+Bu satır yalnızca bir kez, veritabanında hiç kullanıcı yokken yazılır. Kaçırdıysanız
+komut satırından yeni parola üretebilirsiniz. **Program kapalıyken** çalıştırın:
+
+```
+cd C:\sevkplan
+.venv\Scripts\python -m scripts.yonetici
+```
+
+Ekrana yeni bir geçici parola yazılır. Kendi parolanızı belirlemek isterseniz:
+
+```
+.venv\Scripts\python -m scripts.yonetici --parola "Sevkiyat2026!"
+```
+
+Diğer kullanımlar:
+
+```
+.venv\Scripts\python -m scripts.yonetici --liste       # kullanıcıları listeler
+.venv\Scripts\python -m scripts.yonetici ahmet         # ahmet'in parolasını sıfırlar
+```
+
+Parola kuralları: en az 10 karakter, en az bir büyük harf, bir küçük harf, bir rakam ve
+bir özel karakter.
+
+> Yönetici hesabı hiç yoksa komut onu yeniden oluşturur. Sistemde aktif yönetici
+> kalmamışsa, parolası sıfırlanan hesap yönetici yapılır — sisteme kilitlenmezsiniz.
+
+---
+
 ## Geçmiş verileri nasıl silerim?
 
 Programdaki **Veri Yönetimi** ekranından. Üstte hangi veriden kaç kayıt olduğunu

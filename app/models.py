@@ -297,6 +297,21 @@ class SiparisSatiri(Temel):
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     plan: Mapped[SevkiyatPlani | None] = relationship(back_populates="satirlar")
+    urun: Mapped[Urun | None] = relationship(
+        primaryjoin="foreign(SiparisSatiri.urun_kodu) == Urun.urun_kodu",
+        viewonly=True,
+        lazy="selectin",
+    )
+    """Master datadaki ürün kaydı. Sipariş dosyasında ürün adı gelmediğinde kullanılır."""
+
+    @property
+    def gosterilecek_urun_adi(self) -> str:
+        """Ekranlarda gösterilecek ürün adı: dosyadaki ad, yoksa master datadaki."""
+        return self.urun_adi or (self.urun.urun_adi if self.urun else "") or "—"
+
+    @property
+    def urun_grubu(self) -> str | None:
+        return self.urun.urun_grubu if self.urun else None
 
     @property
     def oncelik_tarihi(self) -> date:

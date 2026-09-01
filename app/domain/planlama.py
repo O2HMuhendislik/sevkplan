@@ -43,6 +43,8 @@ class Teslimat:
     """SKU -> miktar kırılımı. Palet ve israf hesabı bunun üzerinden yapılır."""
     urun_grubu: str = ""
     """Faz 2'de karışık plana izin verilen kapsam."""
+    karma_mi: bool = False
+    """Teslimat birden fazla ürün içeriyor; tek ürünlü plana giremez."""
     palet: Decimal = Decimal(0)
     anahtar: Decimal = Decimal(0)
     agirlik: Decimal = Decimal(0)
@@ -180,6 +182,13 @@ class TaslakPlan:
     """Aynı ürün grubunda birden fazla ürün kodu barındıran plan."""
 
     @property
+    def karisik_mi(self) -> bool:
+        """Planda birden fazla ürün kodu var mı? (aksesuar/header istisnası hariç)"""
+        return any(t.karma_mi for t in self.teslimatlar) or (
+            len({t.planlama_anahtari for t in self.teslimatlar}) > 1
+        )
+
+    @property
     def toplam_birim(self) -> Decimal:
         return self.hesaplayici(self.teslimatlar)
 
@@ -299,7 +308,10 @@ def planla(
     sonuc = PlanlamaSonucu()
 
     artiklar: list[Teslimat] = []
-    for _, grup in _grupla(teslimatlar, lambda t: (t.depo_kodu, t.planlama_anahtari)):
+    # Karma teslimatlar birinci fazda tek ürünlü planlara karışmasın diye ayrı gruplanır.
+    for _, grup in _grupla(
+        teslimatlar, lambda t: (t.depo_kodu, t.planlama_anahtari, t.karma_mi)
+    ):
         planlar, kalan = _paketle(grup, profil, hesaplayici, israf_hesaplayici)
         sonuc.planlar.extend(planlar)
         artiklar.extend(kalan)
@@ -310,7 +322,6 @@ def planla(
             planlar, kalan = _paketle(grup, profil, hesaplayici, israf_hesaplayici)
             for plan in planlar:
                 plan.planlama_anahtari = grup[0].urun_grubu or plan.planlama_anahtari
-                plan.grup_ici_mix = len(plan.urun_kodlari) > 1
             sonuc.planlar.extend(planlar)
             yeni_artiklar.extend(kalan)
         artiklar = yeni_artiklar
@@ -323,7 +334,6 @@ def planla(
             )
             for plan in planlar:
                 plan.planlama_anahtari = grup[0].urun_grubu or plan.planlama_anahtari
-                plan.grup_ici_mix = len(plan.urun_kodlari) > 1
                 if not profil.gecerli_dolu(plan.toplam_birim):
                     if not esnetme.uygulanir_mi(plan):
                         kalan.extend(plan.teslimatlar)
@@ -332,6 +342,11 @@ def planla(
                 sonuc.planlar.append(plan)
             kalanlar.extend(kalan)
         artiklar = kalanlar
+
+    for plan in sonuc.planlar:
+        plan.grup_ici_mix = plan.karisik_mi
+        if plan.karisik_mi:
+            plan.planlama_anahtari = plan.teslimatlar[0].urun_grubu or plan.planlama_anahtari
 
     for teslimat in sorted(artiklar, key=lambda t: t.teslimat_no):
         sonuc.bekleyenler.append(

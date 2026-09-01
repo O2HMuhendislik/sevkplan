@@ -92,7 +92,7 @@ def test_siparisler_aktarilir(db):
     assert str(satir.termin_tarihi) == "2026-09-05"
 
 
-def test_cok_urunlu_teslimat_hataliya_duser(db):
+def test_cok_urunlu_teslimat_hata_sayilmaz(db):
     ice_aktarim.urunleri_aktar(db, kitap(URUN_BASLIK, [
         ["KMB-24", "Kombi", "KOMBİ", 30, None, 468],
         ["RAD-600", "Panel", "PANEL", 20, None, 400],
@@ -102,9 +102,8 @@ def test_cok_urunlu_teslimat_hataliya_duser(db):
         ["SIP-1", "TSL-1", "RAD-600", 100, "64", "05.09.2026"],
     ])
     sonuc = ice_aktarim.siparisleri_aktar(db, dosya, "siparis.xlsx")
-    assert sonuc.hatali == 1
-    assert "birden fazla ürün grubu" in sonuc.hatalar[0].mesaj
-    assert all(s.durum == SiparisDurumu.HATALI for s in db.query(SiparisSatiri).all())
+    assert sonuc.hatali == 0
+    assert all(s.durum == SiparisDurumu.BEKLEMEDE for s in db.query(SiparisSatiri).all())
 
 
 def test_header_kodlu_teslimat_cok_urunlu_sayilmaz(db):
