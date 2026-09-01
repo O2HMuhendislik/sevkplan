@@ -87,3 +87,32 @@ form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 }
 .sekmeler a.aktif { background: var(--ana); color: #fff; border-color: var(--ana); }
 .bos { padding: 34px; text-align: center; color: var(--soluk); }
+
+/* ------------------------------------------------------------------ giriş / modül */
+header.ust .marka { color: #fff; text-decoration: none; }
+header.ust .kullanici-alani {
+  margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px;
+}
+header.ust .kullanici-alani a { color: #dce7f2; text-decoration: none; }
+header.ust .kullanici-alani a:hover { color: #fff; text-decoration: underline; }
+header.ust .kullanici-adi { color: #fff; font-weight: 600; }
+header.ust .modul-cikis {
+  border: 1px solid #4b7fae; border-radius: 6px; padding: 5px 12px;
+}
+.giris-kutusu {
+  max-width: 420px; margin: 60px auto; background: var(--kart);
+  border: 1px solid var(--kenar); border-radius: 10px; padding: 32px;
+}
+.giris-kutusu h1 { margin-bottom: 6px; }
+.modul-izgara {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px;
+}
+.modul-kart {
+  background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px;
+  padding: 22px; display: flex; flex-direction: column;
+}
+.modul-kart.pasif { opacity: .62; }
+.modul-kart h2 { font-size: 17px; margin: 10px 0 8px; }
+.modul-kart p { flex: 1; margin: 0 0 16px; }
+.modul-simge { font-size: 30px; line-height: 1; }
+.modul-alt { display: flex; align-items: center; gap: 10px; }

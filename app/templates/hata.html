@@ -1,0 +1,9 @@
+{% extends "temel.html" %}
+{% block icerik %}
+<div class="giris-kutusu" style="text-align:center">
+  <div style="font-size:44px; line-height:1">{{ '🔒' if kod == 403 else '🔍' }}</div>
+  <h1>{{ 'Yetkiniz yok' if kod == 403 else 'Sayfa bulunamadı' }}</h1>
+  <p class="soluk">{{ mesaj }}</p>
+  <a class="dugme" href="/" style="margin-top:12px">Modüllere dön</a>
+</div>
+{% endblock %}

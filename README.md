@@ -47,11 +47,41 @@ Kaynak kitaptaki `masterdata` sayfasını bulur, `#N/A` değerlerini temizler, �
 gruplarını normalize eder ve eksik kapasite verisi olan ürünleri ayrı bir sayfada
 gerekçesiyle listeler.
 
+## Giriş ve modüller
+
+Sisteme kullanıcı adı ve parolayla girilir. Giriş sonrası **modül seçim ekranı** açılır;
+kullanıcı yalnızca yetkili olduğu modülleri açabilir.
+
+| Modül | Durum |
+|---|---|
+| **Ring Planlama** | Hazır |
+| Rotalı Araç Planlama | Yakında |
+| İhracat Planlama | Yakında |
+| Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
+| **Master Data** | Hazır — modüllerin ortak ürün verisi |
+| **Sistem Yönetimi** | Hazır — kullanıcılar, yetkiler, veri yönetimi |
+
+**Roller:** Yönetici, Planlamacı, Depo, Nakliyeci, İzleyici. Yetki modül bazında
+*görüntüleme* ya da *düzenleme* olarak verilir; yöneticiler her modüle erişir.
+
+**Parola kuralları:** en az 10 karakter, en az bir büyük harf, bir küçük harf, bir rakam
+ve bir özel karakter. Parolalar scrypt ile saklanır. 5 hatalı denemede hesap kilitlenir,
+kilidi yönetici açar. Yeni kullanıcı ve parola sıfırlamada geçici parola üretilir ve ilk
+girişte değiştirilmesi zorunludur.
+
+İlk çalıştırmada `admin` hesabı ve geçici parolası konsola yazılır.
+
+## Sunucuya kurulum
+
+Ekip kullanımı, veritabanı seçimi (PostgreSQL), HTTPS, Windows servisi / systemd,
+Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](docs/SUNUCU-KURULUMU.md)
+
 ## Ekranlar
 
 | Ekran | İşlev |
 |---|---|
-| **Gösterge Paneli** | Özet metrikler, planlamayı çalıştırma, bekleyen sipariş özeti |
+| **Modül Seçimi** (`/`) | Yetkili olunan modüllerin listesi |
+| **Gösterge Paneli** (`/ring`) | Özet metrikler, planlamayı çalıştırma, bekleyen sipariş özeti |
 | **Siparişler** | Excel aktarımı; beklemede / planlandı / tamamlandı / hatalı sekmeleri |
 | **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
 | **Plan Detayı** | Plan içeriği, Axata no girişi, yükleme formu, statü işlemleri, plan geçmişi |
@@ -59,6 +89,7 @@ gerekçesiyle listeler.
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
 | **Veri Yönetimi** | Seçerek veri silme: planlanmamış siparişler, planlar, tümü |
+| **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
 
 ## Planlama kuralları (özet)
 
@@ -108,7 +139,9 @@ tek dosyaya, her biri ayrı sayfaya basılacak şekilde alt alta yazılabilir.
 ```
 app/
   domain/        saf iş mantığı (planlama motoru, sefer no, kapasite profilleri)
-  services/      Excel aktarım, plan yaşam döngüsü, raporlama, yükleme formu
+  services/      Excel aktarım, plan yaşam döngüsü, raporlama, yükleme formu, kullanıcılar
+  guvenlik.py    parola politikası ve saklama (scrypt)
+  moduller.py    modül tanımları
   templates/     arayüz şablonları
   main.py        web uygulaması (FastAPI)
 docs/            analiz ve veri formatı dokümanları

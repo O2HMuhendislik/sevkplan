@@ -1,0 +1,29 @@
+{% extends "temel.html" %}
+{% block icerik %}
+<div class="giris-kutusu">
+  <h1>Parola değiştir</h1>
+  {% if kullanici.parola_degistirmeli %}
+  <div class="uyari hata" style="margin-bottom:16px">
+    Devam etmeden önce parolanızı değiştirmeniz gerekiyor.
+  </div>
+  {% endif %}
+  <form method="post" action="/sifre-degistir">
+    <label for="mevcut_parola">Mevcut parola</label>
+    <input id="mevcut_parola" name="mevcut_parola" type="password"
+           autocomplete="current-password" required style="width:100%">
+    <label for="yeni_parola" style="margin-top:12px">Yeni parola</label>
+    <input id="yeni_parola" name="yeni_parola" type="password"
+           autocomplete="new-password" required style="width:100%">
+    <label for="yeni_parola_tekrar" style="margin-top:12px">Yeni parola (tekrar)</label>
+    <input id="yeni_parola_tekrar" name="yeni_parola_tekrar" type="password"
+           autocomplete="new-password" required style="width:100%">
+    <button type="submit" style="width:100%; margin-top:18px">Değiştir</button>
+  </form>
+  <div class="kart" style="margin-top:18px; margin-bottom:0; background:#f7fafc">
+    <h2 style="margin-bottom:8px">Parola kuralları</h2>
+    <ul class="soluk" style="margin:0; padding-left:18px">
+      {% for kural in kurallar %}<li>{{ kural }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

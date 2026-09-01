@@ -8,16 +8,30 @@
 </head>
 <body>
 <header class="ust">
-  <span class="marka">SEVKİYAT PLANLAMA</span>
+  <a href="/" class="marka">SEVKİYAT PLANLAMA</a>
+  {% if kullanici %}
   <nav>
-    <a href="/" class="{{ 'aktif' if aktif_menu == 'gosterge' }}">Gösterge Paneli</a>
-    <a href="/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Siparişler</a>
-    <a href="/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
-    <a href="/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Master Data</a>
-    <a href="/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
-    <a href="/izleme" class="{{ 'aktif' if aktif_menu == 'izleme' }}">Sipariş İzleme</a>
-    <a href="/veri-yonetimi" class="{{ 'aktif' if aktif_menu == 'veri' }}">Veri Yönetimi</a>
+    {% if aktif_modul == 'RING' %}
+      <a href="/ring" class="{{ 'aktif' if aktif_menu == 'gosterge' }}">Gösterge Paneli</a>
+      <a href="/ring/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Siparişler</a>
+      <a href="/ring/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
+      <a href="/ring/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
+      <a href="/ring/izleme" class="{{ 'aktif' if aktif_menu == 'izleme' }}">Sipariş İzleme</a>
+    {% elif aktif_modul == 'YONETIM' %}
+      <a href="/yonetim/kullanicilar" class="{{ 'aktif' if aktif_menu == 'kullanicilar' }}">Kullanıcılar</a>
+      <a href="/veri-yonetimi" class="{{ 'aktif' if aktif_menu == 'veri' }}">Veri Yönetimi</a>
+    {% elif aktif_modul == 'MASTERDATA' %}
+      <a href="/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Ürünler</a>
+    {% endif %}
   </nav>
+  <div class="kullanici-alani">
+    {% if aktif_modul %}<a href="/" class="modul-cikis">Modüller</a>{% endif %}
+    <span class="kullanici-adi" title="{{ kullanici.rol.value }}">
+      {{ kullanici.ad_soyad }}</span>
+    <a href="/sifre-degistir">Parola</a>
+    <a href="/cikis">Çıkış</a>
+  </div>
+  {% endif %}
 </header>
 <main>
   {% if mesaj %}<div class="uyari basari">{{ mesaj }}</div>{% endif %}

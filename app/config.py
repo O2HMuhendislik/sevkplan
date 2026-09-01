@@ -70,3 +70,31 @@ def depo_profili(depo_kodu: str) -> KapasiteProfili | None:
 
 for _dizin in (VERI_DIZIN, YUKLEME_DIZIN, CIKTI_DIZIN):
     _dizin.mkdir(parents=True, exist_ok=True)
+
+
+# ------------------------------------------------------------------------ oturum
+
+OTURUM_SURESI_DAKIKA = int(os.environ.get("SEVKPLAN_OTURUM_SURESI", "480"))
+"""Hareketsiz oturumun kapanma süresi (dakika). Varsayılan 8 saat."""
+
+
+def oturum_anahtari() -> str:
+    """Oturum çerezlerini imzalayan gizli anahtar.
+
+    Öncelik `SEVKPLAN_OTURUM_ANAHTARI` ortam değişkenindedir — sunucuya kurulumda
+    bunun verilmesi önerilir. Verilmezse veri klasöründe bir anahtar üretilip saklanır;
+    böylece program yeniden başladığında oturumlar düşmez.
+    """
+    ortamdan = os.environ.get("SEVKPLAN_OTURUM_ANAHTARI")
+    if ortamdan:
+        return ortamdan
+    dosya = VERI_DIZIN / ".oturum_anahtari"
+    if not dosya.exists():
+        import secrets
+
+        dosya.write_text(secrets.token_hex(32), encoding="utf-8")
+        try:
+            dosya.chmod(0o600)
+        except OSError:
+            pass  # Windows'ta chmod desteklenmeyebilir
+    return dosya.read_text(encoding="utf-8").strip()

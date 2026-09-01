@@ -1,0 +1,19 @@
+{% extends "temel.html" %}
+{% block icerik %}
+<div class="giris-kutusu">
+  <h1>Sevkiyat Planlama</h1>
+  <p class="soluk">Devam etmek için kullanıcı adınız ve parolanızla giriş yapın.</p>
+  <form method="post" action="/giris">
+    <label for="kullanici_adi">Kullanıcı adı</label>
+    <input id="kullanici_adi" name="kullanici_adi" autocomplete="username"
+           autofocus required style="width:100%">
+    <label for="parola" style="margin-top:12px">Parola</label>
+    <input id="parola" name="parola" type="password"
+           autocomplete="current-password" required style="width:100%">
+    <button type="submit" style="width:100%; margin-top:18px">Giriş yap</button>
+  </form>
+  <p class="soluk" style="margin-top:18px; margin-bottom:0">
+    Parolanızı unuttuysanız ya da hesabınız kilitlendiyse sistem yöneticinize başvurun.
+  </p>
+</div>
+{% endblock %}

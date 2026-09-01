@@ -1,4 +1,5 @@
 {% extends "temel.html" %}
+{% set aktif_modul = 'RING' %}
 {% set aktif_menu = 'raporlar' %}
 {% block icerik %}
 <h1>Raporlar</h1>
@@ -59,7 +60,7 @@
     <tbody>
     {% for plan in sevk_durumu %}
       <tr>
-        <td><a href="/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
+        <td><a href="/ring/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
         <td>{{ plan.plan_tarihi | tarih }}</td>
         <td>{{ plan.depo_kodu }}</td>
         <td>{{ plan.urun_kodlari }}</td>

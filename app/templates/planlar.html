@@ -1,4 +1,5 @@
 {% extends "temel.html" %}
+{% set aktif_modul = 'RING' %}
 {% set aktif_menu = 'planlar' %}
 {% block icerik %}
 <h1>Sevkiyat Planları</h1>
@@ -13,7 +14,7 @@
       teslimatlardaki miktarları toplanır, kırık palet israfını en az bırakan plana
       konur.
     </p>
-    <form class="satir" method="post" action="/planlar/uret">
+    <form class="satir" method="post" action="/ring/planlar/uret">
       <div><label for="plan_tarihi">Plan tarihi</label>
         <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}"></div>
           <div>
@@ -47,7 +48,7 @@
       aşamaz. (Aynı gruptaki ürünleri toplu birleştirmek için soldaki
       <b>Mix plan yap</b> kutusunu kullanın.)
     </p>
-    <form class="satir" method="post" action="/planlar/mix">
+    <form class="satir" method="post" action="/ring/planlar/mix">
       <div><label for="teslimat_nolar">Teslimat numaraları</label>
         <input id="teslimat_nolar" name="teslimat_nolar" required
                placeholder="TSL-100, TSL-101" style="width:340px"></div>
@@ -57,20 +58,20 @@
 </div>
 
 <div class="sekmeler">
-  <a href="/planlar" class="{{ 'aktif' if durum == '' }}">Tümü</a>
+  <a href="/ring/planlar" class="{{ 'aktif' if durum == '' }}">Tümü</a>
   {% for d in durumlar %}
-    <a href="/planlar?durum={{ d }}" class="{{ 'aktif' if durum == d }}">{{ d }}</a>
+    <a href="/ring/planlar?durum={{ d }}" class="{{ 'aktif' if durum == d }}">{{ d }}</a>
   {% endfor %}
 </div>
 
 <div class="kart">
-  <form class="satir" method="get" action="/planlar" style="margin-bottom:14px">
+  <form class="satir" method="get" action="/ring/planlar" style="margin-bottom:14px">
     <input type="hidden" name="durum" value="{{ durum }}">
     <div><label for="arama">Ara</label>
       <input id="arama" name="arama" value="{{ arama }}"
              placeholder="Sefer no, axata no, teslimat no, sipariş no, ürün" style="width:360px"></div>
     <button type="submit">Filtrele</button>
-    <a class="dugme ikincil" href="/raporlar/plan-excel?durum={{ durum }}&arama={{ arama }}">Excel'e aktar</a>
+    <a class="dugme ikincil" href="/ring/raporlar/plan-excel?durum={{ durum }}&arama={{ arama }}">Excel'e aktar</a>
   </form>
 
   {% if planlar %}
@@ -83,7 +84,7 @@
     <tbody>
     {% for plan in planlar %}
       <tr>
-        <td><a href="/planlar/{{ plan.id }}"><b>{{ plan.sefer_no }}</b></a>
+        <td><a href="/ring/planlar/{{ plan.id }}"><b>{{ plan.sefer_no }}</b></a>
           {% if plan.mix_mi %}<span class="rozet PLANLANDI">MIX</span>{% endif %}
           {% if plan.istisna_asim %}<span class="rozet HATALI">İSTİSNA</span>{% endif %}
           {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ESNETİLDİ</span>{% endif %}

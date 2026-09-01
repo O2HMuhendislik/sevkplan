@@ -1,0 +1,112 @@
+{% extends "temel.html" %}
+{% set aktif_menu = 'kullanicilar' %}
+{% set aktif_modul = 'YONETIM' %}
+{% block icerik %}
+<h1>Kullanıcılar</h1>
+
+<div class="kart">
+  <h2>Yeni kullanıcı</h2>
+  <p class="soluk">
+    Kayıt açıldığında politikaya uygun geçici bir parola üretilir ve bir kez ekranda
+    gösterilir. Kullanıcı ilk girişinde parolasını değiştirmek zorundadır.
+    Yetkileri kullanıcı oluştuktan sonra aşağıdaki listeden verirsiniz.
+  </p>
+  <form class="satir" method="post" action="/yonetim/kullanicilar/yeni">
+    <div><label for="kullanici_adi">Kullanıcı adı</label>
+      <input id="kullanici_adi" name="kullanici_adi" required></div>
+    <div><label for="ad_soyad">Ad Soyad</label>
+      <input id="ad_soyad" name="ad_soyad" required style="width:220px"></div>
+    <div><label for="eposta">E-posta</label>
+      <input id="eposta" name="eposta" type="email" style="width:220px"></div>
+    <div><label for="rol">Rol</label>
+      <select id="rol" name="rol">
+        {% for r in roller %}<option value="{{ r }}">{{ r|capitalize }}</option>{% endfor %}
+      </select></div>
+    <div><label for="firma">Firma (nakliyeci)</label>
+      <input id="firma" name="firma" style="width:180px"></div>
+    <button type="submit">Oluştur</button>
+  </form>
+</div>
+
+{% for k in kullanicilar %}
+<div class="kart">
+  <h2>
+    {{ k.ad_soyad }} <span class="soluk">({{ k.kullanici_adi }})</span>
+    <span class="rozet {{ 'TAMAMLANDI' if k.aktif else 'IPTAL' }}">
+      {{ 'AKTİF' if k.aktif else 'PASİF' }}</span>
+    {% if k.kilitli_mi %}<span class="rozet HATALI">KİLİTLİ</span>{% endif %}
+    {% if k.parola_degistirmeli %}<span class="rozet TASLAK">PAROLA DEĞİŞTİRECEK</span>{% endif %}
+  </h2>
+  <p class="soluk">
+    Rol: <b>{{ k.rol.value }}</b>
+    {% if k.firma %} · Firma: {{ k.firma }}{% endif %}
+    {% if k.eposta %} · {{ k.eposta }}{% endif %}
+    · Son giriş: {{ k.son_giris | zaman or '—' }}
+    {% if k.basarisiz_deneme %} · {{ k.basarisiz_deneme }} başarısız deneme{% endif %}
+  </p>
+
+  <div class="izgara iki">
+    <form method="post" action="/yonetim/kullanicilar/{{ k.id }}/guncelle">
+      <div class="izgara iki">
+        <div><label>Ad Soyad</label>
+          <input name="ad_soyad" value="{{ k.ad_soyad }}" required style="width:100%"></div>
+        <div><label>E-posta</label>
+          <input name="eposta" value="{{ k.eposta or '' }}" style="width:100%"></div>
+        <div><label>Rol</label>
+          <select name="rol" style="width:100%">
+            {% for r in roller %}
+            <option value="{{ r }}" {{ 'selected' if k.rol.value == r }}>{{ r }}</option>
+            {% endfor %}
+          </select></div>
+        <div><label>Firma</label>
+          <input name="firma" value="{{ k.firma or '' }}" style="width:100%"></div>
+      </div>
+      <div class="satir" style="margin-top:12px">
+        <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+          <input type="checkbox" name="aktif" value="true" {{ 'checked' if k.aktif }}> Aktif</label>
+        {% if k.kilitli_mi %}
+        <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+          <input type="checkbox" name="kilidi_ac" value="true"> Kilidi aç</label>
+        {% endif %}
+        <button type="submit">Kaydet</button>
+      </div>
+    </form>
+
+    <div>
+      <form method="post" action="/yonetim/kullanicilar/{{ k.id }}/yetkiler">
+        <label>Modül yetkileri</label>
+        <table style="margin-bottom:10px">
+          <thead><tr><th>Modül</th><th>Yok</th><th>Görüntüleme</th><th>Düzenleme</th></tr></thead>
+          <tbody>
+          {% for modul in moduller %}
+            {% set seviye = k.yetki_seviyesi(modul.kod) %}
+            <tr>
+              <td>{{ modul.ad }}{% if not modul.hazir %}
+                  <span class="soluk">(yakında)</span>{% endif %}</td>
+              <td><input type="radio" name="modul_{{ modul.kod }}" value="YOK"
+                         {{ 'checked' if not seviye }}></td>
+              <td><input type="radio" name="modul_{{ modul.kod }}" value="GORUNTULE"
+                         {{ 'checked' if seviye and seviye.value == 'GORUNTULE' }}></td>
+              <td><input type="radio" name="modul_{{ modul.kod }}" value="DUZENLE"
+                         {{ 'checked' if seviye and seviye.value == 'DUZENLE' }}></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if k.rol.value == 'YONETICI' %}
+          <p class="soluk">Yöneticiler her modüle düzenleme yetkisiyle erişir; bu tablo
+            onlar için dikkate alınmaz.</p>
+        {% endif %}
+        <button type="submit">Yetkileri kaydet</button>
+      </form>
+      <form method="post" action="/yonetim/kullanicilar/{{ k.id }}/parola-sifirla"
+            style="margin-top:12px">
+        <button type="submit" class="ikincil"
+                onclick="return confirm('{{ k.kullanici_adi }} için yeni geçici parola üretilecek. Onaylıyor musunuz?')">
+          Parolayı sıfırla</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,4 +1,5 @@
 {% extends "temel.html" %}
+{% set aktif_modul = 'RING' %}
 {% set aktif_menu = 'gosterge' %}
 {% block icerik %}
 <h1>Gösterge Paneli</h1>
@@ -29,7 +30,7 @@
     kodu bazında saf planlar kurulur, dolmayanlar aynı ürün grubunda birleştirilir.
     Hedef tam palet: kırık palet israfı en aza indirilir.
   </p>
-  <form class="satir" method="post" action="/planlar/uret">
+  <form class="satir" method="post" action="/ring/planlar/uret">
     <div>
       <label for="plan_tarihi">Plan tarihi</label>
       <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}">
@@ -67,7 +68,7 @@
       <tbody>
       {% for plan in son_planlar %}
         <tr>
-          <td><a href="/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
+          <td><a href="/ring/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
           <td>{{ plan.urun_kodlari }}</td>
           <td class="sag">{{ plan.birim_metni }}</td>
           <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>

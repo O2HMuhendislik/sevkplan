@@ -1,10 +1,11 @@
 {% extends "temel.html" %}
+{% set aktif_modul = 'RING' %}
 {% set aktif_menu = 'izleme' %}
 {% block icerik %}
 <h1>Sipariş / Teslimat İzleme</h1>
 
 <div class="kart">
-  <form class="satir" method="get" action="/izleme">
+  <form class="satir" method="get" action="/ring/izleme">
     <div><label for="anahtar">Sipariş no veya teslimat no</label>
       <input id="anahtar" name="anahtar" value="{{ anahtar }}" style="width:340px"
              placeholder="SIP-2026-000145 / TSL-8800123" required></div>
@@ -29,7 +30,7 @@
           <td>{{ satir.depo_kodu }}</td>
           <td>{{ satir.termin_tarihi | tarih }}</td>
           <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
-          <td>{% if satir.plan %}<a href="/planlar/{{ satir.plan.id }}">{{ satir.plan.sefer_no }}</a>
+          <td>{% if satir.plan %}<a href="/ring/planlar/{{ satir.plan.id }}">{{ satir.plan.sefer_no }}</a>
               {% else %}—{% endif %}</td>
         </tr>
       {% endfor %}

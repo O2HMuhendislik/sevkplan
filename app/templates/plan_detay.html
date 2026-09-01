@@ -1,4 +1,5 @@
 {% extends "temel.html" %}
+{% set aktif_modul = 'RING' %}
 {% set aktif_menu = 'planlar' %}
 {% block icerik %}
 <h1>{{ plan.sefer_no }}
@@ -45,7 +46,7 @@
   <div class="kart">
     <h2>Axata iş emri numarası</h2>
     <p class="soluk">WMS'te üretilen iş emri numarası. Yükleme formuna işlenir; girilmeden mail gönderilemez.</p>
-    <form class="satir" method="post" action="/planlar/{{ plan.id }}/axata">
+    <form class="satir" method="post" action="/ring/planlar/{{ plan.id }}/axata">
       <div><label for="axata_no">Axata No</label>
         <input id="axata_no" name="axata_no" value="{{ plan.axata_no or '' }}" required></div>
       <button type="submit">Kaydet</button>
@@ -55,12 +56,12 @@
   <div class="kart">
     <h2>İşlemler</h2>
     <div class="satir">
-      <a class="dugme ikincil" href="/planlar/{{ plan.id }}/form">Yükleme formunu indir</a>
-      <form method="post" action="/planlar/{{ plan.id }}/mail"><button type="submit">Depoya gönder</button></form>
-      <form method="post" action="/planlar/{{ plan.id }}/tamamla">
+      <a class="dugme ikincil" href="/ring/planlar/{{ plan.id }}/form">Yükleme formunu indir</a>
+      <form method="post" action="/ring/planlar/{{ plan.id }}/mail"><button type="submit">Depoya gönder</button></form>
+      <form method="post" action="/ring/planlar/{{ plan.id }}/tamamla">
         <button type="submit" class="ikincil">Tamamlandı işaretle</button></form>
     </div>
-    <form class="satir" method="post" action="/planlar/{{ plan.id }}/iptal" style="margin-top:14px">
+    <form class="satir" method="post" action="/ring/planlar/{{ plan.id }}/iptal" style="margin-top:14px">
       <div><label for="aciklama">İptal açıklaması</label>
         <input id="aciklama" name="aciklama" style="width:260px"></div>
       <button type="submit" class="tehlike"

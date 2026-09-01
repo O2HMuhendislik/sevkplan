@@ -30,6 +30,26 @@ class Temel(DeclarativeBase):
     pass
 
 
+class Rol(str, enum.Enum):
+    """Kullanıcı rolleri. Modül yetkileri ayrıca kullanıcı bazında verilir."""
+
+    YONETICI = "YONETICI"
+    """Her modüle ve kullanıcı yönetimine erişir."""
+    PLANLAMACI = "PLANLAMACI"
+    """Yetkili olduğu modüllerde plan üretir, düzenler."""
+    DEPO = "DEPO"
+    """Yükleme formunu görür, Axata numarası girer, planı tamamlar."""
+    NAKLIYECI = "NAKLIYECI"
+    """Dış kullanıcı. Yalnızca kendisine açılan araç talebi ekranlarını görür."""
+    IZLEYICI = "IZLEYICI"
+    """Yalnızca görüntüler, değişiklik yapamaz."""
+
+
+class YetkiSeviyesi(str, enum.Enum):
+    GORUNTULE = "GORUNTULE"
+    DUZENLE = "DUZENLE"
+
+
 class SiparisDurumu(str, enum.Enum):
     BEKLEMEDE = "BEKLEMEDE"
     PLANLANDI = "PLANLANDI"
@@ -44,6 +64,70 @@ class PlanDurumu(str, enum.Enum):
     MAIL_GONDERILDI = "MAIL_GONDERILDI"
     TAMAMLANDI = "TAMAMLANDI"
     IPTAL = "IPTAL"
+
+
+class Kullanici(Temel):
+    """Sisteme giriş yapan kişi. Parola `app/guvenlik.py` ile scrypt olarak saklanır."""
+
+    __tablename__ = "kullanicilar"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kullanici_adi: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    ad_soyad: Mapped[str] = mapped_column(String(150))
+    eposta: Mapped[str | None] = mapped_column(String(200), default=None)
+    firma: Mapped[str | None] = mapped_column(String(150), default=None)
+    """Dış kullanıcılar için nakliyeci firma adı."""
+    parola_ozeti: Mapped[str] = mapped_column(String(255))
+    rol: Mapped[Rol] = mapped_column(Enum(Rol, native_enum=False, length=20), default=Rol.IZLEYICI, index=True)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    parola_degistirmeli: Mapped[bool] = mapped_column(Boolean, default=True)
+    """İlk giriş ve parola sıfırlamadan sonra değiştirme zorunluluğu."""
+    basarisiz_deneme: Mapped[int] = mapped_column(Integer, default=0)
+    kilitli_mi: Mapped[bool] = mapped_column(Boolean, default=False)
+    son_giris: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    yetkiler: Mapped[list[ModulYetkisi]] = relationship(
+        back_populates="kullanici", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def yonetici_mi(self) -> bool:
+        return self.rol is Rol.YONETICI
+
+    def yetki_seviyesi(self, modul_kodu: str) -> YetkiSeviyesi | None:
+        if self.yonetici_mi:
+            return YetkiSeviyesi.DUZENLE
+        for yetki in self.yetkiler:
+            if yetki.modul_kodu == modul_kodu:
+                return yetki.seviye
+        return None
+
+    def gorebilir_mi(self, modul_kodu: str) -> bool:
+        return self.yetki_seviyesi(modul_kodu) is not None
+
+    def duzenleyebilir_mi(self, modul_kodu: str) -> bool:
+        return self.yetki_seviyesi(modul_kodu) is YetkiSeviyesi.DUZENLE
+
+
+class ModulYetkisi(Temel):
+    """Bir kullanıcının bir modüldeki yetki seviyesi."""
+
+    __tablename__ = "modul_yetkileri"
+    __table_args__ = (
+        UniqueConstraint("kullanici_id", "modul_kodu", name="uq_modul_yetkisi"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kullanici_id: Mapped[int] = mapped_column(
+        ForeignKey("kullanicilar.id"), index=True
+    )
+    modul_kodu: Mapped[str] = mapped_column(String(30), index=True)
+    seviye: Mapped[YetkiSeviyesi] = mapped_column(
+        Enum(YetkiSeviyesi, native_enum=False, length=20), default=YetkiSeviyesi.GORUNTULE
+    )
+
+    kullanici: Mapped[Kullanici] = relationship(back_populates="yetkiler")
 
 
 class Urun(Temel):
@@ -142,7 +226,7 @@ class SevkiyatPlani(Temel):
     """Boşa giden palet payı; 0 ise plandaki her üründen tam palet yükleniyor."""
     mix_mi: Mapped[bool] = mapped_column(Boolean, default=False)
     durum: Mapped[PlanDurumu] = mapped_column(
-        Enum(PlanDurumu), default=PlanDurumu.TASLAK, index=True
+        Enum(PlanDurumu, native_enum=False, length=20), default=PlanDurumu.TASLAK, index=True
     )
     axata_no: Mapped[str | None] = mapped_column(String(50), index=True, default=None)
     plan_tarihi: Mapped[date] = mapped_column(Date, index=True)
@@ -201,7 +285,7 @@ class SiparisSatiri(Temel):
     siparis_tarihi: Mapped[date | None] = mapped_column(Date, default=None)
     termin_tarihi: Mapped[date | None] = mapped_column(Date, index=True, default=None)
     durum: Mapped[SiparisDurumu] = mapped_column(
-        Enum(SiparisDurumu), default=SiparisDurumu.BEKLEMEDE, index=True
+        Enum(SiparisDurumu, native_enum=False, length=20), default=SiparisDurumu.BEKLEMEDE, index=True
     )
     hata_aciklamasi: Mapped[str | None] = mapped_column(Text, default=None)
     plan_id: Mapped[int | None] = mapped_column(
