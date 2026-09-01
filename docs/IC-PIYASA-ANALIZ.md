@@ -61,8 +61,8 @@ Sefer numarası mantığı Ring ile aynıdır, yalnızca belge kodu değişir:
 ## 3. FTL planlama
 
 * Bir araçta **birden fazla uğrama noktası** olabilir.
-* **Son uğrak noktası** aracın en az **%25–30 hacmini** kaplamalıdır; aksi hâlde navlun
-  mantıklı olmaz.
+* **Son uğrak noktası** aracın en az **%15 hacmini** kaplamalıdır; aksi hâlde navlun
+  mantıklı olmaz. Son uğrak, plandaki en uzak ildir (bkz. `app/domain/iller.py`).
 * Uğrama noktası sayısı tır ve kamyonda **en fazla 5**.
 * Sipariş yönetimi **bölge bazlıdır**; hangi illerin birlikte rotalanabileceği geçmiş
   planlardan çıkarılacaktır.
@@ -116,9 +116,14 @@ Adana+Hatay (50), Antalya+Isparta (48), Batman+Diyarbakır (47).
 rotaları zincirleme birbirine bağlandığı için otomatik ayrım yapılamadı; bu bölgenin
 elle bölünmesi gerekiyor.
 
-**Durak sırası bilgisi veride yok.** "Son uğrak en az %25 hacim" kuralı bu yüzden
-geçmişten doğrulanamadı; kuralı uygulayabilmek için bölge içindeki illerin **sıralaması**
-(hangi il daha uzak) master dataya girilmeli.
+**Durak sırası** için `app/domain/iller.py` içinde 81 ilin Eskişehir'e yaklaşık
+karayolu mesafesi tutuluyor. Bir plandaki duraklar yakından uzağa sıralanır, en uzak il
+**son uğrak** olur. Mesafeler yaklaşıktır; amaç kesin navlun değil sıralamadır ve
+sıralama ±50 km hatadan etkilenmez. Master data ekranından düzenlenebilir olacak.
+
+**Yükleme tesisleri:** depo `64`, `64-D`, `64-V`, `64-P` ve bayi ortak deposu `-1`
+**Eskişehir**'den; `34`, `44`, `74` ve varyantları **Bozüyük**'ten yüklenir. İki tesis
+arası ~80 km olduğu için tek mesafe tablosu yeterli.
 
 ## 5. Depolar arası ortak yükleme
 
@@ -132,29 +137,64 @@ geçmişten doğrulanamadı; kuralı uygulayabilmek için bölge içindeki iller
 
 ## 6. Yükleme formu
 
-Her sevkiyat tipi için yükleme formu üretilir. Ring formundan farkı: forma **iller,
-ilçeler ve durak sayısı** da yazılır. Nihai format iletilecek.
+Format iletildi (`01.09.2026 Tarihli 2. Bölge Yükleme Formları.xlsx`). Günlük ve bölge
+bazlı tek bir çalışma kitabı; **her sevkiyat tipi ayrı sayfada**:
+`S-FTL Sevk`, `R-Rutin`, `K-KARGO`, `A-ALICI VASITASI`, `D-RİNG`, `M-ARÇELİK`,
+`T-SİSTEMSEL`, `KOÇTAŞ`.
+
+Üst blok Ring formuyla aynı: form no, sefer no, plan sevk tarihi, depo/AXATA kutusu
+(`34-DEPO`, `44-DEPO`, `64-D DEPO`, `64-V DEPO`, `74-DEPO`) ve uyarı notları
+("Paletlerin hazırlandığı sırada etiketlenmesi gerekmektedir",
+"BACALAR KOMBİLERİN ÜZERİNE YÜKLENECEKTİR").
+
+Satır tablosu: `No · İl Adi · Sipariş No · Belge No · Depo · Ürün Kodu · Ürün Adi ·
+Adet · Bayii Adı · Sevk Adresi · Sevk Adresi · Teslimat` (+ Rutin sayfasında `Axata`).
+İlk satırın `No` sütununda araç tipi yazar (`TIR`, `KAMYON`, `FTL RUTİN`).
+
+**Alt blok — Ring formunda olmayan kısım:**
+
+```
+Toplam parça sayısı                      333
+Araç Yer,Sürücü ve Yükleme yapanın Bilgileri | Sevkiyat Palet Detayı ve Ürün Bilgileri
+Araç Tipi     TIR
+İl            İZMİR2YER            <- il adı + durak sayısı
+İlçe          KARABAĞLAR+BERGAMA   <- ilçeler "+" ile birleşik
+Yer Miktarı   2                    <- durak sayısı
+Plaka / Şöfor Adı / Telefon
+Nak.Firma     OMSAN
+Faturalama    DD %25 · VAİLLANT %75   <- marka bazlı fatura yüzdesi
+Yükleme yapacak depolar   Kalem   Adet
+  64 VAİLLANT               2      800
+  64 DEMİRDÖKÜM            20      164
+  Bayi Depo                48      333
+Planlayan     Mehmet SAKARYA
+Sevk Kontrol / Adı Soyadı / İmzası
+```
+
+Depolar arası aktarma notu (*"64 depoya gönderilmelidir"*) bu **"Yükleme yapacak
+depolar"** bloğunun yanına yazılacak.
 
 ## 7. Karara bağlananlar
 
 | # | Konu | Karar |
 |---|---|---|
-| 1 | `-1` depo | **Bayi ortak deposu.** Verileri Excel ile gelecek, depo kodu belirtilecek. |
+| 1 | `-1` depo | **Bayi ortak deposu**, Eskişehir'de. Sistemde de `-1` kodu ile işlenir. |
 | 2 | Rutin aracın kapasitesi | **Anahtar değer**, genelde tır. |
-| 3 | Son uğrak alt sınırı | **%25** |
+| 3 | Son uğrak alt sınırı | **%15** |
 | 4 | Günlük araç sınırı | FTL **35**; rutin/parsiyel **3–4** |
 | 5 | Kargo 10 desi eşiği | **Müşterinin toplam siparişi** bazında |
 | 6 | Incoterms | Sipariş dosyasında `Not` sütununda: `CIF` / `EXW`. Aynı sütun bazen `" - İLÇE"` biçiminde ilçe taşıyor; ikisi ayrıştırılıyor. |
 | 7 | Tır girişi | Geçmişte hiç tır yapılmamış müşteri "tır giremiyor" kabul edilir (en az 5 planı olanlar için) |
+| 8 | Müşteri anahtarı | **Bayi adı** ile eşleştirilir; bayi kodlarına ulaşılınca revize edilecek |
+| 9 | Yükleme tesisleri | 64 ve -1 Eskişehir; 34, 44, 74 Bozüyük |
 
 ## 8. Hâlâ cevap bekleyenler
 
 | # | Konu |
 |---|---|
-| 1 | **İç piyasa yükleme formu formatı** (iller, ilçeler, durak sayısı ile) |
-| 2 | **Bayi ortak deposu (`-1`) verisi** ve alacağı depo kodu |
-| 3 | **Bölge içindeki il sıralaması** — "son uğrak" kuralı için hangi ilin daha uzak olduğu bilgisi gerekiyor |
-| 4 | 29 illik Doğu/Güneydoğu bölgesinin elle bölünmesi |
-| 5 | Rutin planlar için günlük 3–4 araç sınırı: bu sınır bölge başına mı, toplam mı? |
-| 6 | `B` kodu (Arçelik İzmir Kemalpaşa depo aktarımı, depo 44) bu sisteme girecek mi? |
-| 7 | Müşteri anahtarı: veride müşteri kodu yok, eşleştirme **bayi adı** ile yapılıyor. Kaynak sistemde müşteri kodu var mı? |
+| 1 | 29 illik Doğu/Güneydoğu bölgesinin elle bölünmesi |
+| 2 | Rutin planlar için günlük 3–4 araç sınırı: bölge başına mı, toplam mı? |
+| 3 | `B` (Arçelik İzmir Kemalpaşa, depo 44), `M-ARÇELİK`, `T-SİSTEMSEL` ve `KOÇTAŞ` sayfaları bu sisteme girecek mi? |
+| 4 | Formdaki **marka bazlı fatura yüzdesi** (DD / VAİLLANT / PROTHERM) nasıl hesaplanıyor — hacim payı mı, tutar mı? |
+| 5 | Formdaki **"Yer Miktarı"** durak sayısıyla aynı mı, yoksa araçtaki fiziksel yer sayısı mı? |
+| 6 | Kargo ve rutin formlarında Axata numarası birden çok geliyor (`3299-3303` gibi aralık). Nasıl üretiliyor? |
