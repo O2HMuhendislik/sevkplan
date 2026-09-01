@@ -187,14 +187,29 @@ depolar"** bloğunun yanına yazılacak.
 | 7 | Tır girişi | Geçmişte hiç tır yapılmamış müşteri "tır giremiyor" kabul edilir (en az 5 planı olanlar için) |
 | 8 | Müşteri anahtarı | **Bayi adı** ile eşleştirilir; bayi kodlarına ulaşılınca revize edilecek |
 | 9 | Yükleme tesisleri | 64 ve -1 Eskişehir; 34, 44, 74 Bozüyük |
+| 10 | Doğu/Güneydoğu bölge bölünmesi | Kullanıcı **elle** böler; sistem 29 illik bölgeyi otomatik parçalamaz. |
+| 11 | Rutin günlük araç sınırı | **Toplam** 3–4 araç (bölge başına değil). |
+| 12 | Kapsam | `M-ARÇELİK`, `T-SİSTEMSEL`, `KOÇTAŞ` ve `B` (Arçelik İzmir Kemalpaşa) **kapsam dışı**. |
+| 13 | Marka bazlı fatura yüzdesi | **Anahtar değerdeki paya** göre. Depo kodunun yanında `V` veya `P` olanlar **VAİLLANT**, diğerleri **DEMİRDÖKÜM**. Navlun faturalarının dağıtımında kullanılıyor; yükleme formunda ve plan detayında gösterilir. |
+| 14 | "Yer Miktarı" | **Durak sayısı** ile aynı. |
+| 15 | Birden fazla Axata numarası | Depo operasyonunun toplama işini kolaylaştırmak için ürünler farklı gruplanarak **bir plana birden çok Axata numarası** verilebiliyor. |
 
 ## 8. Hâlâ cevap bekleyenler
 
 | # | Konu |
 |---|---|
-| 1 | 29 illik Doğu/Güneydoğu bölgesinin elle bölünmesi |
-| 2 | Rutin planlar için günlük 3–4 araç sınırı: bölge başına mı, toplam mı? |
-| 3 | `B` (Arçelik İzmir Kemalpaşa, depo 44), `M-ARÇELİK`, `T-SİSTEMSEL` ve `KOÇTAŞ` sayfaları bu sisteme girecek mi? |
-| 4 | Formdaki **marka bazlı fatura yüzdesi** (DD / VAİLLANT / PROTHERM) nasıl hesaplanıyor — hacim payı mı, tutar mı? |
-| 5 | Formdaki **"Yer Miktarı"** durak sayısıyla aynı mı, yoksa araçtaki fiziksel yer sayısı mı? |
-| 6 | Kargo ve rutin formlarında Axata numarası birden çok geliyor (`3299-3303` gibi aralık). Nasıl üretiliyor? |
+| 1 | Yükleme formundaki `PROTHERM` satırı: kullanıcı `-P` deposunu da VAİLLANT saydı, ancak formda PROTHERM ayrı bir fatura satırı olarak görünüyor. Ayrı marka olarak ayrılacaksa tek satırlık bir değişiklik (`app/domain/marka.py`). |
+| 2 | Bayi ortak deposu (`-1`) sipariş dosyası henüz iletilmedi. |
+| 3 | SMTP ayarları (otomatik mail gönderimi). |
+
+## 9. Uygulanan kısımlar
+
+* **Marka payı (13):** `app/domain/marka.py` — depo kodu sonekinden marka, anahtar
+  değere göre pay. Plan kaydedilirken `marka_paylari_metni` alanına yazılıyor;
+  yükleme formunda `FATURA YÜZDESİ` bloğu, plan detayında "Navlun fatura dağıtımı"
+  kartı olarak gösteriliyor. Ring modülünde çalışır durumda, iç piyasa modülünde
+  aynı hesap kullanılacak.
+* **Çoklu Axata (15):** `AxataNumarasi` tablosu — bir plana virgül/boşluk/noktalı
+  virgülle ayrılmış birden çok numara girilebiliyor, her birine açıklama
+  yazılabiliyor, tek tek silinebiliyor, mükerrer numara reddediliyor. Yükleme
+  formunda birden fazlaysa `AXATA NUMARALARI` listesi yazılıyor.
