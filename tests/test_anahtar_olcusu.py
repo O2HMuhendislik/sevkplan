@@ -100,11 +100,11 @@ def test_farkli_gruplar_otomatik_birlesmez(db):
 
 def test_aksesuar_ana_urunun_planina_yazilir(db):
     """Aksesuar tek başına plan açmaz; teslimattaki ana ürünün anahtarına yazılır."""
-    urun_ekle(db, "KMB-24", palet_ici_adet=18, grup="KOMBİ")
-    urun_ekle(db, "BACA-60", palet_ici_adet=77, tir_yukleme_adeti=1000, grup="AKSESUAR")
-    satir_ekle(db, "TSL-1", "KMB-24", 50, siparis_no="S1")    # 0,50 anahtar
-    satir_ekle(db, "TSL-1", "BACA-60", 100, siparis_no="S2")  # 0,10 anahtar
-    satir_ekle(db, "TSL-2", "KMB-24", 40, siparis_no="S3")    # 0,40 anahtar
+    urun_ekle(db, "KMB-24", palet_ici_adet=10, grup="KOMBİ")
+    urun_ekle(db, "BACA-60", palet_ici_adet=100, tir_yukleme_adeti=1000, grup="AKSESUAR")
+    satir_ekle(db, "TSL-1", "KMB-24", 50, siparis_no="S1")    # 5 palet -> 0,50
+    satir_ekle(db, "TSL-1", "BACA-60", 100, siparis_no="S2")  # 1 palet -> 0,10
+    satir_ekle(db, "TSL-2", "KMB-24", 40, siparis_no="S3")    # 4 palet -> 0,40
 
     sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
     assert len(sonuc.planlar) == 1

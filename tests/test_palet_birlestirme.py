@@ -62,3 +62,67 @@ def test_palet_verisi_olmayan_urunde_israf_sifirdir(db):
     ).planlar[0]
     assert plan.toplam_palet == 0
     assert plan.kirik_palet_israfi == 0
+
+
+def test_kirik_palet_arac_kapasitesinde_tam_palet_yeri_kaplar(db):
+    """Sahadaki durum: kombi + baca çiftleri, 305 adet değil 300 adet planlanmalı.
+
+    Kombi palet içi 15, tır yükleme adeti 360 (= 24 tam palet).
+    305 adet ham oranla 305/360 = 0,847 görünür ama 21 palet gözü kaplar (0,875).
+    Baca ile birlikte toplam 1,029 eder ve araca sığmaz; motor 300 adetlik
+    (20 tam palet) bileşimi seçmelidir.
+    """
+    urun_ekle(db, "KMB-P24", palet_ici_adet=15, tir_yukleme_adeti=360, grup="KOMBİ")
+    urun_ekle(db, "BACA-60", palet_ici_adet=77, tir_yukleme_adeti=2002, grup="AKSESUAR")
+    for i in range(61):  # 61 x 5 = 305 adet
+        satir_ekle(db, f"T{i:02d}", "KMB-P24", 5, siparis_no=f"SK{i}")
+        satir_ekle(db, f"T{i:02d}", "BACA-60", 5, siparis_no=f"SB{i}")
+
+    sonuc = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31), depo_kodu="64")
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    kombi_adedi = sum(s.miktar for s in plan.satirlar if s.urun_kodu == "KMB-P24")
+    assert kombi_adedi == 300              # 20 tam palet, 305 değil
+    assert plan.toplam_palet == 24         # 20 kombi + 4 baca paleti
+    assert plan.toplam_birim <= 1
+    assert len(sonuc.bekleyenler) == 1     # artan çift beklemede
+
+
+def test_tam_palet_katindaki_miktar_araci_doldurur(db):
+    urun_ekle(db, "KMB-P24", palet_ici_adet=15, tir_yukleme_adeti=360, grup="KOMBİ")
+    for i in range(24):
+        satir_ekle(db, f"T{i:02d}", "KMB-P24", 15, siparis_no=f"S{i}")
+
+    plan = plan_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 8, 31), depo_kodu="64"
+    ).planlar[0]
+    assert plan.toplam_palet == 24
+    assert plan.toplam_birim == 1
+    assert plan.kirik_palet_israfi == 0
+
+
+def test_anahtar_birimi_kirik_paleti_tam_palet_sayar():
+    """Ham oran ile işgal edilen yer arasındaki farkı doğrudan ölçer."""
+    from app.domain.planlama import AnahtarBirimi, Teslimat
+
+    hesapla = AnahtarBirimi({"KMB": 15}, {"KMB": 360})
+
+    def teslimat(miktar):
+        return Teslimat(
+            teslimat_no="T",
+            depo_kodu="64",
+            planlama_anahtari="KMB",
+            urun_kodu="KMB",
+            urun_adi="KMB",
+            miktar=Decimal(miktar),
+            birim=Decimal("0.1"),
+            oncelik_tarihi=date(2026, 12, 1),
+            sku_miktarlari={"KMB": Decimal(miktar)},
+        )
+
+    # 5 adet ham oranla 0,0139 eder ama bir palet gözü kaplar: 15/360 = 0,0417.
+    assert hesapla([teslimat(5)]) == Decimal(15) / Decimal(360)
+    # 305 adet -> 21 palet -> 315/360
+    assert hesapla([teslimat(305)]) == Decimal(315) / Decimal(360)
+    # 300 adet -> 20 tam palet -> ham oranla aynı
+    assert hesapla([teslimat(300)]) == Decimal(300) / Decimal(360)

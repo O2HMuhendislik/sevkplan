@@ -47,7 +47,7 @@
         <td><b>{{ satir.teslimat_no }}</b></td>
         <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
         <td>{{ satir.urun_kodu }}</td>
-        <td class="sag">{{ satir.miktar }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
         <td>{{ satir.depo_kodu }}</td>
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td>

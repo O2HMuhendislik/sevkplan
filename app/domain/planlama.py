@@ -106,6 +106,40 @@ class PaletBirimi:
 
 
 @dataclass(frozen=True)
+class AnahtarBirimi:
+    """Anahtar değeri **işgal edilen palet** üzerinden hesaplar.
+
+    Ham miktar / yükleme adeti oranı yanıltıcıdır: kırık bir palet araçta yarım yer
+    kaplamaz, tam bir palet gözü kaplar. Bu yüzden her SKU'nun plandaki toplam miktarı
+    önce palete yuvarlanır, sonra anahtar değere çevrilir.
+
+        birim = Σ  yukarı_yuvarla(miktar / palet içi) x palet içi / tır yükleme adeti
+
+    Örnek: palet içi 15, tır yükleme adeti 360 (= 24 tam palet) olan bir üründen
+    305 adet, ham oranla 0,847 görünür ama 21 palet gözü kaplar ve gerçek karşılığı
+    0,875'tir. Böylece motor 305 yerine 300 adetlik (20 tam palet) bileşimi seçer.
+
+    Palet içi adedi tanımsız ürünlerde ham oran kullanılır.
+    """
+
+    palet_ici: Mapping[str, int]
+    yukleme_adeti: Mapping[str, int]
+
+    def __call__(self, teslimatlar: Sequence[Teslimat]) -> Decimal:
+        toplam = Decimal(0)
+        for sku, miktar in _sku_toplamlari(teslimatlar).items():
+            adet = self.yukleme_adeti.get(sku)
+            if not adet:
+                continue
+            palet_ici = self.palet_ici.get(sku)
+            islenen = (
+                palet_hesapla(miktar, palet_ici) * palet_ici if palet_ici else miktar
+            )
+            toplam += Decimal(islenen) / Decimal(adet)
+        return toplam
+
+
+@dataclass(frozen=True)
 class PaletIsrafi:
     """Plandaki kırık palet israfını ölçer: boşa giden palet payı.
 

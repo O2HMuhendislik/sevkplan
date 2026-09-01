@@ -22,13 +22,25 @@ Bütün ring planlamaları **tır bazında, anahtar değerle** yapılır. Depo a
 | Anahtar değer | 1,00 (%100) | 0,90 | `Tır yükleme adeti` |
 
 ```
-anahtar = Σ ( miktar / tır yükleme adeti )      # 1,00 = araç %100 dolu
 palet   = Σ_SKU yukarı yuvarla( plandaki toplam miktar / palet içi adet )
+anahtar = Σ_SKU ( o SKU'nun paleti x palet içi adet ) / tır yükleme adeti
 ```
 
-**Palet kapasite kısıtı değil, kalite ölçüsüdür.** Aracın dolduğunu anahtar değer
-söyler; palet ise yüklemenin ne kadar düzgün olduğunu gösterir. Motor bu ikisini
-birlikte gözetir (bkz. §3).
+**Kapasite işgal edilen palet üzerinden hesaplanır, ham miktar üzerinden değil.**
+Kırık bir palet araçta yarım yer kaplamaz, tam bir palet gözü kaplar. Bu yüzden her
+SKU'nun plandaki miktarı önce palete yuvarlanır, sonra anahtar değere çevrilir.
+
+*Örnek (sahadan):* palet içi 15, tır yükleme adeti 360 (= 24 tam palet) olan bir
+kombiden 305 adet, ham oranla `305/360 = 0,847` görünür ve araç dolmamış sanılır.
+Gerçekte 21 palet gözü kaplar, karşılığı `315/360 = 0,875`'tir. Baca setiyle birlikte
+toplam 1,03 eder ve araca sığmaz. Motor bu yüzden 305 değil **300 adetlik (20 tam
+palet)** bileşimi seçer — sahada da böyle yükleniyor.
+
+Palet içi adedi tanımsız ürünlerde ham oran kullanılır.
+
+Palet hem **kapasitenin** hem de **kalitenin** ölçüsüdür: aracın ne kadar dolduğunu
+işgal edilen palet belirler, kırık palet israfı ise yüklemenin ne kadar düzgün
+olduğunu gösterir (bkz. §3).
 
 Kapasite soyutlaması (`app/domain/kapasite.py`) palet ölçüsünü de destekler; bir depo
 palet bazına dönerse `app/config.py` → `DEPO_PROFILLERI` içinde profili değiştirmek

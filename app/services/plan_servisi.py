@@ -17,6 +17,7 @@ from app.config import (
 from app.domain import sefer_no as sefer_no_modulu
 from app.domain.kapasite import AracTipi, KapasiteProfili, Olcu
 from app.domain.planlama import (
+    AnahtarBirimi,
     BekleyenTeslimat,
     EsnetmeKurali,
     PaletBirimi,
@@ -140,9 +141,15 @@ def teslimat_olculeri(
         urun = urun_haritasi[urun_kodu]
         if urun.palet_ici_adet:
             palet += palet_hesapla(miktar, urun.palet_ici_adet)
-        birim_anahtar = urun.anahtar_degeri(arac_tipi)
-        if birim_anahtar is not None:
-            anahtar += miktar * birim_anahtar
+        yukleme = urun.yukleme_adeti(arac_tipi)
+        if yukleme:
+            # Kırık palet de tam palet gözü kaplar; anahtar değer buna göre hesaplanır.
+            islenen = (
+                palet_hesapla(miktar, urun.palet_ici_adet) * urun.palet_ici_adet
+                if urun.palet_ici_adet
+                else miktar
+            )
+            anahtar += Decimal(islenen) / Decimal(yukleme)
         if urun.agirlik:
             agirlik += miktar * Decimal(urun.agirlik)
     return TeslimatOlculeri(
@@ -159,6 +166,14 @@ def palet_haritasi(urunler: dict[str, Urun]) -> dict[str, int]:
         kod: urun.palet_ici_adet
         for kod, urun in urunler.items()
         if urun.palet_ici_adet
+    }
+
+
+def yukleme_haritasi(urunler: dict[str, Urun], arac_tipi: AracTipi) -> dict[str, int]:
+    return {
+        kod: urun.yukleme_adeti(arac_tipi)
+        for kod, urun in urunler.items()
+        if urun.yukleme_adeti(arac_tipi)
     }
 
 
@@ -307,7 +322,13 @@ def plan_uret(
     esnetme = EsnetmeKurali(zorla=kalanlari_zorla, asgari_oran=ESNETME_ASGARI_ORAN)
     palet_haritasi_ = palet_haritasi(urun_haritasi)
     palet_hesaplayici = PaletBirimi(palet_haritasi_)
-    hesaplayici = palet_hesaplayici if profil.olcu is Olcu.PALET else None
+    hesaplayici = (
+        palet_hesaplayici
+        if profil.olcu is Olcu.PALET
+        else AnahtarBirimi(
+            palet_haritasi_, yukleme_haritasi(urun_haritasi, profil.arac_tipi)
+        )
+    )
     planlama: PlanlamaSonucu = planla(
         teslimatlar,
         profil,
@@ -388,7 +409,11 @@ def _plani_kaydet(
             else Decimal(0)
         ),
         kirik_palet_israfi=taslak.israf.quantize(Decimal("0.001"), ROUND_HALF_UP),
-        toplam_anahtar=taslak.toplam_anahtar,
+        toplam_anahtar=(
+            taslak.toplam_birim
+            if profil.olcu is Olcu.ANAHTAR
+            else taslak.toplam_anahtar
+        ),
         toplam_adet=taslak.toplam_adet,
         toplam_agirlik=taslak.toplam_agirlik,
         doluluk_yuzdesi=taslak.doluluk_yuzdesi,

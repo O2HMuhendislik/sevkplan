@@ -96,9 +96,9 @@
         <td><div class="doluluk">
           <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
           <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>
-        <td class="sag">{{ plan.toplam_palet }}
+        <td class="sag">{{ plan.toplam_palet | sayi }}
           {% if plan.kirik_palet_israfi > 0 %}
-            <div class="soluk">{{ plan.kirik_palet_israfi }} palet israf</div>
+            <div class="soluk">{{ plan.kirik_palet_israfi | sayi }} palet israf</div>
           {% endif %}</td>
         <td>{{ plan.axata_no or '—' }}</td>
         <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>

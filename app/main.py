@@ -52,6 +52,18 @@ sablon_motoru.env.filters["tarih"] = lambda d: d.strftime("%d.%m.%Y") if d else 
 sablon_motoru.env.filters["zaman"] = lambda d: d.strftime("%d.%m.%Y %H:%M") if d else ""
 
 
+def _sayi(deger) -> str:
+    """Gereksiz ondalıkları atar: 610.000 -> 610, 0.750 -> 0,75."""
+    if deger is None:
+        return ""
+    ondalikli = Decimal(deger).normalize()
+    metin = format(ondalikli, "f")
+    return metin.replace(".", ",")
+
+
+sablon_motoru.env.filters["sayi"] = _sayi
+
+
 def sayfa(istek: Request, ad: str, **baglam):
     baglam.setdefault("mesaj", istek.query_params.get("mesaj"))
     baglam.setdefault("hata", istek.query_params.get("hata"))

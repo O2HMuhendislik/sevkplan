@@ -3,6 +3,7 @@
 {% block icerik %}
 <h1>{{ plan.sefer_no }}
   <span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span>
+  <span class="rozet PLANLANDI">DEPO {{ plan.depo_kodu }}</span>
   {% if plan.mix_mi %}<span class="rozet PLANLANDI">MIX PLAN</span>{% endif %}
   {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ALT LİMİT ESNETİLDİ</span>{% endif %}
 </h1>
@@ -26,13 +27,16 @@
   <div class="metrik"><div class="etiket">Doluluk</div>
     <div class="deger">%{{ plan.doluluk_yuzdesi }}</div></div>
   <div class="metrik"><div class="etiket">Palet</div>
-    <div class="deger">{{ plan.toplam_palet }}</div>
+    <div class="deger">{{ plan.toplam_palet | sayi }}</div>
     <div class="soluk">
       {% if plan.kirik_palet_israfi == 0 %}tam palet — kırık palet yok
-      {% else %}{{ plan.kirik_palet_israfi }} palet israf{% endif %}</div></div>
+      {% else %}{{ plan.kirik_palet_israfi | sayi }} palet israf{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Teslimat / adet</div>
     <div class="deger">{{ plan.teslimat_sayisi }}</div>
-    <div class="soluk">{{ plan.toplam_adet }} adet · {{ plan.toplam_agirlik }} kg</div></div>
+    <div class="soluk">{{ plan.toplam_adet | sayi }} adet · {{ plan.toplam_agirlik | sayi }} kg</div></div>
+  <div class="metrik"><div class="etiket">Depo / plan tipi</div>
+    <div class="deger" style="font-size:21px">{{ plan.depo_kodu }}</div>
+    <div class="soluk">{{ plan.profil.ad }}{% if plan.mix_mi %} · grup içi karışık{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Axata iş emri</div>
     <div class="deger" style="font-size:19px">{{ plan.axata_no or '—' }}</div></div>
 </div>
@@ -70,7 +74,7 @@
   <h2>Plan içeriği</h2>
   <table>
     <thead><tr>
-      <th>Teslimat</th><th>Sipariş</th><th>Bayi / İl</th><th>Ürün Kodu</th>
+      <th>Teslimat</th><th>Sipariş</th><th>Bayi / İl</th><th>Depo</th><th>Ürün Kodu</th>
       <th>Ürün Adı</th><th class="sag">Miktar</th><th>Termin</th><th>Durum</th>
     </tr></thead>
     <tbody>
@@ -79,9 +83,10 @@
         <td><b>{{ satir.teslimat_no }}</b></td>
         <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
         <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
+        <td>{{ satir.depo_kodu }}</td>
         <td>{{ satir.urun_kodu }}</td>
         <td>{{ satir.urun_adi or '—' }}</td>
-        <td class="sag">{{ satir.miktar }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
       </tr>

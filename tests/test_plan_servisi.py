@@ -134,8 +134,8 @@ def test_mix_plan_manuel_olusturulur(db):
     """Farklı ürün grupları yalnızca elle seçilerek tek plana konabilir."""
     urun_ekle(db, "KMB-24", palet_ici_adet=10, grup="KOMBİ")
     urun_ekle(db, "PNL-600", palet_ici_adet=10, grup="PANEL")
-    satir_ekle(db, "M1", "KMB-24", Decimal(50), siparis_no="S1")    # 0,50 anahtar
-    satir_ekle(db, "M2", "PNL-600", Decimal(45), siparis_no="S2")   # 0,45 anahtar
+    satir_ekle(db, "M1", "KMB-24", Decimal(50), siparis_no="S1")    # 5 palet -> 0,50
+    satir_ekle(db, "M2", "PNL-600", Decimal(40), siparis_no="S2")   # 4 palet -> 0,40
 
     # Otomatik motor farklı grupları birleştirmez.
     otomatik = plan_servisi.plan_uret(db, plan_tarihi=date(2026, 8, 31))
@@ -143,7 +143,7 @@ def test_mix_plan_manuel_olusturulur(db):
 
     plan = plan_servisi.mix_plan_olustur(db, ["M1", "M2"], plan_tarihi=date(2026, 8, 31))
     assert plan.mix_mi is True
-    assert plan.toplam_birim == Decimal("0.95")
+    assert plan.toplam_birim == Decimal("0.90")
     assert plan.urun_kodlari == "KMB-24, PNL-600"
 
 

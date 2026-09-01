@@ -63,9 +63,12 @@ gerekçesiyle listeler.
 ## Planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
-2. **Kapasite anahtar değerdir.** Bütün depolar tır bazında planlanır:
-   `anahtar = miktar / tır yükleme adeti`, toplam **1,00 = araç %100 dolu**.
-   Alt limit **0,90**.
+2. **Kapasite anahtar değerdir ve işgal edilen palet üzerinden hesaplanır.**
+   Bütün depolar tır bazında planlanır; toplam **1,00 = araç %100 dolu**, alt limit
+   **0,90**. Kırık palet araçta tam bir palet gözü kapladığı için miktar önce palete
+   yuvarlanır: palet içi 15, tır kapasitesi 360 olan bir üründen 305 adet ham oranla
+   %85 görünür ama gerçekte %87,5 yer kaplar — motor 305 değil **300 adetlik
+   (20 tam palet)** bileşimi seçer.
 3. **Hedef tam palet.** Palet, plan bazında hesaplanır: aynı ürünün farklı
    teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi
    16 olan bir üründen 13 + 3 adet, iki kırık palet değil **tek dolu palet**tir.
