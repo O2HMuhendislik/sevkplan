@@ -1,12 +1,21 @@
+/* ---------------------------------------------------------------- renk paleti
+ *
+ * Vaillant Group kurumsal yeşili. Bütün ekranlar bu dört değişkenden beslenir;
+ * marka kılavuzundaki tam kodlar farklıysa yalnızca burayı değiştirmek yeterlidir,
+ * başka hiçbir dosyaya dokunmaya gerek yoktur.
+ */
 :root {
-  --ana: #1f4e79;
-  --ana-acik: #2f6ea8;
-  --zemin: #f4f6f9;
+  --ana: #007A33;          /* kurumsal yeşil — düğmeler, başlık, vurgular */
+  --ana-koyu: #005523;     /* başlık çubuğunun koyu ucu, koyu vurgular */
+  --ana-acik: #00A94F;     /* üzerine gelme (hover) ve aktif sekme */
+  --ana-cok-acik: #e8f4ec; /* açık yeşil zemin: rozet, tablo başlığı */
+
+  --zemin: #f4f7f5;
   --kart: #ffffff;
-  --kenar: #dde3ea;
-  --metin: #1c2530;
-  --soluk: #6b7785;
-  --yesil: #1e7a48;
+  --kenar: #dfe6e1;
+  --metin: #1c2b23;
+  --soluk: #6b7a71;
+  --yesil: #007A33;
   --sari: #9a6700;
   --kirmizi: #b42318;
 }
@@ -16,13 +25,28 @@ body {
   font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
 }
 header.ust {
-  background: var(--ana); color: #fff; padding: 0 24px;
-  display: flex; align-items: center; gap: 28px; height: 56px;
+  background: linear-gradient(90deg, var(--ana-koyu) 0%, var(--ana) 62%);
+  color: #fff; padding: 0 24px;
+  display: flex; align-items: center; gap: 24px; height: 64px;
 }
-header.ust .marka { font-weight: 700; font-size: 16px; letter-spacing: .3px; }
+/* Logo beyaz bir yonga üzerinde durur: kurumsal logo dosyası yeşil zeminli
+   olduğunda da doğru görünsün diye. */
+header.ust .marka {
+  display: flex; align-items: center; gap: 14px;
+  text-decoration: none; color: #fff;
+}
+header.ust .marka img {
+  height: 34px; width: auto; display: block;
+  background: #fff; border-radius: 6px; padding: 4px 8px;
+}
+header.ust .marka .ad { display: flex; flex-direction: column; line-height: 1.15; }
+header.ust .marka .ad .ust-satir {
+  font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #bfe3cd;
+}
+header.ust .marka .ad .alt-satir { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
 header.ust nav { display: flex; gap: 4px; }
 header.ust nav a {
-  color: #dce7f2; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: 500;
+  color: #d3ecdd; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: 500;
 }
 header.ust nav a:hover { background: var(--ana-acik); color: #fff; }
 header.ust nav a.aktif { background: var(--ana-acik); color: #fff; }
@@ -41,8 +65,8 @@ h2 { font-size: 15px; margin: 0 0 12px; }
 .metrik .etiket { color: var(--soluk); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kenar); }
-th { background: #eef2f7; font-weight: 600; color: #35434f; white-space: nowrap; }
-tbody tr:hover { background: #f7fafc; }
+th { background: var(--ana-cok-acik); font-weight: 600; color: #264332; white-space: nowrap; }
+tbody tr:hover { background: #f4f9f6; }
 td.sag, th.sag { text-align: right; }
 a { color: var(--ana); }
 .rozet {
@@ -51,8 +75,8 @@ a { color: var(--ana); }
 }
 .rozet.TASLAK, .rozet.BEKLEMEDE { color: var(--sari); border-color: #e6c86a; background: #fdf6e3; }
 .rozet.AXATA_BEKLIYOR { color: #7a4b00; border-color: #e0a458; background: #fdf0dd; }
-.rozet.MAIL_GONDERILDI, .rozet.PLANLANDI { color: var(--ana); border-color: #a9c6e0; background: #eaf2f9; }
-.rozet.TAMAMLANDI { color: var(--yesil); border-color: #9ccfb4; background: #e9f6ef; }
+.rozet.MAIL_GONDERILDI, .rozet.PLANLANDI { color: var(--ana-koyu); border-color: #a7d3ba; background: var(--ana-cok-acik); }
+.rozet.TAMAMLANDI { color: var(--yesil); border-color: #8fc9a8; background: #e2f3e9; }
 .rozet.IPTAL, .rozet.HATALI { color: var(--kirmizi); border-color: #edb0aa; background: #fdedeb; }
 button, .dugme {
   background: var(--ana); color: #fff; border: 0; border-radius: 6px;
@@ -69,9 +93,9 @@ input, select {
 label { display: block; font-size: 12px; color: var(--soluk); margin-bottom: 4px; font-weight: 600; }
 form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .uyari { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-weight: 500; }
-.uyari.basari { background: #e9f6ef; color: var(--yesil); border: 1px solid #9ccfb4; }
+.uyari.basari { background: #e2f3e9; color: #05602a; border: 1px solid #8fc9a8; }
 .uyari.hata { background: #fdedeb; color: var(--kirmizi); border: 1px solid #edb0aa; }
-.doluluk { position: relative; background: #e8edf3; border-radius: 4px; height: 16px; min-width: 90px; }
+.doluluk { position: relative; background: #e4ebe7; border-radius: 4px; height: 16px; min-width: 90px; }
 .doluluk span {
   position: absolute; inset: 0 auto 0 0; background: var(--ana); border-radius: 4px;
 }
@@ -93,17 +117,18 @@ header.ust .marka { color: #fff; text-decoration: none; }
 header.ust .kullanici-alani {
   margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px;
 }
-header.ust .kullanici-alani a { color: #dce7f2; text-decoration: none; }
+header.ust .kullanici-alani a { color: #d3ecdd; text-decoration: none; }
 header.ust .kullanici-alani a:hover { color: #fff; text-decoration: underline; }
 header.ust .kullanici-adi { color: #fff; font-weight: 600; }
 header.ust .modul-cikis {
-  border: 1px solid #4b7fae; border-radius: 6px; padding: 5px 12px;
+  border: 1px solid #4fa877; border-radius: 6px; padding: 5px 12px;
 }
 .giris-kutusu {
   max-width: 420px; margin: 60px auto; background: var(--kart);
   border: 1px solid var(--kenar); border-radius: 10px; padding: 32px;
 }
 .giris-kutusu h1 { margin-bottom: 6px; }
+.giris-kutusu .giris-logo { height: 44px; width: auto; display: block; margin-bottom: 18px; }
 .modul-izgara {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px;
 }

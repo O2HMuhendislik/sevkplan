@@ -92,7 +92,7 @@ def kitap(basliklar, satirlar) -> BytesIO:
 def test_ekranlar_acilir(istemci, yol):
     cevap = istemci.get(yol)
     assert cevap.status_code == 200
-    assert "SEVKİYAT PLANLAMA" in cevap.text
+    assert "Nakliye Yönetim Sistemi" in cevap.text
 
 
 @pytest.mark.parametrize(
@@ -394,3 +394,18 @@ def test_alinamayan_satirlar_gerekcesiyle_gosterilir(istemci, fabrika):
     assert "Alınamayan satırlar" in ekran.text
     assert "YOK-99" in ekran.text
     assert "master datada tanımlı değil" in ekran.text
+
+
+def test_baslikta_marka_ve_logo_var(istemci):
+    """Başlık her ekranda kurumsal kimliği taşır; logo tek dosyadan gelir."""
+    cevap = istemci.get("/")
+    assert "Vaillant Group" in cevap.text
+    assert "Nakliye Yönetim Sistemi" in cevap.text
+    assert '/static/logo.svg' in cevap.text
+    assert istemci.get("/static/logo.svg").status_code == 200
+
+
+def test_giris_ekraninda_da_marka_gorunur(ham_istemci):
+    cevap = ham_istemci.get("/giris")
+    assert "Nakliye Yönetim Sistemi" in cevap.text
+    assert '/static/logo.svg' in cevap.text

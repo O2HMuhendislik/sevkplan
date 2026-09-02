@@ -1,4 +1,4 @@
-"""Sevkiyat Planlama — web uygulaması.
+"""Vaillant Group Nakliye Yönetim Sistemi — web uygulaması.
 
 Yapı:
   * `/giris`, `/cikis`, `/sifre-degistir` — kimlik doğrulama
@@ -99,7 +99,9 @@ async def yasam_dongusu(_uygulama: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-uygulama = FastAPI(title="Sevkiyat Planlama", lifespan=yasam_dongusu)
+uygulama = FastAPI(
+    title="Vaillant Group Nakliye Yönetim Sistemi", lifespan=yasam_dongusu
+)
 uygulama.add_middleware(
     SessionMiddleware,
     secret_key=oturum_anahtari(),

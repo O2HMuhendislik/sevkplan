@@ -1,0 +1,26 @@
+<!--
+  Başlıktaki logo yuvası.
+
+  Bu dosya bir YER TUTUCUDUR. Vaillant Group'un resmî logosu markadır ve kurumsal
+  marka kılavuzundaki dosyanın kullanılması gerekir. Değiştirmek için:
+
+    app/static/logo.svg  dosyasının üzerine resmî logoyu yazın
+    (PNG kullanacaksanız app/static/logo.png koyup temel.html içindeki
+     src="/static/logo.svg" satırını /static/logo.png yapın)
+
+  Logo başlıkta beyaz bir zemin üzerinde, 34 piksel yüksekliğinde gösterilir;
+  yatay (landscape) bir logo dosyası en iyi sonucu verir.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48"
+     role="img" aria-label="Vaillant Group">
+  <rect width="200" height="48" fill="none"/>
+  <g fill="#007A33">
+    <!-- Yer tutucu işaret: resmî logo geldiğinde bu grup tamamen değişecek. -->
+    <path d="M14 34 L24 10 L34 34 L28 34 L24 23 L20 34 Z"/>
+    <circle cx="24" cy="38" r="3"/>
+  </g>
+  <text x="46" y="24" font-family="Segoe UI, Arial, sans-serif" font-size="17"
+        font-weight="700" fill="#007A33" letter-spacing="0.5">VAILLANT</text>
+  <text x="46" y="39" font-family="Segoe UI, Arial, sans-serif" font-size="11"
+        font-weight="600" fill="#5A6B62" letter-spacing="2.6">GROUP</text>
+</svg>

@@ -3,12 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block baslik %}Sevkiyat Planlama{% endblock %}</title>
+  <title>{% block baslik %}Vaillant Group Nakliye Yönetim Sistemi{% endblock %}</title>
+  <link rel="icon" href="/static/logo.svg">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="ust">
-  <a href="/" class="marka">SEVKİYAT PLANLAMA</a>
+  <a href="/" class="marka">
+    <img src="/static/logo.svg" alt="Vaillant Group">
+    <span class="ad">
+      <span class="ust-satir">Vaillant Group</span>
+      <span class="alt-satir">Nakliye Yönetim Sistemi</span>
+    </span>
+  </a>
   {% if kullanici %}
   <nav>
     {% if aktif_modul == 'RING' %}

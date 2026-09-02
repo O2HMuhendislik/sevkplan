@@ -1,11 +1,10 @@
-# Sevkiyat Planlama Sistemi
+# Vaillant Group Nakliye Yönetim Sistemi
 
 Sipariş verisinden otomatik sevkiyat planı üreten, planları sefer numarasıyla
 takip eden ve depo operasyona yükleme formu çıkaran uygulama.
 
-**Faz 1 (bu sürüm):** **Ring planlaması** — depo 64 palet ölçüsüyle (18–20 palet),
-depo 74 anahtar değerle (%90–100). Teslimat bölünmez, planda tek ürün grubu bulunur.
-**Faz 2 (sonraki):** Tır planlaması — aynı anahtar değer altyapısı, farklı belge kodu.
+İki planlama modülü hazır: **Ring** (depo çıkışlı, ürün bazlı) ve **İç Piyasa**
+(müşteri ve bölge bazlı; FTL, rutin/parsiyel, kargo).
 
 İş kurallarının tamamı → [`docs/ANALIZ.md`](docs/ANALIZ.md)
 Excel formatları → [`docs/veri-formatlari.md`](docs/veri-formatlari.md)
@@ -46,6 +45,21 @@ python -m scripts.masterdata_hazirla "Ring Planları.xlsx" veri/ornek/urun_maste
 Kaynak kitaptaki `masterdata` sayfasını bulur, `#N/A` değerlerini temizler, ürün
 gruplarını normalize eder ve eksik kapasite verisi olan ürünleri ayrı bir sayfada
 gerekçesiyle listeler.
+
+## Kurumsal kimlik
+
+Başlıktaki logo tek bir dosyadan gelir: **`app/static/logo.svg`**. Depodaki dosya bir
+**yer tutucudur**; marka kılavuzundaki resmî Vaillant Group logosunu bu dosyanın üzerine
+yazmanız yeterlidir, başka hiçbir yeri değiştirmeye gerek yoktur. PNG kullanacaksanız
+`app/static/logo.png` koyup `app/templates/temel.html` ve `app/templates/giris.html`
+içindeki `/static/logo.svg` yollarını `/static/logo.png` yapın. Logo başlıkta beyaz
+zemin üzerinde 34 piksel yüksekliğinde gösterilir; yatay bir logo dosyası en iyi
+sonucu verir.
+
+Renkler de tek yerden gelir: **`app/static/style.css`** dosyasının en üstündeki
+`:root` bloğu. Marka kılavuzundaki yeşilin tam kodu farklıysa yalnızca `--ana`,
+`--ana-koyu`, `--ana-acik` ve `--ana-cok-acik` değerlerini değiştirin; düğmeler,
+başlık, rozetler, doluluk çubukları ve tablo başlıkları hepsi bunlardan beslenir.
 
 ## Giriş ve modüller
 
