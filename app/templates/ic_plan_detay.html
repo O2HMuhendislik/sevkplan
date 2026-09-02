@@ -37,7 +37,7 @@
     <div class="deger" style="font-size:21px">{{ plan.son_ugrak or '—' }}</div>
     <div class="soluk">aracın %{{ (plan.son_ugrak_orani * 100) | sayi }}'i
       {% if plan.son_ugrak_orani and plan.son_ugrak_orani < 0.15 %}
-        · <b style="color:#c00">%15 sınırının altında</b>{% endif %}</div></div>
+        · <b class="dikkat">%15 sınırının altında</b>{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Yükleme deposu</div>
     <div class="deger" style="font-size:21px">{{ plan.yukleme_deposu or plan.depo_kodu }}</div>
     <div class="soluk">{{ plan.iller_metni }}</div></div>
@@ -84,7 +84,7 @@
             {% elif durak.tir_girisi == 'E' %}<span class="rozet TAMAMLANDI">E</span>
             {% else %}<span class="rozet TASLAK">?</span>{% endif %}</td>
         <td>{% if durak.aktarma_notu %}
-              <b style="color:#c00">{{ durak.aktarma_notu }}</b>
+              <b class="dikkat">{{ durak.aktarma_notu }}</b>
             {% else %}—{% endif %}</td>
       </tr>
     {% endfor %}
@@ -209,7 +209,7 @@
         <td>{{ satir.gosterilecek_urun_adi }}</td>
         <td class="sag">{{ satir.miktar | sayi }}</td>
         <td>{% set notu = plan.aktarma_notu(satir) %}
-            {% if notu %}<b style="color:#c00">{{ notu }}</b>{% else %}—{% endif %}</td>
+            {% if notu %}<b class="dikkat">{{ notu }}</b>{% else %}—{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

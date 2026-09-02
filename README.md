@@ -56,10 +56,34 @@ içindeki `/static/logo.svg` yollarını `/static/logo.png` yapın. Logo başlı
 zemin üzerinde 34 piksel yüksekliğinde gösterilir; yatay bir logo dosyası en iyi
 sonucu verir.
 
-Renkler de tek yerden gelir: **`app/static/style.css`** dosyasının en üstündeki
-`:root` bloğu. Marka kılavuzundaki yeşilin tam kodu farklıysa yalnızca `--ana`,
-`--ana-koyu`, `--ana-acik` ve `--ana-cok-acik` değerlerini değiştirin; düğmeler,
-başlık, rozetler, doluluk çubukları ve tablo başlıkları hepsi bunlardan beslenir.
+### Renk paleti
+
+Kaynak: **Vaillant Group Corporate Design Manual 2020, sayfa 16** (1.3.2 Colours –
+Definition). Yedi kurumsal rengin tamamı `app/static/style.css` dosyasının başındaki
+`:root` bloğunda `--vg-*` değişkenleri olarak duruyor; arayüz bunlardan ikisini
+kullanıyor.
+
+| # | Renk | RGB | HEX | Arayüzdeki yeri |
+|---|---|---|---|---|
+| 01 | Vaillant Group Green (Pantone 327 CU) | 0 / 136 / 125 | `#00887D` | Düğmeler, metrik değerleri, doluluk çubuğu, aktif sekme |
+| 02 | Grey | 155 / 155 / 155 | `#9B9B9B` | Kenarlık (%40), tablo başlığı (%20) |
+| 03 | Light Blue | 0 / 135 / 192 | `#0087C0` | (şu an kullanılmıyor) |
+| 04 | Purple | 133 / 34 / 94 | `#85225E` | Uyarı ve hata — kartelada kırmızı yok |
+| 05 | Beige | 133 / 121 / 107 | `#85796B` | "Axata bekliyor" rozeti |
+| 06 | Yellow | 227 / 184 / 83 | `#E3B853` | "Taslak / beklemede" rozeti |
+| 07 | Dark Blue | 42 / 80 / 124 | `#2A507C` | Başlık çubuğu, sayfa başlıkları, bağlantılar |
+
+Karteladaki açık tonlar (%80, %70, %60, %40, %20, %10) da tanımlı. **Ara ton
+uydurulmadı:** düğmenin üzerine gelme rengi yeşilin koyusu değil, kartelada tanımlı
+%80 tonudur (`#4F9C95`).
+
+Metin ve ikincil metin renkleri markanın parçası değildir — kurumsal kartelalar gövde
+metni rengi tanımlamaz; okunabilirlik için nötr griler seçildi.
+
+**Yazı tipi:** paylaşılan doküman yalnızca renk bölümünü kapsıyor ve kendisi Arial
+kullanıyor; arayüz de Arial'dan başlayan bir yığın kullanıyor. Marka kılavuzunun
+tipografi bölümü farklı bir yazı tipi tanımlıyorsa `style.css` içindeki tek bir
+`font:` satırını değiştirmek yeterli.
 
 ## Giriş ve modüller
 

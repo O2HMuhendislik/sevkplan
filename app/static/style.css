@@ -1,32 +1,76 @@
 /* ---------------------------------------------------------------- renk paleti
  *
- * Vaillant Group kurumsal yeşili. Bütün ekranlar bu dört değişkenden beslenir;
- * marka kılavuzundaki tam kodlar farklıysa yalnızca burayı değiştirmek yeterlidir,
- * başka hiçbir dosyaya dokunmaya gerek yoktur.
+ * Vaillant Group Corporate Design Manual 2020, sayfa 16 (1.3.2 Colours – Definition).
+ * Yedi kurumsal renk ve kartelada tanımlı açık tonları aşağıda birebir duruyor.
+ * Arayüzde bunlardan ikisi kullanılıyor: **01 Green** vurgu (düğme, değer, doluluk),
+ * **07 Dark Blue** yapı (başlık çubuğu, bağlantı, başlıklar).
+ *
+ * Kartelada ara ton yoksa uydurulmadı: örneğin düğmenin üzerine gelme rengi yeşilin
+ * koyusu değil, kartelada tanımlı %80 tonudur.
+ *
+ * Metin ve kenarlık için kullanılan nötr griler markanın parçası değildir; kurumsal
+ * kartelalar gövde metni rengi tanımlamaz. Okunabilirlik için seçildiler.
  */
 :root {
-  --ana: #007A33;          /* kurumsal yeşil — düğmeler, başlık, vurgular */
-  --ana-koyu: #005523;     /* başlık çubuğunun koyu ucu, koyu vurgular */
-  --ana-acik: #00A94F;     /* üzerine gelme (hover) ve aktif sekme */
-  --ana-cok-acik: #e8f4ec; /* açık yeşil zemin: rozet, tablo başlığı */
+  /* 01 Vaillant Group Green — RGB 0/136/125 · Pantone 327 CU */
+  --vg-yesil:      #00887D;
+  --vg-yesil-80:   #4f9c95;
+  --vg-yesil-60:   #7fb3ad;
+  --vg-yesil-40:   #acccc8;
+  --vg-yesil-20:   #d5e4e2;
+  --vg-yesil-10:   #ebf2f1;
+  /* 02 Grey — RGB 155/155/155 */
+  --vg-gri:        #9b9b9b;
+  --vg-gri-70:     #bbbbbb;
+  --vg-gri-40:     #d9d9d9;
+  --vg-gri-20:     #ececec;
+  /* 03 Light Blue — RGB 0/135/192 */
+  --vg-acik-mavi:  #0087c0;
+  --vg-acik-mavi-40: #91bfe1;
+  --vg-acik-mavi-20: #d5e5f4;
+  /* 04 Purple — RGB 133/34/94 */
+  --vg-mor:        #85225e;
+  --vg-mor-40:     #c6a4ba;
+  --vg-mor-20:     #e1d0dd;
+  /* 05 Beige — RGB 133/121/107 */
+  --vg-bej:        #85796b;
+  --vg-bej-70:     #a69c90;
+  --vg-bej-20:     #e4e0dc;
+  /* 06 Yellow — RGB 227/184/83 */
+  --vg-sari:       #e3b853;
+  --vg-sari-40:    #f4e2bb;
+  --vg-sari-20:    #f9f1de;
+  /* 07 Dark Blue — RGB 42/80/124 */
+  --vg-lacivert:   #2a507c;
+  --vg-lacivert-70:#6079a0;
+  --vg-lacivert-40:#9eabc7;
+  --vg-lacivert-20:#ccd2e3;
 
-  --zemin: #f4f7f5;
+  /* --------------------------------------------------- arayüzdeki karşılıkları */
+  --ana: var(--vg-lacivert);          /* başlık çubuğu, bağlantı, sayfa başlıkları */
+  --ana-acik: var(--vg-lacivert-70);  /* menüde üzerine gelme ve aktif sekme */
+  --vurgu: var(--vg-yesil);           /* düğme, metrik değeri, doluluk çubuğu */
+  --vurgu-acik: var(--vg-yesil-80);   /* düğmenin üzerine gelme hâli (karteladaki %80) */
+  --vurgu-cok-acik: var(--vg-yesil-10);
+
+  --zemin: var(--vg-yesil-10);
   --kart: #ffffff;
-  --kenar: #dfe6e1;
-  --metin: #1c2b23;
-  --soluk: #6b7a71;
-  --yesil: #007A33;
-  --sari: #9a6700;
-  --kirmizi: #b42318;
+  --kenar: var(--vg-gri-40);
+  --metin: #2b3033;   /* marka rengi değil: gövde metni okunabilirliği için */
+  --soluk: #6d7477;   /* marka rengi değil: ikincil metin */
+  --sari: var(--vg-sari);
+  --kirmizi: var(--vg-mor);  /* kartelada kırmızı yok; uyarı rengi 04 Purple */
 }
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--zemin); color: var(--metin);
-  font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+  /* Kurumsal doküman yazı tipi Arial'dir; marka kılavuzunun tipografi bölümü
+     farklı bir yazı tipi tanımlıyorsa yalnızca bu satır değişir. */
+  font: 14px/1.5 Arial, "Segoe UI", system-ui, sans-serif;
 }
 header.ust {
-  background: linear-gradient(90deg, var(--ana-koyu) 0%, var(--ana) 62%);
-  color: #fff; padding: 0 24px;
+  background: var(--ana); color: #fff; padding: 0 24px;
+  border-bottom: 3px solid var(--vurgu);
   display: flex; align-items: center; gap: 24px; height: 64px;
 }
 /* Logo beyaz bir yonga üzerinde durur: kurumsal logo dosyası yeşil zeminli
@@ -41,18 +85,20 @@ header.ust .marka img {
 }
 header.ust .marka .ad { display: flex; flex-direction: column; line-height: 1.15; }
 header.ust .marka .ad .ust-satir {
-  font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #bfe3cd;
+  font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--vg-lacivert-40);
 }
 header.ust .marka .ad .alt-satir { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
 header.ust nav { display: flex; gap: 4px; }
 header.ust nav a {
-  color: #d3ecdd; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-weight: 500;
+  color: var(--vg-lacivert-20); text-decoration: none;
+  padding: 8px 14px; border-radius: 6px; font-weight: 500;
 }
 header.ust nav a:hover { background: var(--ana-acik); color: #fff; }
 header.ust nav a.aktif { background: var(--ana-acik); color: #fff; }
 main { padding: 24px; max-width: 1500px; margin: 0 auto; }
-h1 { font-size: 20px; margin: 0 0 18px; }
-h2 { font-size: 15px; margin: 0 0 12px; }
+h1 { font-size: 20px; margin: 0 0 18px; color: var(--ana); }
+h2 { font-size: 15px; margin: 0 0 12px; color: var(--ana); }
 .kart {
   background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px;
   padding: 18px; margin-bottom: 18px;
@@ -61,30 +107,45 @@ h2 { font-size: 15px; margin: 0 0 12px; }
 .izgara.iki { grid-template-columns: 1fr 1fr; }
 .izgara.dort { grid-template-columns: repeat(4, 1fr); }
 .metrik { background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px; padding: 16px; }
-.metrik .deger { font-size: 26px; font-weight: 700; color: var(--ana); }
+.metrik .deger { font-size: 26px; font-weight: 700; color: var(--vurgu); }
 .metrik .etiket { color: var(--soluk); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kenar); }
-th { background: var(--ana-cok-acik); font-weight: 600; color: #264332; white-space: nowrap; }
-tbody tr:hover { background: #f4f9f6; }
+th {
+  background: var(--vg-gri-20); font-weight: 600; color: var(--ana); white-space: nowrap;
+}
+tbody tr:hover { background: var(--vurgu-cok-acik); }
 td.sag, th.sag { text-align: right; }
 a { color: var(--ana); }
 .rozet {
   display: inline-block; padding: 2px 9px; border-radius: 999px;
   font-size: 11px; font-weight: 600; border: 1px solid;
 }
-.rozet.TASLAK, .rozet.BEKLEMEDE { color: var(--sari); border-color: #e6c86a; background: #fdf6e3; }
-.rozet.AXATA_BEKLIYOR { color: #7a4b00; border-color: #e0a458; background: #fdf0dd; }
-.rozet.MAIL_GONDERILDI, .rozet.PLANLANDI { color: var(--ana-koyu); border-color: #a7d3ba; background: var(--ana-cok-acik); }
-.rozet.TAMAMLANDI { color: var(--yesil); border-color: #8fc9a8; background: #e2f3e9; }
-.rozet.IPTAL, .rozet.HATALI { color: var(--kirmizi); border-color: #edb0aa; background: #fdedeb; }
+/* Rozet metni sarı ve bej tonlarda okunmadığı için koyu nötr kalır; rengi
+   kenarlık ve zemin taşır. Yeşil ve lacivert kendi başlarına yeterince koyu. */
+.rozet.TASLAK, .rozet.BEKLEMEDE {
+  color: var(--metin); border-color: var(--vg-sari); background: var(--vg-sari-20);
+}
+.rozet.AXATA_BEKLIYOR {
+  color: var(--metin); border-color: var(--vg-bej-70); background: var(--vg-bej-20);
+}
+.rozet.MAIL_GONDERILDI, .rozet.PLANLANDI {
+  color: var(--ana); border-color: var(--vg-lacivert-40); background: var(--vg-lacivert-20);
+}
+.rozet.TAMAMLANDI {
+  color: var(--vurgu); border-color: var(--vg-yesil-40); background: var(--vg-yesil-10);
+}
+.rozet.IPTAL, .rozet.HATALI {
+  color: var(--vg-mor); border-color: var(--vg-mor-40); background: var(--vg-mor-20);
+}
 button, .dugme {
-  background: var(--ana); color: #fff; border: 0; border-radius: 6px;
+  background: var(--vurgu); color: #fff; border: 0; border-radius: 6px;
   padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
   text-decoration: none; display: inline-block;
 }
-button:hover, .dugme:hover { background: var(--ana-acik); }
+button:hover, .dugme:hover { background: var(--vurgu-acik); }
 button.ikincil, .dugme.ikincil { background: #fff; color: var(--ana); border: 1px solid var(--kenar); }
+button.ikincil:hover, .dugme.ikincil:hover { background: var(--vurgu-cok-acik); }
 button.tehlike { background: var(--kirmizi); }
 input, select {
   padding: 7px 10px; border: 1px solid var(--kenar); border-radius: 6px;
@@ -93,11 +154,18 @@ input, select {
 label { display: block; font-size: 12px; color: var(--soluk); margin-bottom: 4px; font-weight: 600; }
 form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .uyari { padding: 11px 14px; border-radius: 8px; margin-bottom: 16px; font-weight: 500; }
-.uyari.basari { background: #e2f3e9; color: #05602a; border: 1px solid #8fc9a8; }
-.uyari.hata { background: #fdedeb; color: var(--kirmizi); border: 1px solid #edb0aa; }
-.doluluk { position: relative; background: #e4ebe7; border-radius: 4px; height: 16px; min-width: 90px; }
+.uyari.basari {
+  background: var(--vg-yesil-10); color: var(--vurgu); border: 1px solid var(--vg-yesil-40);
+}
+.uyari.hata {
+  background: var(--vg-mor-20); color: var(--vg-mor); border: 1px solid var(--vg-mor-40);
+}
+.doluluk {
+  position: relative; background: var(--vg-gri-20); border-radius: 4px;
+  height: 16px; min-width: 90px;
+}
 .doluluk span {
-  position: absolute; inset: 0 auto 0 0; background: var(--ana); border-radius: 4px;
+  position: absolute; inset: 0 auto 0 0; background: var(--vurgu); border-radius: 4px;
 }
 .doluluk b {
   position: relative; font-size: 11px; color: #fff; mix-blend-mode: difference;
@@ -109,19 +177,21 @@ form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   padding: 6px 13px; border-radius: 999px; text-decoration: none;
   background: #fff; border: 1px solid var(--kenar); color: var(--metin); font-size: 13px;
 }
-.sekmeler a.aktif { background: var(--ana); color: #fff; border-color: var(--ana); }
+.sekmeler a.aktif { background: var(--vurgu); color: #fff; border-color: var(--vurgu); }
 .bos { padding: 34px; text-align: center; color: var(--soluk); }
+/* Operatörün gözden kaçırmaması gereken uyarı: aktarma notu, sınır ihlali. */
+.dikkat { color: var(--vg-mor); }
 
 /* ------------------------------------------------------------------ giriş / modül */
 header.ust .marka { color: #fff; text-decoration: none; }
 header.ust .kullanici-alani {
   margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px;
 }
-header.ust .kullanici-alani a { color: #d3ecdd; text-decoration: none; }
+header.ust .kullanici-alani a { color: var(--vg-lacivert-20); text-decoration: none; }
 header.ust .kullanici-alani a:hover { color: #fff; text-decoration: underline; }
 header.ust .kullanici-adi { color: #fff; font-weight: 600; }
 header.ust .modul-cikis {
-  border: 1px solid #4fa877; border-radius: 6px; padding: 5px 12px;
+  border: 1px solid var(--vg-lacivert-70); border-radius: 6px; padding: 5px 12px;
 }
 .giris-kutusu {
   max-width: 420px; margin: 60px auto; background: var(--kart);
