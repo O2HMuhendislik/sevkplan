@@ -630,13 +630,59 @@ def rota_siparisler(
             )
         ).all()
     )
+    hatalilar = list(
+        db.scalars(
+            select(SiparisSatiri)
+            .where(SiparisSatiri.durum == SiparisDurumu.HATALI)
+            .order_by(SiparisSatiri.teslimat_no)
+            .limit(200)
+        ).all()
+    )
     return sayfa(
         istek,
         "ic_siparisler.html",
         kullanici,
         musteriler=ic_piyasa_servisi.musteri_ozeti(db, satirlar),
         satir_sayisi=len(satirlar),
+        hatalilar=hatalilar,
     )
+
+
+@uygulama.post("/rota/siparisler/yukle")
+async def rota_siparisleri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Sipariş dosyasını iç piyasa ekranından yükler.
+
+    İki modül aynı sipariş havuzunu kullanır; dosya Ring ekranından yüklenmiş olsa da
+    aynı sonucu verir. Ayrı uç olmasının sebebi yetki: yalnızca ROTA yetkisi olan bir
+    kullanıcı Ring ekranını açamaz.
+    """
+    try:
+        sonuc = ice_aktarim.siparisleri_aktar(
+            db, dosya.file, dosya.filename or "siparisler.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/rota/siparisler", hata=str(hata))
+    uyari = (
+        f" — {sonuc.hatali} satır alınamadı, aşağıdaki 'Alınamayan satırlar' "
+        "tablosuna bakın."
+        if sonuc.hatali
+        else ""
+    )
+    return yonlendir(
+        "/rota/siparisler", mesaj=f"Sipariş aktarımı: {sonuc.ozet()}{uyari}"
+    )
+
+
+@uygulama.get("/rota/siparisler/sablon")
+def rota_siparis_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("ROTA"))):
+    hedef = sablonlar.siparis_sablonu(CIKTI_DIZIN / "siparis_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
 
 
 @uygulama.post("/rota/planlar/uret")

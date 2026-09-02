@@ -266,8 +266,9 @@ def ic_piyasa_verisi_yukle(istemci):
              "MANİSA TESİSAT LTD.", "SANAYİ CAD. NO:8", "CIF - MERKEZ"],
         ],
     )
+    # İki modül aynı havuzu kullanır; iç piyasa ekranından yüklemek de aynı sonucu verir.
     return istemci.post(
-        "/ring/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparisler)}
+        "/rota/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparisler)}
     )
 
 
@@ -361,3 +362,35 @@ def test_musteri_ekranindan_tir_girisi_guncellenir(istemci, fabrika):
         assert musteri.tir_girisi == "H"
         assert musteri.notlar == "AVM içi"
         assert musteri.il == "IZMIR"
+
+
+def test_ic_piyasa_ekranindan_siparis_yuklenir(istemci, fabrika):
+    """Yalnızca ROTA yetkisi olan kullanıcı Ring ekranını açamaz; yükleme burada da olmalı."""
+    from app.models import SiparisSatiri
+
+    cevap = ic_piyasa_verisi_yukle(istemci)
+    assert "Sipariş aktarımı" in sorgu(cevap)
+
+    with fabrika() as db:
+        assert db.query(SiparisSatiri).count() == 2
+
+    ekran = istemci.get("/rota/siparisler")
+    assert "Sipariş dosyası yükle" in ekran.text
+    assert istemci.get("/rota/siparisler/sablon").status_code == 200
+
+
+def test_alinamayan_satirlar_gerekcesiyle_gosterilir(istemci, fabrika):
+    """Master datada olmayan ürün planlamaya girmez; sebebi ekranda görünmeli."""
+    ic_piyasa_verisi_yukle(istemci)
+    tanimsiz = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi"],
+        [["S9", "T9", "YOK-99", 10, "64", "İZMİR", "EGE ISITMA"]],
+    )
+    istemci.post("/rota/siparisler/yukle", files={"dosya": ("s.xlsx", tanimsiz)})
+    istemci.post("/rota/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+
+    ekran = istemci.get("/rota/siparisler")
+    assert "Alınamayan satırlar" in ekran.text
+    assert "YOK-99" in ekran.text
+    assert "master datada tanımlı değil" in ekran.text

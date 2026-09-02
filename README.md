@@ -99,7 +99,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | Ekran | İşlev |
 |---|---|
 | **Gösterge Paneli** (`/rota`) | Sevkiyat tipi ve bölge dağılımı, planlamayı çalıştırma |
-| **Sipariş Önizleme** | Her müşterinin hangi tiple gideceği ve **gerekçesi** — plan üretmeden önce kural kontrolü |
+| **Siparişler** | Sipariş dosyası yükleme; her müşterinin hangi tiple gideceği ve **gerekçesi**; alınamayan satırlar sebebiyle. Ring ile aynı sipariş havuzu |
 | **Planlar** | Tip (FTL/rutin/kargo), bölge ve durum filtresi; günlük yükleme formu |
 | **Plan Detayı** | Rota ve duraklar, son uğrak oranı, ortak yükleme notu, araç/şoför bilgisi, Axata, marka payı |
 | **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
