@@ -29,11 +29,21 @@ def not_alanini_coz(deger: object) -> tuple[str, str]:
     if " - " in ham or ham.startswith("-") or ham.endswith("-"):
         sol, _, sag = ham.partition("-")
         sol = sol.strip().upper()
-        return (sol if sol in INCOTERMS else ""), yer_adi(sag)
+        return (sol if sol in INCOTERMS else ""), _ilce_ya_da_bos(sag)
     buyuk = ham.upper()
     if buyuk in INCOTERMS:
         return buyuk, ""
-    return "", yer_adi(ham)
+    return "", _ilce_ya_da_bos(ham)
+
+
+def _ilce_ya_da_bos(deger: object) -> str:
+    """İlçe adı en az bir harf içermeli.
+
+    `Not` sütununda ilçe yerine zaman zaman `45796` gibi kodlar geliyor; bunlar ilçe
+    olarak yazılırsa yükleme formunda ve rota bilgisinde sayı görünüyor.
+    """
+    ad = yer_adi(deger)
+    return ad if any(karakter.isalpha() for karakter in ad) else ""
 
 
 ADRES_ISARETLERI = (
@@ -74,7 +84,7 @@ def yer_alanlarini_coz(
     if adres_gibi_mi(firma) and not adres_gibi_mi(adres):
         # Bu düzende ilçe kendi sütununda geliyor; `Not` alanı yalnızca yedektir
         # (orada zaman zaman 'ZKL' gibi ilçe olmayan kodlar da görülüyor).
-        return "", firma, (yer_adi(adres) or not_ilcesi), incoterms
+        return "", firma, (_ilce_ya_da_bos(adres) or not_ilcesi), incoterms
     return firma, adres, not_ilcesi, incoterms
 
 

@@ -27,7 +27,7 @@ from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from app.domain.bolgeler import il_bolgesi
-from app.domain.iller import mesafe, yer_adi
+from app.domain.iller import ana_depo, mesafe, yer_adi
 from app.domain.kapasite import KapasiteProfili
 from app.domain.planlama import Teslimat
 
@@ -544,22 +544,26 @@ ORTAK_YUKLEME_DEPOLARI = {"64", "74", "-1"}
 
 
 def yukleme_deposu(plan: RotaPlani) -> str:
-    """Aracın hangi depodan yükleneceği: anahtar değeri en yüksek olan depo.
+    """Aracın hangi depodan yükleneceği: anahtar değeri en yüksek olan **ana** depo.
 
     Ortak yüklemede araçta hangi depodan daha az ürün varsa, o ürünler başka bir
     araçla bu depoya getirilir. Bu aktarma için ayrı plan üretilmez; yükleme formuna
     "... depoya gönderilmelidir" notu düşülür.
+
+    Marka sonekleri (64-V, 64-P) ayrı depo sayılmaz; hepsi 64 deposundadır.
     """
-    katkilar = plan.depo_katkilari
-    if not katkilar:
+    toplamlar: dict[str, Decimal] = defaultdict(Decimal)
+    for depo_kodu, deger in plan.depo_katkilari.items():
+        toplamlar[ana_depo(depo_kodu)] += deger
+    if not toplamlar:
         return ""
-    return max(sorted(katkilar), key=lambda depo: katkilar[depo])
+    return max(sorted(toplamlar), key=lambda depo: toplamlar[depo])
 
 
 def aktarma_notu(satir_depo_kodu: str, yukleme_depo_kodu: str) -> str:
     """Satırın malı başka bir depodaysa yükleme formuna yazılacak not."""
     if not yukleme_depo_kodu or not satir_depo_kodu:
         return ""
-    if yer_adi(satir_depo_kodu) == yer_adi(yukleme_depo_kodu):
+    if ana_depo(satir_depo_kodu) == ana_depo(yukleme_depo_kodu):
         return ""
-    return f"{yukleme_depo_kodu} depoya gönderilmelidir"
+    return f"{ana_depo(yukleme_depo_kodu)} depoya gönderilmelidir"

@@ -66,6 +66,23 @@ BOZUYUK_FARKI = 80
 ESKISEHIR_DEPOLARI = {"64", "64-D", "64-V", "64-P", "-1"}
 """Eskişehir'den yüklenen depolar. Diğerleri (34, 44, 74 ...) Bozüyük'ten yüklenir."""
 
+MARKA_SONEKLERI = ("V", "P", "D")
+"""Depo kodunun sonundaki marka harfleri: 64-V, 64-P, 64-D hepsi 64 deposundadır."""
+
+
+def ana_depo(depo_kodu: str) -> str:
+    """Marka sonekini atarak ana depo kodunu döner: '64-V' -> '64', '-1' -> '-1'.
+
+    Sonek malın hangi markaya ait olduğunu söyler (bkz. app/domain/marka.py), ayrı bir
+    fiziki depo anlamına gelmez. Ortak yüklemede aktarma notu ana depoya göre yazılır:
+    64-V'deki mal 64'e "gönderilmez", zaten oradadır.
+    """
+    kod = (depo_kodu or "").strip().upper()
+    govde, ayirac, sonek = kod.rpartition("-")
+    if ayirac and govde and sonek in MARKA_SONEKLERI:
+        return govde
+    return kod
+
 
 def mesafe(il: str) -> int | None:
     """İlin Eskişehir'e yaklaşık karayolu mesafesi. Tanımsız il için None."""

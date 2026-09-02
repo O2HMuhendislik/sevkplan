@@ -390,3 +390,56 @@ def test_gunluk_sinir_daha_once_uretilen_planlari_sayar(ic_veri):
         kurallar=kurallar, kullanici="test",
     )
     assert ikinci.planlar == []
+
+
+def test_marka_sonekli_depolar_ayni_depodur():
+    """64-V'deki mal 64'e "gönderilmez", zaten oradadır; sonek markayı gösterir."""
+    plan = RotaPlani(
+        "B01",
+        SevkiyatTipi.FTL,
+        IC_FTL,
+        [
+            musteri("A", "IZMIR", 0.3, depo="64"),
+            musteri("B", "IZMIR", 0.4, ilce="BORNOVA", depo="64-V"),
+            musteri("C", "IZMIR", 0.2, ilce="KARSIYAKA", depo="74"),
+        ],
+    )
+    assert yukleme_deposu(plan) == "64"
+    assert aktarma_notu("64-V", "64") == ""
+    assert aktarma_notu("74-V", "64") == "64 depoya gönderilmelidir"
+    assert aktarma_notu("64-P", "74-V") == "74 depoya gönderilmelidir"
+
+
+def test_ilce_alanina_sayi_yazilmaz():
+    """`Not` ve `SevkAdresi` sütunlarında ilçe yerine kod geldiğinde alan boş kalır."""
+    from app.services.veri_formatlari import not_alanini_coz, yer_alanlarini_coz
+
+    assert not_alanini_coz("CIF - 45796") == ("CIF", "")
+    assert not_alanini_coz(" - MERKEZ") == ("", "MERKEZ")
+
+    firma, adres, ilce, incoterms = yer_alanlarini_coz(
+        "PAZAR MH. M.ENGİZLİ SOKAK.NO:2/A", "45796", "CIF"
+    )
+    assert adres == "PAZAR MH. M.ENGİZLİ SOKAK.NO:2/A"
+    assert ilce == ""
+    assert incoterms == "CIF"
+
+
+def test_sutun_duzeni_icerikten_cozulur():
+    """AliciFirma/SevkAdresi sütunlarının anlamı satır tipine göre kayıyor."""
+    from app.services.veri_formatlari import yer_alanlarini_coz
+
+    # Bayi siparişi: adres AliciFirma sütununda, ilçe SevkAdresi sütununda.
+    assert yer_alanlarini_coz(
+        "KORDON BOYU MAH.TURGUT ÖZAL BULV. NO:61/1", "KARTAL", "CIF"
+    ) == ("", "KORDON BOYU MAH.TURGUT ÖZAL BULV. NO:61/1", "KARTAL", "CIF")
+
+    # Bayi ortak deposu siparişi: firma yerinde firma, adres SevkAdresi'nde, ilçe Not'ta.
+    assert yer_alanlarini_coz(
+        "ANKA CORP İNŞAAT LİMİTED ŞİRKETİ", "GÜMÜŞÇEŞME MAH. 184 SOK. NO:13/B", " - MERKEZ"
+    ) == (
+        "ANKA CORP İNŞAAT LİMİTED ŞİRKETİ",
+        "GÜMÜŞÇEŞME MAH. 184 SOK. NO:13/B",
+        "MERKEZ",
+        "",
+    )
