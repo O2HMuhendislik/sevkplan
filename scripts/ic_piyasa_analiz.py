@@ -20,6 +20,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from app.services.excel import sayfa_yaz, yeni_kitap
+from app.services.veri_formatlari import bayi_adini_coz, yer_alanlarini_coz
 
 INCOTERMS = {"CIF", "EXW", "FOB", "DAP", "FCA", "DDP", "CPT"}
 TIR_ARAC_TIPLERI = {"TIR", "TIR "}
@@ -28,7 +29,9 @@ BELGE_DESENI = re.compile(r"^(\d{2})(\d{2})([A-ZÇŞİĞÜÖ]+)(\d+)$")
 # Kolon yerleşimi (sevk dosyalarında sabit)
 ARAC_TIPI, SEHIR, SIPARIS_NO, BELGE_NO, DEPO = 3, 4, 5, 6, 7
 STOK_KODU, ADET, BAYI, ALICI, ADRES, NOT_ALANI = 8, 10, 11, 12, 13, 14
-TARIH, TELEFON, TESLIMAT, PLAN_TARIHI, DAGITIM, DESI = 15, 16, 17, 18, 19, 20
+TARIH, MUSTERI_KODU, TESLIMAT, PLAN_TARIHI, DAGITIM, DESI = 15, 16, 17, 18, 19, 20
+"""16. sütun başlıkta ikinci kez 'Not' yazıyor ama içeriği sabit bir müşteri kodudur
+(aynı bayide her satırda aynı 10 haneli numara). Bayi kodu master datasının kaynağı budur."""
 KAMYON_ANAHTAR, TIR_ANAHTAR = 1, 2
 
 
@@ -110,26 +113,36 @@ def musterileri_cikar(satirlar: list[tuple]) -> list[list]:
     for r in satirlar:
         if belge_kodu(metin(r[BELGE_NO])) not in IC_PIYASA_KODLARI:
             continue
-        bayi = metin(r[BAYI]).upper()
+        kod, bayi = bayi_adini_coz(metin(r[BAYI]).upper())
         if not bayi:
             continue
-        incoterms, ilce = not_alanini_coz(r[NOT_ALANI])
+        firma, adres, ilce, incoterms = yer_alanlarini_coz(
+            r[ALICI], r[ADRES], r[NOT_ALANI]
+        )
         kayit = musteriler.setdefault(
             bayi,
             {
                 "alici": Counter(), "il": Counter(), "ilce": Counter(), "adres": Counter(),
-                "telefon": Counter(), "incoterms": Counter(), "arac": Counter(),
+                "kod": Counter(), "incoterms": Counter(), "arac": Counter(),
                 "belge": Counter(), "planlar": set(), "desi": 0.0, "adet": 0.0,
                 "son": None,
             },
         )
-        kayit["alici"][metin(r[ALICI])] += 1
+        if firma:
+            kayit["alici"][firma] += 1
         kayit["il"][yer_adi(r[SEHIR])] += 1
         if ilce:
             kayit["ilce"][ilce] += 1
-        kayit["adres"][metin(r[ADRES])] += 1
-        if metin(r[TELEFON]):
-            kayit["telefon"][metin(r[TELEFON])] += 1
+        if adres:
+            kayit["adres"][adres] += 1
+        # Bayi kodu iki yerden gelebiliyor: bayi adının başındaki "1001 - " öneki ya da
+        # 16. sütundaki sabit numara. İkisi de metin olabildiği için sayısal olan tercih
+        # edilir; firma adı taşıyan satırlar koda yazılmaz.
+        if kod:
+            kayit["kod"][kod] += 2
+        ikinci = metin(r[MUSTERI_KODU])
+        if ikinci.isdigit():
+            kayit["kod"][ikinci] += 1
         if incoterms:
             kayit["incoterms"][incoterms] += 1
         kayit["arac"][metin(r[ARAC_TIPI]).upper()] += 1
@@ -158,11 +171,11 @@ def musterileri_cikar(satirlar: list[tuple]) -> list[list]:
             tir_girisi = "?"
         satirlar_cikti.append([
             bayi,
+            ilk(k["kod"]),
             ilk(k["alici"]),
             ilk(k["il"]),
             ilk(k["ilce"]),
             ilk(k["adres"]),
-            ilk(k["telefon"]),
             ilk(k["incoterms"]) or "CIF",
             tir_girisi,
             len(k["planlar"]),
@@ -283,11 +296,12 @@ def main() -> None:
     kitap = yeni_kitap()
     sayfa_yaz(
         kitap.create_sheet("Müşteriler"),
-        ["Bayi Adı", "Alıcı Firma", "İl", "İlçe", "Sevk Adresi", "Telefon", "Incoterms",
-         "Tır Girişi (E/H/?)", "Plan Sayısı", "FTL (S)", "Rutin (R)", "Kargo (K)",
-         "Ring (D)", "Toplam Adet", "Toplam Desi", "Son Sevk", "Araç Tipi Geçmişi"],
+        ["Bayi Adı", "Bayi Kodu", "Alıcı Firma", "İl", "İlçe", "Sevk Adresi",
+         "Incoterms", "Tır Girişi (E/H/?)", "Plan Sayısı", "FTL (S)", "Rutin (R)",
+         "Kargo (K)", "Ring (D)", "Toplam Adet", "Toplam Desi", "Son Sevk",
+         "Araç Tipi Geçmişi"],
         musteriler,
-        [40, 40, 16, 18, 44, 16, 12, 11, 12, 10, 10, 10, 10, 13, 13, 13, 34],
+        [40, 14, 40, 16, 18, 44, 12, 11, 12, 10, 10, 10, 10, 13, 13, 13, 34],
     )
     sayfa_yaz(
         kitap.create_sheet("Rota Önerisi"),

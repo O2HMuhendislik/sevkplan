@@ -33,14 +33,13 @@ MODULLER: tuple[Modul, ...] = (
     ),
     Modul(
         kod="ROTA",
-        ad="Rotalı Araç Planlama",
+        ad="İç Piyasa Sevkiyat Planlama",
         aciklama=(
-            "İç piyasada farklı illere giden sevkiyatların rota ve duraklara göre "
-            "araç planlaması."
+            "FTL, rutin/parsiyel ve kargo sevkiyatlarının müşteri ve bölge bazında "
+            "planlanması; durak sırası, son uğrak kuralı ve ortak yükleme."
         ),
         yol="/rota",
         simge="🗺️",
-        hazir=False,
     ),
     Modul(
         kod="IHRACAT",

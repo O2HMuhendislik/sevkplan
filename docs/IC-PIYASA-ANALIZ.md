@@ -198,17 +198,69 @@ depolar"** bloğunun yanına yazılacak.
 
 | # | Konu |
 |---|---|
-| 1 | Bayi ortak deposu (`-1`) sipariş dosyası henüz iletilmedi. |
-| 2 | SMTP ayarları (otomatik mail gönderimi). |
+| 1 | SMTP ayarları (otomatik mail gönderimi). |
+| 2 | 5 numaralı bölgedeki 29 ilin elle bölünmesi — planlama bu arada da çalışıyor, araçlar bölge içinde mesafeye göre kuruluyor. |
 
-## 9. Uygulanan kısımlar
+## 9. Veriden çıkan iki düzeltme
 
-* **Marka payı (13):** `app/domain/marka.py` — depo kodu sonekinden marka, anahtar
-  değere göre pay. Plan kaydedilirken `marka_paylari_metni` alanına yazılıyor;
-  yükleme formunda `FATURA YÜZDESİ` bloğu, plan detayında "Navlun fatura dağıtımı"
-  kartı olarak gösteriliyor. Ring modülünde çalışır durumda, iç piyasa modülünde
-  aynı hesap kullanılacak.
-* **Çoklu Axata (15):** `AxataNumarasi` tablosu — bir plana virgül/boşluk/noktalı
-  virgülle ayrılmış birden çok numara girilebiliyor, her birine açıklama
-  yazılabiliyor, tek tek silinebiliyor, mükerrer numara reddediliyor. Yükleme
-  formunda birden fazlaysa `AXATA NUMARALARI` listesi yazılıyor.
+Modül yazılırken kaynak dosyalar satır satır incelendi; iki nokta baştaki
+varsayımdan farklı çıktı.
+
+**Sütunların anlamı satır tipine göre kayıyor.** `AliciFirma` / `SevkAdresi` / `Not`
+üçlüsü iki ayrı düzende geliyor:
+
+| Düzen | AliciFirma | SevkAdresi | Not |
+|---|---|---|---|
+| Bayi siparişleri | **adres** | **ilçe** | `CIF` |
+| Bayi ortak deposu (-1) | firma | **adres** | `" - MERKEZ"` |
+
+Ayrım sütun adından yapılamıyor; hangi alanın adres kalıbı (MAH/CAD/SOK/NO:) taşıdığına
+bakılıyor (`app/services/veri_formatlari.py`, `yer_alanlarini_coz`). Karıştırılırsa
+yükleme formunda ilçe yerine sokak adı yazılıyor ve rota bilgisi bozuluyor. `Not`
+sütununda zaman zaman `ZKL` gibi ilçe olmayan kodlar da geldiği için ilçe kendi
+sütunundan okunuyor, `Not` yalnızca yedek.
+
+**Bayi ortak deposu satırlarında teslimat numarası yok.** `-1` depo satırlarında
+`Teslimat No` sütunu `BAYİ DEPO` yazıyor. Bu satırlar eskiden "teslimat atanmamış" diye
+reddediliyordu; artık sipariş numarası teslimat anahtarı olarak kullanılıyor
+(`350708-BAYI DEPO`). Sipariş zaten bölünmez birim olduğu için planlama doğru çalışıyor.
+
+**Bayi kodu:** kaynak dosyalarda ayrı bir bayi kodu sütunu yok ama bir kısım bayi adının
+başında duruyor (`1001 - KARTAL YAPI MARKET`) ve 16. sütunda bazı satırlarda sabit bir
+müşteri numarası geliyor. İkisi de master dataya alınıyor; eşleştirme yine bayi adıyla
+yapılıyor (5.146 müşterinin 234'ünde kod çıktı).
+
+## 10. Gerçek veriyle doğrulama
+
+31.08.2026 sevk gününün 2.180 satırı sisteme yüklenip planlandı (gerçekte o gün 60 plan
+yapılmış):
+
+| Ölçü | Sistem | Gerçek veri |
+|---|---|---|
+| FTL ortalama durak | 3,0 | 3,41 |
+| FTL doluluk | %98-100 | medyan %94,4 |
+| Rutin durak sayısı | 13 ve 23 | ortalama 28,6 |
+| Rutin doluluk | hedefin üst ucunda (tırın ~%60'ı) | medyan %55,3 |
+
+Üretilen plan sayısı günlük sınırlarla (35 FTL, 4 rutin) kısıtlanıyor; kalan hacim
+gerekçesiyle beklemede kalıp sonraki güne aktarılıyor.
+
+## 11. Uygulanan kısımlar
+
+* **Planlama motoru:** `app/domain/ic_piyasa.py` — sevkiyat tipi kararı, bölge bazlı
+  paketleme, 5 durak sınırı, son uğrak %15 kuralı, günlük araç sınırı, müşteriyi araç
+  boyutunda bölme, ortak yükleme deposu ve aktarma notu.
+* **Bölge tablosu:** `app/domain/bolgeler.py` — 25 bölge, il→bölge eşlemesi.
+* **Mesafe ve durak sırası:** `app/domain/iller.py` — 81 il, Türkçe karakter normalizasyonu.
+* **Kapasite profilleri:** `app/domain/kapasite.py` — `IC_FTL` (S, 0,85–1,00),
+  `IC_RUTIN` (R, 0,50–0,60), `IC_KARGO` (K).
+* **Servis:** `app/services/ic_piyasa_servisi.py` — sipariş satırlarını teslimat
+  noktasına (bayi + il + ilçe) göre toplama, plan kaydetme, araç bilgisi.
+* **Yükleme formu:** `app/services/ic_yukleme_formu.py` — tipe göre ayrı sayfa
+  (`S-FTL Sevk`, `R-Rutin`, `K-KARGO`), alt blokta araç tipi, `İZMİR2YER`, '+' ile
+  birleşik ilçeler, yer miktarı, nakliyeci, marka bazlı fatura yüzdesi ve yükleme
+  yapacak depoların kalem/adet dökümü.
+* **Müşteri master datası:** `Musteri` tablosu, Excel içe aktarım, `/rota/musteriler`
+  ekranı (tır girişi ve bölge elle düzeltilebiliyor).
+* **Marka payı (13) ve çoklu Axata (15):** Ring modülüyle ortak; iç piyasa planlarında
+  da hesaplanıp forma yazılıyor.

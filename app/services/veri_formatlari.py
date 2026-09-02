@@ -7,7 +7,91 @@ Alternatif başlıklar `aliaslar` alanında listelenir; hepsi otomatik tanınır
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+from app.domain.iller import yer_adi
+
+INCOTERMS = {"CIF", "EXW", "FOB", "DAP", "FCA", "DDP", "CPT"}
+"""Sipariş dosyasının `Not` sütununda geçebilen teslim şekilleri."""
+
+
+def not_alanini_coz(deger: object) -> tuple[str, str]:
+    """`Not` sütununu (incoterms, ilçe) olarak ayırır.
+
+    Sahadaki dosyalarda bu sütun üç ayrı şeyi taşıyor: yalnız teslim şekli (`CIF`),
+    yalnız ilçe (` - MERKEZ`) ya da ikisi birden (`CIF - MERKEZ`). EXW olan siparişler
+    kargoya yönlendirildiği için ayrıştırma planlamayı doğrudan etkiliyor.
+    """
+    ham = str(deger).strip() if deger is not None else ""
+    if not ham:
+        return "", ""
+    if " - " in ham or ham.startswith("-") or ham.endswith("-"):
+        sol, _, sag = ham.partition("-")
+        sol = sol.strip().upper()
+        return (sol if sol in INCOTERMS else ""), yer_adi(sag)
+    buyuk = ham.upper()
+    if buyuk in INCOTERMS:
+        return buyuk, ""
+    return "", yer_adi(ham)
+
+
+ADRES_ISARETLERI = (
+    "MAH", "CAD", " CD", "SOK", " SK", "NO:", "NO :", "BULV", "APT", "OSB",
+    "SANAYI", "SANAYİ", "SİTE", "BLOK", "PLAZA", "ÇARŞI", "KÜME", "KÖY",
+)
+
+
+def adres_gibi_mi(deger: object) -> bool:
+    """Metin açık adres mi, yoksa firma/ilçe adı mı?"""
+    ham = (str(deger).strip() if deger is not None else "").upper()
+    if not ham:
+        return False
+    if any(isaret in ham for isaret in ADRES_ISARETLERI):
+        return True
+    # Uzun ve içinde numara geçen metinler adrestir; firma adları böyle olmaz.
+    return len(ham) > 25 and any(karakter.isdigit() for karakter in ham)
+
+
+def yer_alanlarini_coz(
+    alici_firma: object, sevk_adresi: object, not_alani: object
+) -> tuple[str, str, str, str]:
+    """(alıcı firma, açık adres, ilçe, incoterms) döndürür.
+
+    Kaynak dosyalarda bu üç sütunun anlamı satır tipine göre kayıyor:
+
+    * Bayi siparişleri: `AliciFirma` **adres**, `SevkAdresi` **ilçe**, `Not` incoterms.
+    * Bayi ortak deposu (-1) siparişleri: `AliciFirma` firma, `SevkAdresi` **adres**,
+      `Not` ` - İLÇE`.
+
+    Ayrım sütun adından değil içerikten yapılır: hangi alan adres kalıbı taşıyorsa
+    (MAH/CAD/SOK/NO: gibi) o adrestir. Karıştırılırsa yükleme formunda ilçe yerine
+    sokak adı yazılır ve rota bilgisi bozulur.
+    """
+    incoterms, not_ilcesi = not_alanini_coz(not_alani)
+    firma = str(alici_firma).strip() if alici_firma is not None else ""
+    adres = str(sevk_adresi).strip() if sevk_adresi is not None else ""
+    if adres_gibi_mi(firma) and not adres_gibi_mi(adres):
+        # Bu düzende ilçe kendi sütununda geliyor; `Not` alanı yalnızca yedektir
+        # (orada zaman zaman 'ZKL' gibi ilçe olmayan kodlar da görülüyor).
+        return "", firma, (yer_adi(adres) or not_ilcesi), incoterms
+    return firma, adres, not_ilcesi, incoterms
+
+
+BAYI_KODU_DESENI = re.compile(r"^\s*(\d{3,6})\s*-\s*(.+)$")
+
+
+def bayi_adini_coz(bayi_adi: object) -> tuple[str, str]:
+    """'1001 - KARTAL YAPI MARKET' -> ('1001', 'KARTAL YAPI MARKET').
+
+    Bayi kodu ayrı sütunda gelmiyor ama bir kısım bayi adının başında duruyor;
+    ayrıştırılınca müşteri master datasında gerçek kodla eşleşme kurulabiliyor.
+    """
+    ham = str(bayi_adi).strip() if bayi_adi is not None else ""
+    eslesme = BAYI_KODU_DESENI.match(ham)
+    if eslesme:
+        return eslesme.group(1), eslesme.group(2).strip()
+    return "", ham
 
 
 @dataclass(frozen=True)
@@ -61,8 +145,10 @@ SIPARIS_ALANLARI: tuple[Alan, ...] = (
     Alan("siparis_no", "Sipariş No", True, "Sipariş başlık numarası.", 2010421633,
          ("Siparis No", "Talep Numarası", "Belge No", "Order No")),
     Alan("teslimat_no", "Teslimat No", True,
-         "Planlamanın bölünemez birimi. Aynı teslimat tek plandadır.", 2013624900,
-         ("Teslimat", "Delivery")),
+         "Planlamanın bölünemez birimi. Aynı teslimat tek plandadır. Bayi ortak "
+         "deposu (-1) satırlarında bu sütun 'BAYİ DEPO' gibi bir etiket taşır; "
+         "o durumda sipariş numarası teslimat anahtarı olarak kullanılır.",
+         2013624900, ("Teslimat", "Delivery")),
     Alan("urun_kodu", "StokKodu", True,
          "Master datada tanımlı olmalı; tanımsız ürün planlamaya girmez.", 8000013403,
          ("Stok Kodu", "Stok No", "Ürün Kodu", "SKU")),
@@ -71,19 +157,21 @@ SIPARIS_ALANLARI: tuple[Alan, ...] = (
     Alan("miktar", "Adet", True, "Sipariş adedi. Palet ve anahtar hesabı bundan yapılır.",
          72, ("Miktar", "Sipariş Miktarı")),
     Alan("depo_kodu", "Depo  Kodu", True,
-         "Satır bazlıdır. 64 → palet ölçüsüyle, 74 → anahtar değerle planlanır.",
-         64, ("Depo Kodu", "Depo", "Ambar Kodu")),
+         "Satır bazlıdır. Bütün depolar anahtar değerle planlanır; -1 bayi ortak "
+         "deposudur (Eskişehir).", 64, ("Depo Kodu", "Depo", "Ambar Kodu")),
     Alan("sehir", "SehirAdi", False, "Yükleme formunun 'İl Adı' sütunu.", "ESKİŞEHİR",
          ("Şehir Adı", "Sehir Adi", "İl", "İl Adi")),
     Alan("bayi_adi", "BayiAdi", False, "Yükleme formunun 'Bayii Adı' sütunu.",
          "MOVUS DEPO-EREMİZ ISITMA SOĞUTMA", ("Bayi Adı", "Bayii Adı")),
     Alan("alici_firma", "AliciFirma", False,
-         "Kaynak dosyada sevk adresi bu sütunda gelir; yükleme formunda adres olarak yazılır.",
-         "OSB 20. CADDE NO:36", ("Alıcı Firma", "Alici Firma")),
+         "Sevkiyatın teslim edileceği firma; yükleme formunda bayi adının yanına yazılır.",
+         "ANKA CORP İNŞAAT LİMİTED ŞİRKETİ", ("Alıcı Firma", "Alici Firma")),
     Alan("sevk_adresi", "SevkAdresi", False,
-         "Kaynak dosyada ilçe bu sütunda gelir; yükleme formunun son adres sütunudur.",
-         "ODUNPAZARI", ("Sevk Adresi", "İlçe")),
-    Alan("teslim_sekli", "Not", False, "Teslim şekli (CIF vb.).", "CIF", ("Teslim Şekli",)),
+         "Açık sevk adresi. Yükleme formunun son adres sütunudur.",
+         "GÜMÜŞÇEŞME MAH. 184 SOK. NO:13/B", ("Sevk Adresi", "Adres")),
+    Alan("teslim_sekli", "Not", False,
+         "Teslim şekli ve/veya ilçe: 'CIF', ' - MERKEZ' ya da 'CIF - MERKEZ'. "
+         "EXW olanlar kargoya yönlendirilir.", "CIF - MERKEZ", ("Teslim Şekli",)),
     Alan("siparis_tarihi", "Tarih", False, "GG.AA.YYYY", "31.08.2026",
          ("Sipariş Tarihi", "Talep Tarihi", "Belge Tarihi")),
     Alan("termin_tarihi", "Termin Tarihi", False,
@@ -93,6 +181,35 @@ SIPARIS_ALANLARI: tuple[Alan, ...] = (
     Alan("siparis_satir_no", "Sipariş Satır No", False,
          "Verilmezse ürün kodu satır anahtarı olarak kullanılır.", None,
          ("Satır No", "Kalem No")),
+)
+
+
+MUSTERI_ALANLARI: tuple[Alan, ...] = (
+    Alan("bayi_adi", "Bayi Adı", True,
+         "Müşterinin anahtarı. Bayi kodlarına ulaşılana kadar eşleştirme bu adla yapılır.",
+         "MOVUS DEPO-EREMİZ ISITMA SOĞUTMA", ("BayiAdi", "Bayii Adı", "Müşteri Adı")),
+    Alan("bayi_kodu", "Bayi Kodu", False, "Varsa bayi kodu; ileride anahtar olacak.",
+         None, ("Müşteri Kodu", "Cari Kod")),
+    Alan("alici_firma", "Alıcı Firma", False, "Sevkiyatın teslim edileceği firma adı.",
+         "ALTEK TEKNİK TESİSAT", ("AliciFirma",)),
+    Alan("il", "İl", True, "Rota ve bölge hesabı bu alandan yapılır.", "İZMİR",
+         ("SehirAdi", "Şehir", "İl Adı")),
+    Alan("ilce", "İlçe", False, "Yükleme formunda '+' ile birleşik yazılır.", "KARABAĞLAR",
+         ("Ilce", "İlçe Adı")),
+    Alan("sevk_adresi", "Sevk Adresi", False, "Açık adres.", "OSB 20. CADDE NO:36",
+         ("SevkAdresi", "Adres")),
+    Alan("telefon", "Telefon", False, "İrtibat telefonu.", None, ("Tel",)),
+    Alan("incoterms", "Incoterms", False,
+         "CIF / EXW ... EXW olan müşteriler kargoya yönlendirilir.", "CIF",
+         ("Teslim Şekli", "Incoterm")),
+    Alan("tir_girisi", "Tır Girişi (E/H/?)", False,
+         "E = tır girebilir, H = fiziki adres tır almıyor, ? = belirsiz. "
+         "Boş bırakılırsa ? kabul edilir.", "E",
+         ("Tır Girişi", "Tir Girisi", "Tır Girer mi")),
+    Alan("bolge_kodu", "Bölge", False,
+         "Boş bırakılırsa ilin varsayılan bölgesi kullanılır.", None, ("Bolge", "Bölge Kodu")),
+    Alan("notlar", "Notlar", False, "Serbest not.", None, ("Not", "Açıklama")),
+    Alan("aktif", "Aktif", False, "E / H. Boş bırakılırsa E kabul edilir.", "E", ()),
 )
 
 
@@ -106,3 +223,4 @@ def zorunlu_alanlar(alanlar: tuple[Alan, ...]) -> tuple[str, ...]:
 
 URUN_ALIAS = alias_haritasi(URUN_ALANLARI)
 SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
+MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)

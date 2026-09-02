@@ -1,0 +1,236 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'ROTA' %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>{{ plan.sefer_no }}
+  <span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span>
+  <span class="rozet PLANLANDI">{{ plan.sevkiyat_tipi_adi }}</span>
+  <span class="rozet TASLAK">{{ plan.bolge_adi }}</span>
+  {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ALT LİMİT ESNETİLDİ</span>{% endif %}
+</h1>
+
+{% if plan.istisna_asim %}
+<div class="uyari hata">
+  Bu plan üst limit istisnasıdır: tek müşterinin siparişi bir aracı aştığı için
+  bölünemedi. Sevkiyat birden fazla araç gerektirebilir.
+</div>
+{% endif %}
+{% if plan.alt_limit_esnetildi %}
+<div class="uyari basari">
+  Alt limit esnetilerek açıldı: kalan müşteriler tek başına
+  {{ plan.profil.alt_limit }} {{ plan.profil.olcu_adi }} sınırını dolduramıyordu.
+</div>
+{% endif %}
+{% set tir_giremeyenler = duraklar | selectattr('tir_girisi', 'equalto', 'H') | list %}
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Plan büyüklüğü</div>
+    <div class="deger" style="font-size:21px">{{ plan.birim_metni }}</div>
+    <div class="soluk">hedef {{ plan.profil.alt_limit }}–{{ plan.profil.ust_limit }}
+      {{ plan.profil.olcu_adi }}</div></div>
+  <div class="metrik"><div class="etiket">Doluluk</div>
+    <div class="deger">%{{ plan.doluluk_yuzdesi }}</div></div>
+  <div class="metrik"><div class="etiket">Durak (Yer Miktarı)</div>
+    <div class="deger">{{ plan.durak_sayisi }}</div>
+    <div class="soluk">{{ plan.teslimat_sayisi }} teslimat</div></div>
+  <div class="metrik"><div class="etiket">Son uğrak</div>
+    <div class="deger" style="font-size:21px">{{ plan.son_ugrak or '—' }}</div>
+    <div class="soluk">aracın %{{ (plan.son_ugrak_orani * 100) | sayi }}'i
+      {% if plan.son_ugrak_orani and plan.son_ugrak_orani < 0.15 %}
+        · <b style="color:#c00">%15 sınırının altında</b>{% endif %}</div></div>
+  <div class="metrik"><div class="etiket">Yükleme deposu</div>
+    <div class="deger" style="font-size:21px">{{ plan.yukleme_deposu or plan.depo_kodu }}</div>
+    <div class="soluk">{{ plan.iller_metni }}</div></div>
+  <div class="metrik"><div class="etiket">Adet / ağırlık / desi</div>
+    <div class="deger" style="font-size:21px">{{ plan.toplam_adet | sayi }}</div>
+    <div class="soluk">{{ plan.toplam_agirlik | sayi }} kg · {{ plan.toplam_desi | sayi }} desi</div></div>
+  <div class="metrik"><div class="etiket">Marka payı (navlun)</div>
+    <div class="deger" style="font-size:17px">{{ plan.marka_ozeti or '—' }}</div></div>
+  <div class="metrik"><div class="etiket">Axata iş emri</div>
+    <div class="deger" style="font-size:19px">{{ plan.axata_ozeti or '—' }}</div></div>
+</div>
+
+{% if tir_giremeyenler %}
+<div class="uyari hata">
+  <b>Tır girişi olmayan müşteri var:</b>
+  {{ tir_giremeyenler | map(attribute='bayi_adi') | join(', ') }}.
+  Bu adreslere tır giremiyor; araç tipini kamyona çevirin ya da bu durakları rutine alın.
+</div>
+{% endif %}
+
+<div class="kart">
+  <h2>Rota — duraklar</h2>
+  <p class="soluk">
+    Duraklar yükleme tesisine uzaklığa göre sıralanır; en alttaki <b>son uğraktır</b> ve
+    aracın en az %15'ini kaplamalıdır. Ortak yüklemede malı başka depoda olan durağın
+    karşısında aktarma notu görünür.
+  </p>
+  <table>
+    <thead><tr>
+      <th>#</th><th>Bayi</th><th>İl</th><th>İlçe</th><th>Depo</th>
+      <th class="sag">Teslimat</th><th class="sag">Adet</th><th>Tır</th><th>Not</th>
+    </tr></thead>
+    <tbody>
+    {% for durak in duraklar %}
+      <tr>
+        <td>{{ durak.sira }}</td>
+        <td><b>{{ durak.bayi_adi }}</b></td>
+        <td>{{ durak.il }}</td>
+        <td>{{ durak.ilce or '—' }}</td>
+        <td>{{ durak.depo_metni }}</td>
+        <td class="sag">{{ durak.teslimat_sayisi }}</td>
+        <td class="sag">{{ durak.adet | sayi }}</td>
+        <td>{% if durak.tir_girisi == 'H' %}<span class="rozet HATALI">H</span>
+            {% elif durak.tir_girisi == 'E' %}<span class="rozet TAMAMLANDI">E</span>
+            {% else %}<span class="rozet TASLAK">?</span>{% endif %}</td>
+        <td>{% if durak.aktarma_notu %}
+              <b style="color:#c00">{{ durak.aktarma_notu }}</b>
+            {% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Axata iş emri numaraları</h2>
+    <p class="soluk">
+      Depo toplama işini kolaylaştırmak için ürünler gruplanıp aynı plana birden fazla
+      numara verilebilir. Virgülle ayırarak birden çok numara girebilirsiniz.
+    </p>
+    {% if plan.axata_numaralari %}
+    <table style="margin-bottom:12px">
+      <thead><tr><th>Numara</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr></thead>
+      <tbody>
+      {% for axata in plan.axata_numaralari %}
+        <tr>
+          <td><b>{{ axata.numara }}</b></td>
+          <td>{{ axata.aciklama or '—' }}</td>
+          <td class="soluk">{{ axata.kullanici }} · {{ axata.olusturma_tarihi | zaman }}</td>
+          <td><form method="post"
+                    action="/rota/planlar/{{ plan.id }}/axata/{{ axata.id }}/sil">
+            <button type="submit" class="ikincil"
+                    onclick="return confirm('{{ axata.numara }} silinecek. Onaylıyor musunuz?')">
+              Sil</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <form class="satir" method="post" action="/rota/planlar/{{ plan.id }}/axata">
+      <div><label for="axata_no">Axata No</label>
+        <input id="axata_no" name="axata_no" placeholder="3299 veya 3299, 3300" required></div>
+      <div><label for="aciklama">Açıklama (opsiyonel)</label>
+        <input id="aciklama" name="aciklama" placeholder="Panel grubu" style="width:200px"></div>
+      <button type="submit">Ekle</button>
+    </form>
+  </div>
+
+  <div class="kart">
+    <h2>Araç ve sürücü</h2>
+    <p class="soluk">Yükleme formunun araç bloğuna yazılır.</p>
+    <form method="post" action="/rota/planlar/{{ plan.id }}/arac">
+      <div class="satir">
+        <div><label for="nakliyeci">Nak. firma</label>
+          <input id="nakliyeci" name="nakliyeci" value="{{ plan.nakliyeci or '' }}"></div>
+        <div><label for="plaka">Plaka</label>
+          <input id="plaka" name="plaka" value="{{ plan.plaka or '' }}" style="width:130px"></div>
+      </div>
+      <div class="satir">
+        <div><label for="surucu">Şoför adı</label>
+          <input id="surucu" name="surucu" value="{{ plan.surucu or '' }}"></div>
+        <div><label for="surucu_telefon">Telefon</label>
+          <input id="surucu_telefon" name="surucu_telefon"
+                 value="{{ plan.surucu_telefon or '' }}" style="width:150px"></div>
+        <button type="submit">Kaydet</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="kart">
+  <h2>İşlemler</h2>
+  <div class="satir">
+    <a class="dugme ikincil" href="/rota/planlar/{{ plan.id }}/form">Yükleme formunu indir</a>
+    <form method="post" action="/rota/planlar/{{ plan.id }}/mail"><button type="submit">Depoya gönder</button></form>
+    <form method="post" action="/rota/planlar/{{ plan.id }}/tamamla">
+      <button type="submit" class="ikincil">Tamamlandı işaretle</button></form>
+  </div>
+  <form class="satir" method="post" action="/rota/planlar/{{ plan.id }}/iptal" style="margin-top:14px">
+    <div><label for="iptal_aciklamasi">İptal açıklaması</label>
+      <input id="iptal_aciklamasi" name="aciklama" style="width:260px"></div>
+    <button type="submit" class="tehlike"
+            onclick="return confirm('Plan iptal edilecek, siparişler beklemeye dönecek. Sefer numarası geri kullanılmaz. Onaylıyor musunuz?')">
+      Planı iptal et</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>Navlun fatura dağıtımı</h2>
+  <p class="soluk">
+    Marka payı, ürünlerin yüklendiği depo koduna göre belirlenir (sonu <b>-V</b> Vaillant,
+    <b>-P</b> Protherm, diğerleri DemirDöküm) ve araçta kapladıkları <b>anahtar değere</b>
+    göre paylaştırılır.
+  </p>
+  {% if plan.marka_paylari %}
+  <table>
+    <thead><tr><th>Marka</th><th class="sag">Pay</th><th>Dağılım</th></tr></thead>
+    <tbody>
+    {% for ad, oran in plan.marka_paylari.items() %}
+      <tr>
+        <td><b>{{ ad }}</b></td>
+        <td class="sag">%{{ (oran * 100) | sayi }}</td>
+        <td><div class="doluluk" style="max-width:220px">
+          <span style="width: {{ (oran * 100) | float }}%"></span>
+          <b>%{{ (oran * 100) | sayi }}</b></div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Marka payı hesaplanamadı.</div>{% endif %}
+</div>
+
+<div class="kart">
+  <h2>Plan içeriği</h2>
+  <table>
+    <thead><tr>
+      <th>Teslimat</th><th>Sipariş</th><th>Bayi / İl</th><th>Depo</th><th>Ürün Kodu</th>
+      <th>Ürün Adı</th><th class="sag">Miktar</th><th>Not</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in plan.satirlar|sort(attribute='teslimat_no') %}
+      <tr>
+        <td><b>{{ satir.teslimat_no }}</b></td>
+        <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
+        <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
+        <td>{{ satir.depo_kodu }}</td>
+        <td>{{ satir.urun_kodu }}</td>
+        <td>{{ satir.gosterilecek_urun_adi }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
+        <td>{% set notu = plan.aktarma_notu(satir) %}
+            {% if notu %}<b style="color:#c00">{{ notu }}</b>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart">
+  <h2>Plan geçmişi</h2>
+  <table>
+    <thead><tr><th>Tarih</th><th>Önceki</th><th>Yeni</th><th>Açıklama</th><th>Kullanıcı</th></tr></thead>
+    <tbody>
+    {% for hareket in plan.hareketler|sort(attribute='id') %}
+      <tr>
+        <td>{{ hareket.tarih | zaman }}</td>
+        <td>{{ hareket.onceki_durum or '—' }}</td>
+        <td><span class="rozet {{ hareket.yeni_durum }}">{{ hareket.yeni_durum }}</span></td>
+        <td>{{ hareket.aciklama or '' }}</td>
+        <td>{{ hareket.kullanici }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

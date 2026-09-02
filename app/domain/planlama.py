@@ -49,6 +49,8 @@ class Teslimat:
     """Depo kodu -> anahtar değer. Marka payı (navlun dağıtımı) buradan hesaplanır."""
     palet: Decimal = Decimal(0)
     anahtar: Decimal = Decimal(0)
+    ham_anahtar: Decimal = Decimal(0)
+    """Palete yuvarlanmamış anahtar değer; parsiyel (karışık istifli) araçlarda kullanılır."""
     agirlik: Decimal = Decimal(0)
     """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
 

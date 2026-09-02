@@ -55,7 +55,7 @@ kullanıcı yalnızca yetkili olduğu modülleri açabilir.
 | Modül | Durum |
 |---|---|
 | **Ring Planlama** | Hazır |
-| Rotalı Araç Planlama | Yakında |
+| **İç Piyasa Sevkiyat Planlama** | Hazır — FTL / rutin / kargo |
 | İhracat Planlama | Yakında |
 | Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
 | **Master Data** | Hazır — modüllerin ortak ürün verisi |
@@ -94,7 +94,45 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Veri Yönetimi** | Seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
 
-## Planlama kuralları (özet)
+### İç piyasa modülü (`/rota`)
+
+| Ekran | İşlev |
+|---|---|
+| **Gösterge Paneli** (`/rota`) | Sevkiyat tipi ve bölge dağılımı, planlamayı çalıştırma |
+| **Sipariş Önizleme** | Her müşterinin hangi tiple gideceği ve **gerekçesi** — plan üretmeden önce kural kontrolü |
+| **Planlar** | Tip (FTL/rutin/kargo), bölge ve durum filtresi; günlük yükleme formu |
+| **Plan Detayı** | Rota ve duraklar, son uğrak oranı, ortak yükleme notu, araç/şoför bilgisi, Axata, marka payı |
+| **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
+| **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
+
+## İç piyasa planlama kuralları (özet)
+
+Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-ANALIZ.md)
+
+1. **Sevkiyat tipi müşteri bazında** belirlenir; sırayla: Incoterms **EXW** → kargo,
+   müşteri toplamı **10 desinin altında** → kargo, toplamı **3 paleti aşmıyorsa** →
+   rutin/parsiyel, kalanı → **FTL**. Sefer numarası belge kodunu buradan alır:
+   `2609S1001` (FTL), `2609R1001` (rutin), `2609K1001` (kargo).
+2. **Bölge bazlı rotalama.** Bir araca yalnızca aynı bölgedeki müşteriler yüklenir;
+   bölgeler geçmiş FTL planlarından çıkarıldı (`app/domain/bolgeler.py`) ve müşteri
+   ekranından değiştirilebilir.
+3. **Durak sırası** yükleme tesisine uzaklığa göredir; en uzak il **son uğraktır** ve
+   aracın en az **%15**'ini kaplamalıdır, aksi hâlde o durak araçtan çıkarılır.
+4. FTL araçta en fazla **5 durak**; rutinde durak sınırı yoktur (sahada 25-30 durak).
+5. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
+   araçta paletler karışık istiflenir, kırık palet tam palet gözü saymaz. FTL'de
+   yuvarlanır — orada her müşterinin malı tam paletle yüklenir.
+6. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
+   sonraki gün planlanır. Sınır, o gün daha önce üretilmiş planları da sayar.
+7. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
+   birden çok araca dağıtılır; tek başına aracı aşan teslimat istisna planına gider.
+8. **Ortak yükleme:** 64, 74 ve -1 depoları aynı araca yüklenebilir. Araç, hacmin
+   çoğunu taşıyan depodan yüklenir; diğer depodaki malın satırına yükleme formunda
+   *"… depoya gönderilmelidir"* notu düşülür. Aktarma için ayrı plan üretilmez.
+9. **Tır girişi olmayan müşteri** engellenmez ama plan detayında ve sipariş
+   önizlemesinde uyarı çıkar.
+
+## Ring planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
 2. **Kapasite anahtar değerdir ve işgal edilen palet üzerinden hesaplanır.**

@@ -1,0 +1,125 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'ROTA' %}
+{% set aktif_menu = 'gosterge' %}
+{% block icerik %}
+<h1>İç Piyasa — Gösterge Paneli</h1>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik">
+    <div class="etiket">Bekleyen sipariş satırı</div>
+    <div class="deger">{{ ozet.siparis.get('BEKLEMEDE', 0) }}</div>
+  </div>
+  <div class="metrik">
+    <div class="etiket">İç piyasa planı</div>
+    <div class="deger">{{ ozet.toplam_plan }}</div>
+  </div>
+  <div class="metrik">
+    <div class="etiket">Ortalama doluluk</div>
+    <div class="deger">%{{ ozet.ortalama_doluluk }}</div>
+  </div>
+  <div class="metrik">
+    <div class="etiket">Müşteri master datası</div>
+    <div class="deger">{{ musteri_sayisi }}</div>
+  </div>
+</div>
+
+<div class="kart">
+  <h2>Plan üret</h2>
+  <p class="soluk">
+    Sevkiyat tipi <b>müşteri bazında</b> belirlenir: Incoterms EXW olanlar ve toplamı
+    10 desinin altında kalanlar kargoya, toplamı 3 paleti aşmayanlar rutine, kalanlar
+    FTL'e gider. FTL araçta en fazla 5 durak olur ve en uzak il aracın en az %15'ini
+    kaplamalıdır. Günlük sınır: 35 FTL, 4 rutin.
+  </p>
+  <form class="satir" method="post" action="/rota/planlar/uret">
+    <div>
+      <label for="plan_tarihi">Plan tarihi</label>
+      <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}">
+    </div>
+    <div style="padding-bottom:6px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="tipler" value="FTL" checked> FTL (S)
+      </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="tipler" value="RUTIN" checked> Rutin / parsiyel (R)
+      </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="tipler" value="KARGO" checked> Kargo (K)
+      </label>
+    </div>
+    <div style="padding-bottom:6px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="kalanlari_zorla" value="true">
+        Kalanları da planla (alt limiti uygulama)
+      </label>
+    </div>
+    <button type="submit">Planlamayı çalıştır</button>
+  </form>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Sevkiyat tipine göre</h2>
+    {% if tip_ozeti %}
+    <table>
+      <thead><tr><th>Tip</th><th class="sag">Plan</th><th class="sag">Durak</th>
+        <th class="sag">Adet</th><th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for tip, satir in tip_ozeti.items() %}
+        <tr>
+          <td><b>{{ tip }}</b></td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.durak }}</td>
+          <td class="sag">{{ satir.adet | sayi }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Henüz iç piyasa planı üretilmedi.</div>{% endif %}
+  </div>
+
+  <div class="kart">
+    <h2>Bölgeler</h2>
+    {% if bolge_ozeti %}
+    <table>
+      <thead><tr><th>Bölge</th><th class="sag">Plan</th><th class="sag">Durak</th>
+        <th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in bolge_ozeti %}
+        <tr>
+          <td><a href="/rota/planlar?bolge={{ satir.kod }}">{{ satir.ad }}</a></td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.durak }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Bölge dağılımı için önce plan üretin.</div>{% endif %}
+  </div>
+</div>
+
+<div class="kart">
+  <h2>Son planlar</h2>
+  {% if son_planlar %}
+  <table>
+    <thead><tr><th>Sefer No</th><th>Tip</th><th>Bölge</th><th>İller</th>
+      <th class="sag">Durak</th><th class="sag">Büyüklük</th><th>Durum</th></tr></thead>
+    <tbody>
+    {% for plan in son_planlar %}
+      <tr>
+        <td><a href="/rota/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
+        <td>{{ plan.sevkiyat_tipi_adi }}</td>
+        <td>{{ plan.bolge_adi }}</td>
+        <td>{{ plan.iller_metni }}</td>
+        <td class="sag">{{ plan.durak_sayisi }}</td>
+        <td class="sag">{{ plan.birim_metni }}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Henüz plan üretilmedi.</div>{% endif %}
+</div>
+{% endblock %}

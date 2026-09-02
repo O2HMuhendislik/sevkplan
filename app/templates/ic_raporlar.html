@@ -1,0 +1,71 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'ROTA' %}
+{% set aktif_menu = 'raporlar' %}
+{% block icerik %}
+<h1>İç Piyasa Raporları</h1>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Toplam plan</div>
+    <div class="deger">{{ ozet.toplam_plan }}</div></div>
+  <div class="metrik"><div class="etiket">Ortalama doluluk</div>
+    <div class="deger">%{{ ozet.ortalama_doluluk }}</div></div>
+  <div class="metrik"><div class="etiket">Depoya gönderilen</div>
+    <div class="deger">{{ ozet.plan.get('MAIL_GONDERILDI', 0) }}</div></div>
+  <div class="metrik"><div class="etiket">Tamamlanan</div>
+    <div class="deger">{{ ozet.plan.get('TAMAMLANDI', 0) }}</div></div>
+</div>
+
+<div class="kart">
+  <div class="satir" style="margin-bottom:14px">
+    <a class="dugme ikincil" href="/rota/raporlar/plan-excel">Plan listesini Excel'e aktar</a>
+    <a class="dugme ikincil" href="/rota/gunluk-form?tarih={{ bugun }}">Bugünün yükleme formları</a>
+  </div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Sevkiyat tipine göre</h2>
+    {% if tip_ozeti %}
+    <table>
+      <thead><tr><th>Tip</th><th class="sag">Plan</th><th class="sag">Durak</th>
+        <th class="sag">Adet</th><th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for tip, satir in tip_ozeti.items() %}
+        <tr>
+          <td><a href="/rota/planlar?tip={{ tip }}"><b>{{ tip }}</b></a></td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.durak }}</td>
+          <td class="sag">{{ satir.adet | sayi }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="soluk">
+      Doluluk her tipin kendi hedefine göre hesaplanır: FTL'de %100 dolu tır,
+      rutinde %100 = rutin hedefinin üst ucu (tırın %60'ı).
+    </p>
+    {% else %}<div class="bos">Henüz iç piyasa planı üretilmedi.</div>{% endif %}
+  </div>
+
+  <div class="kart">
+    <h2>Bölge dağılımı</h2>
+    {% if bolge_ozeti %}
+    <table>
+      <thead><tr><th>Bölge</th><th class="sag">Plan</th><th class="sag">Durak</th>
+        <th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in bolge_ozeti %}
+        <tr>
+          <td><a href="/rota/planlar?bolge={{ satir.kod }}">{{ satir.ad }}</a></td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.durak }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Bölge dağılımı için önce plan üretin.</div>{% endif %}
+  </div>
+</div>
+{% endblock %}

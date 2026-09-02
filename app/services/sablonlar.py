@@ -10,7 +10,12 @@ from pathlib import Path
 from openpyxl.styles import Alignment, Font
 
 from app.services.excel import sayfa_yaz, yeni_kitap
-from app.services.veri_formatlari import Alan, SIPARIS_ALANLARI, URUN_ALANLARI
+from app.services.veri_formatlari import (
+    Alan,
+    MUSTERI_ALANLARI,
+    SIPARIS_ALANLARI,
+    URUN_ALANLARI,
+)
 
 
 def _sablon_uret(alanlar: tuple[Alan, ...], sayfa_adi: str, baslik: str, hedef: Path) -> Path:
@@ -62,5 +67,14 @@ def siparis_sablonu(hedef: Path) -> Path:
         SIPARIS_ALANLARI,
         "Siparişler",
         "Sipariş Aktarım Şablonu — her satır bir sipariş kalemidir.",
+        hedef,
+    )
+
+
+def musteri_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        MUSTERI_ALANLARI,
+        "Müşteriler",
+        "İç Piyasa Müşteri Master Data Şablonu — her satır bir bayi/müşteridir.",
         hedef,
     )

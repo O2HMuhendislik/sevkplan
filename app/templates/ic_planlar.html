@@ -1,0 +1,97 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'ROTA' %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>İç Piyasa Planları</h1>
+
+<div class="kart">
+  <h2>Plan üret</h2>
+  <p class="soluk">
+    Tip seçimi yalnızca <b>hangi kovaların planlanacağını</b> sınırlar; bir müşterinin
+    tipini değiştirmez. Seçilmeyen tipteki müşteriler gerekçesiyle beklemede kalır.
+  </p>
+  <form class="satir" method="post" action="/rota/planlar/uret">
+    <div>
+      <label for="plan_tarihi">Plan tarihi</label>
+      <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}">
+    </div>
+    <div style="padding-bottom:6px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="tipler" value="FTL" checked> FTL (S)
+      </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="tipler" value="RUTIN" checked> Rutin / parsiyel (R)
+      </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="tipler" value="KARGO" checked> Kargo (K)
+      </label>
+    </div>
+    <div style="padding-bottom:6px">
+      <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
+        <input type="checkbox" name="kalanlari_zorla" value="true">
+        Kalanları da planla (alt limiti uygulama)
+      </label>
+    </div>
+    <button type="submit">Planlamayı çalıştır</button>
+  </form>
+</div>
+
+<div class="sekmeler">
+  <a href="/rota/planlar" class="{{ 'aktif' if durum == '' and tip == '' }}">Tümü</a>
+  <a href="/rota/planlar?tip=FTL" class="{{ 'aktif' if tip == 'FTL' }}">FTL</a>
+  <a href="/rota/planlar?tip=RUTIN" class="{{ 'aktif' if tip == 'RUTIN' }}">Rutin</a>
+  <a href="/rota/planlar?tip=KARGO" class="{{ 'aktif' if tip == 'KARGO' }}">Kargo</a>
+  {% for d in durumlar %}
+    <a href="/rota/planlar?durum={{ d }}" class="{{ 'aktif' if durum == d }}">{{ d }}</a>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/rota/planlar" style="margin-bottom:14px">
+    <input type="hidden" name="durum" value="{{ durum }}">
+    <input type="hidden" name="tip" value="{{ tip }}">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Sefer no, axata no, il, teslimat no, sipariş no" style="width:360px"></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/rota/raporlar/plan-excel?durum={{ durum }}&tip={{ tip }}&arama={{ arama }}">Excel'e aktar</a>
+    <a class="dugme ikincil" href="/rota/gunluk-form?tarih={{ bugun }}">Günlük yükleme formu</a>
+  </form>
+
+  {% if planlar %}
+  <table>
+    <thead><tr>
+      <th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Bölge / İller</th>
+      <th class="sag">Durak</th><th class="sag">Büyüklük</th><th>Doluluk</th>
+      <th>Son uğrak</th><th>Depo</th><th>Axata No</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for plan in planlar %}
+      <tr>
+        <td><a href="/rota/planlar/{{ plan.id }}"><b>{{ plan.sefer_no }}</b></a>
+          {% if plan.istisna_asim %}<span class="rozet HATALI">İSTİSNA</span>{% endif %}
+          {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ESNETİLDİ</span>{% endif %}</td>
+        <td>{{ plan.plan_tarihi | tarih }}</td>
+        <td>{{ plan.sevkiyat_tipi_adi }}</td>
+        <td>{{ plan.bolge_adi }}
+          <div class="soluk">{{ plan.iller_metni }}</div></td>
+        <td class="sag">{{ plan.durak_sayisi }}</td>
+        <td class="sag">{{ plan.birim_metni }}</td>
+        <td><div class="doluluk">
+          <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
+          <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>
+        <td>{{ plan.son_ugrak or '—' }}
+          {% if plan.son_ugrak_orani %}
+            <div class="soluk">%{{ (plan.son_ugrak_orani * 100) | sayi }}</div>
+          {% endif %}</td>
+        <td>{{ plan.yukleme_deposu or plan.depo_kodu }}</td>
+        <td>{{ plan.axata_ozeti or '—' }}
+          {% if plan.marka_ozeti %}<div class="soluk">{{ plan.marka_ozeti }}</div>{% endif %}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Plan bulunamadı.</div>{% endif %}
+</div>
+{% endblock %}

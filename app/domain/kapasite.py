@@ -92,7 +92,52 @@ TIR = KapasiteProfili(
     alt_limit=Decimal("0.90"),
 )
 
-PROFILLER = {profil.kod: profil for profil in (RING_PALET, RING_ANAHTAR, TIR)}
+# ----------------------------------------------------------------- iç piyasa
+#
+# Üç sevkiyat tipinin her biri ayrı belge kodu ve ayrı doluluk hedefiyle çalışır.
+# Sefer numarası bu belge kodundan üretilir: 2609S1001, 2609R1001, 2609K1001.
+
+IC_FTL = KapasiteProfili(
+    kod="IC_FTL",
+    ad="İç piyasa — FTL (tam araç)",
+    belge_kodu="S",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal(1),
+    alt_limit=Decimal("0.85"),
+)
+"""Geçmiş FTL planlarının medyan doluluğu %94,4; alt limit 0,85 ile gerçeğe yakın."""
+
+IC_RUTIN = KapasiteProfili(
+    kod="IC_RUTIN",
+    ad="İç piyasa — Rutin / parsiyel",
+    belge_kodu="R",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal("0.60"),
+    alt_limit=Decimal("0.50"),
+)
+"""Rutin araç %100 doldurulmaz: karışık palet ve çok durak olduğu için %50-60'ta bırakılır.
+
+Üst limit 0,60 olduğu için doluluk yüzdesi de bu hedefe göre hesaplanır: %100 gösterimi
+"araç tıka basa dolu" değil, "rutin hedefinin üst ucunda" demektir.
+"""
+
+IC_KARGO = KapasiteProfili(
+    kod="IC_KARGO",
+    ad="İç piyasa — Kargo",
+    belge_kodu="K",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal(1),
+    alt_limit=Decimal(0),
+)
+"""Kargoda araç kapasitesi yoktur; profil yalnızca belge kodu ve raporlama içindir."""
+
+PROFILLER = {
+    profil.kod: profil
+    for profil in (RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO)
+}
 
 
 def profil_getir(kod: str) -> KapasiteProfili:

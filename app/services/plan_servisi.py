@@ -117,6 +117,9 @@ def _durum_degistir(
 class TeslimatOlculeri:
     palet: Decimal
     anahtar: Decimal
+    """İşgal edilen palet üzerinden anahtar değer: kırık palet tam palet gözü sayılır."""
+    ham_anahtar: Decimal
+    """Yuvarlamasız anahtar değer: karışık istiflenen (parsiyel) araçların ölçüsü."""
     adet: Decimal
     agirlik: Decimal
     sku_miktarlari: dict[str, Decimal]
@@ -145,7 +148,7 @@ def teslimat_olculeri(
             satir.miktar
         )
 
-    palet = anahtar = agirlik = Decimal(0)
+    palet = anahtar = ham_anahtar = agirlik = Decimal(0)
     depo_katkilari: dict[str, Decimal] = {}
     for urun_kodu, miktar in sku_miktarlari.items():
         urun = urun_haritasi[urun_kodu]
@@ -153,6 +156,7 @@ def teslimat_olculeri(
             palet += palet_hesapla(miktar, urun.palet_ici_adet)
         yukleme = urun.yukleme_adeti(arac_tipi)
         if yukleme:
+            ham_anahtar += Decimal(miktar) / Decimal(yukleme)
             # Kırık palet de tam palet gözü kaplar; anahtar değer buna göre hesaplanır.
             islenen = (
                 palet_hesapla(miktar, urun.palet_ici_adet) * urun.palet_ici_adet
@@ -173,6 +177,7 @@ def teslimat_olculeri(
     return TeslimatOlculeri(
         palet=palet,
         anahtar=anahtar.quantize(Decimal("0.000001")),
+        ham_anahtar=ham_anahtar.quantize(Decimal("0.000001")),
         adet=sum(sku_miktarlari.values(), Decimal(0)),
         agirlik=agirlik.quantize(Decimal("0.001")),
         sku_miktarlari=sku_miktarlari,
@@ -282,6 +287,7 @@ def teslimatlari_hazirla(
                 karma_mi=karma_mi,
                 palet=olculer.palet,
                 anahtar=olculer.anahtar,
+                ham_anahtar=olculer.ham_anahtar,
                 agirlik=olculer.agirlik,
             )
         )

@@ -4,6 +4,7 @@ Yapı:
   * `/giris`, `/cikis`, `/sifre-degistir` — kimlik doğrulama
   * `/`                                   — modül seçim ekranı
   * `/ring/...`                           — Ring Planlama modülü
+  * `/rota/...`                           — İç Piyasa Sevkiyat Planlama modülü
   * `/urunler`                            — Master Data (modüllerin ortak verisi)
   * `/veri-yonetimi`, `/yonetim/...`      — sistem yönetimi
 
@@ -23,7 +24,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
@@ -39,9 +40,22 @@ from app.config import (
 )
 from app.db import OturumFabrikasi, oturum_bagimliligi, semayi_olustur
 from app.guvenlik import PAROLA_KURALLARI, ParolaHatasi
-from app.models import Kullanici, PlanDurumu, Rol, SevkiyatPlani, SiparisDurumu, Urun
+from app.domain.bolgeler import VARSAYILAN_BOLGELER
+from app.domain.ic_piyasa import SevkiyatTipi
+from app.models import (
+    Kullanici,
+    Musteri,
+    PlanDurumu,
+    Rol,
+    SevkiyatPlani,
+    SiparisDurumu,
+    SiparisSatiri,
+    Urun,
+)
 from app.moduller import MODULLER
 from app.services import (
+    ic_piyasa_servisi,
+    ic_yukleme_formu,
     ice_aktarim,
     kullanici_servisi,
     plan_servisi,
@@ -274,8 +288,10 @@ def ring_gosterge(
         istek,
         "gosterge.html",
         kullanici,
-        ozet=rapor_servisi.gosterge_paneli(db),
-        son_planlar=rapor_servisi.planlari_getir(db, PlanFiltresi(), limit=10),
+        ozet=rapor_servisi.gosterge_paneli(db, modul="RING"),
+        son_planlar=rapor_servisi.planlari_getir(
+            db, PlanFiltresi(modul="RING"), limit=10
+        ),
         bekleyenler=rapor_servisi.bekleyen_ozeti(db)[:10],
     )
 
@@ -377,7 +393,7 @@ def planlar(
     kullanici: Kullanici = Depends(modul_yetkisi("RING")),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    filtre = PlanFiltresi(durum=durum or None, arama=arama or None)
+    filtre = PlanFiltresi(durum=durum or None, arama=arama or None, modul="RING")
     return sayfa(
         istek,
         "planlar.html",
@@ -534,7 +550,9 @@ def plan_excel(
     db: Session = Depends(oturum_bagimliligi),
 ):
     planlar_listesi = rapor_servisi.planlari_getir(
-        db, PlanFiltresi(durum=durum or None, arama=arama or None), limit=5000
+        db,
+        PlanFiltresi(durum=durum or None, arama=arama or None, modul="RING"),
+        limit=5000,
     )
     hedef = yukleme_formu.plan_listesi_disa_aktar(
         planlar_listesi, CIKTI_DIZIN / "plan_listesi.xlsx"
@@ -551,6 +569,412 @@ def izleme(
 ):
     sonuc = rapor_servisi.izleme_sorgusu(db, anahtar) if anahtar.strip() else None
     return sayfa(istek, "izleme.html", kullanici, anahtar=anahtar, sonuc=sonuc)
+
+
+# ------------------------------------------- İç Piyasa Sevkiyat Planlama modülü
+def _ic_plan_getir(db: Session, plan_id: int) -> SevkiyatPlani:
+    """Plan var mı ve gerçekten iç piyasa planı mı? Ring planı bu ekranlarda açılmaz."""
+    plan = plan_getir(db, plan_id)
+    if not plan.ic_piyasa_mi:
+        raise HTTPException(404, "Bu plan iç piyasa modülüne ait değil.")
+    return plan
+
+
+def _tipleri_coz(secilenler: list[str]) -> list[SevkiyatTipi]:
+    """Formdan gelen tip seçimini çözer; seçim yoksa üç tip de çalışır."""
+    tipler = []
+    for deger in secilenler:
+        try:
+            tipler.append(SevkiyatTipi(deger))
+        except ValueError:
+            continue
+    return tipler or list(SevkiyatTipi)
+
+
+@uygulama.get("/rota")
+def rota_gosterge(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "ic_gosterge.html",
+        kullanici,
+        ozet=rapor_servisi.gosterge_paneli(db, modul="ROTA"),
+        tip_ozeti=rapor_servisi.ic_piyasa_ozeti(db),
+        bolge_ozeti=rapor_servisi.bolge_ozeti(db)[:12],
+        son_planlar=rapor_servisi.planlari_getir(
+            db, PlanFiltresi(modul="ROTA"), limit=10
+        ),
+        musteri_sayisi=db.scalar(select(func.count(Musteri.id))) or 0,
+    )
+
+
+@uygulama.get("/rota/siparisler")
+def rota_siparisler(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Beklemedeki siparişlerin müşteri bazında tip önizlemesi.
+
+    Plan üretmeden önce "bu müşteri neden kargoya/rutine düşüyor" sorusunun cevabı
+    burada görünür; kural yanlış çalışıyorsa planlamadan önce fark edilir.
+    """
+    satirlar = list(
+        db.scalars(
+            select(SiparisSatiri).where(
+                SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
+                SiparisSatiri.plan_id.is_(None),
+            )
+        ).all()
+    )
+    return sayfa(
+        istek,
+        "ic_siparisler.html",
+        kullanici,
+        musteriler=ic_piyasa_servisi.musteri_ozeti(db, satirlar),
+        satir_sayisi=len(satirlar),
+    )
+
+
+@uygulama.post("/rota/planlar/uret")
+def rota_planlari_uret(
+    plan_tarihi: str = Form(""),
+    tipler: list[str] = Form([]),
+    kalanlari_zorla: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    tarih = (
+        datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
+    )
+    try:
+        sonuc = ic_piyasa_servisi.plan_uret(
+            db,
+            plan_tarihi=tarih,
+            tipler=_tipleri_coz(tipler),
+            kullanici=kullanici.kullanici_adi,
+            kalanlari_zorla=kalanlari_zorla,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/rota/planlar", hata=str(hata))
+    if not sonuc.planlar:
+        return yonlendir("/rota/planlar", hata=f"Plan üretilemedi. {sonuc.ozet()}")
+    return yonlendir("/rota/planlar", mesaj=sonuc.ozet())
+
+
+@uygulama.get("/rota/planlar")
+def rota_planlar(
+    istek: Request,
+    durum: str = "",
+    tip: str = "",
+    bolge: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    filtre = PlanFiltresi(
+        durum=durum or None,
+        arama=arama or None,
+        modul="ROTA",
+        sevkiyat_tipi=tip or None,
+        bolge_kodu=bolge or None,
+    )
+    return sayfa(
+        istek,
+        "ic_planlar.html",
+        kullanici,
+        planlar=rapor_servisi.planlari_getir(db, filtre),
+        durum=durum,
+        tip=tip,
+        bolge=bolge,
+        arama=arama,
+        durumlar=[d.value for d in PlanDurumu],
+    )
+
+
+@uygulama.get("/rota/planlar/{plan_id}")
+def rota_plan_detay(
+    istek: Request,
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    return sayfa(
+        istek,
+        "ic_plan_detay.html",
+        kullanici,
+        plan=plan,
+        duraklar=ic_piyasa_servisi.plan_musterileri(db, plan),
+    )
+
+
+@uygulama.post("/rota/planlar/{plan_id}/axata")
+def rota_axata_kaydet(
+    plan_id: int,
+    axata_no: str = Form(...),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        plan_servisi.axata_no_gir(
+            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/rota/planlar/{plan_id}", mesaj=f"Axata numaraları: {plan.axata_ozeti}"
+    )
+
+
+@uygulama.post("/rota/planlar/{plan_id}/axata/{axata_id}/sil")
+def rota_axata_sil(
+    plan_id: int,
+    axata_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        plan_servisi.axata_no_sil(db, plan, axata_id, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/rota/planlar/{plan_id}", mesaj="Axata numarası silindi.")
+
+
+@uygulama.post("/rota/planlar/{plan_id}/arac")
+def rota_arac_kaydet(
+    plan_id: int,
+    nakliyeci: str = Form(""),
+    plaka: str = Form(""),
+    surucu: str = Form(""),
+    surucu_telefon: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        ic_piyasa_servisi.arac_bilgisi_kaydet(
+            db, plan, nakliyeci, plaka, surucu, surucu_telefon, kullanici.kullanici_adi
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/rota/planlar/{plan_id}", mesaj="Araç bilgisi kaydedildi.")
+
+
+@uygulama.post("/rota/planlar/{plan_id}/mail")
+def rota_mail_gonder(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        plan_servisi.mail_gonderildi_isaretle(db, plan, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/rota/planlar/{plan_id}",
+        mesaj=(
+            "Yükleme formu hazırlandı ve plan 'gönderildi' olarak işaretlendi. "
+            "SMTP bağlantısı kurulana kadar formu indirip elle iletin."
+        ),
+    )
+
+
+@uygulama.post("/rota/planlar/{plan_id}/tamamla")
+def rota_plani_tamamla(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        plan_servisi.plan_tamamla(db, plan, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/rota/planlar/{plan_id}", mesaj=f"{plan.sefer_no} tamamlandı.")
+
+
+@uygulama.post("/rota/planlar/{plan_id}/iptal")
+def rota_plani_iptal(
+    plan_id: int,
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ic_plan_getir(db, plan_id)
+    try:
+        plan_servisi.plan_iptal(
+            db, plan, aciklama or "Açıklama girilmedi", kullanici.kullanici_adi
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/rota/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/rota/planlar/{plan_id}",
+        mesaj=f"{plan.sefer_no} iptal edildi, siparişler beklemeye alındı.",
+    )
+
+
+@uygulama.get("/rota/planlar/{plan_id}/form")
+def rota_form_indir(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = ic_yukleme_formu.form_uret(_ic_plan_getir(db, plan_id))
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/rota/gunluk-form")
+def rota_gunluk_form(
+    tarih: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bir günün bütün iç piyasa planları tek kitapta, sevkiyat tipine göre sayfalanmış."""
+    gun = datetime.strptime(tarih, "%Y-%m-%d").date() if tarih else date.today()
+    planlar_listesi = rapor_servisi.planlari_getir(
+        db, PlanFiltresi(modul="ROTA", baslangic=gun, bitis=gun), limit=500
+    )
+    if not planlar_listesi:
+        return yonlendir(
+            "/rota/planlar", hata=f"{gun:%d.%m.%Y} için iç piyasa planı bulunamadı."
+        )
+    hedef = ic_yukleme_formu.gunluk_form(planlar_listesi)
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/rota/raporlar")
+def rota_raporlar(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "ic_raporlar.html",
+        kullanici,
+        ozet=rapor_servisi.gosterge_paneli(db, modul="ROTA"),
+        tip_ozeti=rapor_servisi.ic_piyasa_ozeti(db),
+        bolge_ozeti=rapor_servisi.bolge_ozeti(db),
+    )
+
+
+@uygulama.get("/rota/raporlar/plan-excel")
+def rota_plan_excel(
+    durum: str = "",
+    tip: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    planlar_listesi = rapor_servisi.planlari_getir(
+        db,
+        PlanFiltresi(
+            durum=durum or None,
+            arama=arama or None,
+            modul="ROTA",
+            sevkiyat_tipi=tip or None,
+        ),
+        limit=5000,
+    )
+    hedef = ic_yukleme_formu.plan_listesi_disa_aktar(
+        planlar_listesi, CIKTI_DIZIN / "ic_piyasa_planlari.xlsx"
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+# -------------------------------------------------------- iç piyasa müşteri master data
+@uygulama.get("/rota/musteriler")
+def rota_musteriler(
+    istek: Request,
+    arama: str = "",
+    tir: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "musteriler.html",
+        kullanici,
+        musteriler=rapor_servisi.musterileri_getir(db, arama or None, tir or None),
+        arama=arama,
+        tir=tir,
+        toplam=db.scalar(select(func.count(Musteri.id))) or 0,
+        bolgeler=VARSAYILAN_BOLGELER,
+    )
+
+
+@uygulama.post("/rota/musteriler/yukle")
+async def rota_musterileri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.musterileri_aktar(
+            db, dosya.file, dosya.filename or "musteriler.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/rota/musteriler", hata=str(hata))
+    return yonlendir("/rota/musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
+
+
+@uygulama.get("/rota/musteriler/sablon")
+def rota_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("ROTA"))):
+    hedef = sablonlar.musteri_sablonu(CIKTI_DIZIN / "musteri_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post("/rota/musteriler/{musteri_id}")
+def rota_musteri_guncelle(
+    musteri_id: int,
+    tir_girisi: str = Form("?"),
+    bolge_kodu: str = Form(""),
+    il: str = Form(""),
+    ilce: str = Form(""),
+    notlar: str = Form(""),
+    aktif: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.domain.iller import yer_adi
+
+    musteri = db.get(Musteri, musteri_id)
+    if musteri is None:
+        raise HTTPException(404, "Müşteri bulunamadı")
+    musteri.tir_girisi = tir_girisi if tir_girisi in {"E", "H"} else "?"
+    musteri.bolge_kodu = bolge_kodu.strip() or None
+    musteri.il = yer_adi(il) or musteri.il
+    musteri.ilce = yer_adi(ilce) or None
+    musteri.notlar = notlar.strip() or None
+    musteri.aktif = aktif
+    db.commit()
+    return yonlendir(
+        "/rota/musteriler", mesaj=f"{musteri.bayi_adi} güncellendi."
+    )
 
 
 # ---------------------------------------------------------------------- master data

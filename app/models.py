@@ -202,6 +202,62 @@ class Urun(Temel):
         return self.urun_kodu
 
 
+class Musteri(Temel):
+    """İç piyasa müşteri master datası.
+
+    Anahtar **bayi adıdır**: kaynak dosyalarda bayi kodu gelmiyor, eşleştirme ad
+    üzerinden yapılıyor (bkz. docs/IC-PIYASA-ANALIZ.md §4). Bayi kodlarına ulaşılınca
+    `bayi_kodu` alanı doldurulup anahtar oraya taşınacak.
+
+    Kayıtların çoğu geçmiş sevk verisinden üretildi; `tir_girisi` gibi alanlar ekrandan
+    elle düzeltilir.
+    """
+
+    __tablename__ = "musteriler"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anahtar: Mapped[str] = mapped_column(String(250), unique=True, index=True)
+    """Bayi adının normalize hâli (Türkçe karakterler ASCII, büyük harf)."""
+    bayi_adi: Mapped[str] = mapped_column(String(250), index=True)
+    bayi_kodu: Mapped[str | None] = mapped_column(String(50), index=True, default=None)
+    alici_firma: Mapped[str | None] = mapped_column(String(250), default=None)
+    il: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+    ilce: Mapped[str | None] = mapped_column(String(80), default=None)
+    sevk_adresi: Mapped[str | None] = mapped_column(String(400), default=None)
+    telefon: Mapped[str | None] = mapped_column(String(60), default=None)
+    incoterms: Mapped[str | None] = mapped_column(String(10), default=None)
+    tir_girisi: Mapped[str] = mapped_column(String(1), default="?")
+    """E = tır girebilir, H = fiziki adres tır almıyor, ? = geçmişten karar verilemedi."""
+    bolge_kodu: Mapped[str | None] = mapped_column(String(20), index=True, default=None)
+    """Boşsa ilin varsayılan bölgesi kullanılır (app/domain/bolgeler.py)."""
+    plan_sayisi: Mapped[int] = mapped_column(Integer, default=0)
+    son_sevk: Mapped[date | None] = mapped_column(Date, default=None)
+    notlar: Mapped[str | None] = mapped_column(Text, default=None)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    guncelleme_tarihi: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def tir_girisi_metni(self) -> str:
+        return {
+            "E": "Tır girebilir",
+            "H": "Tır giremiyor",
+        }.get(self.tir_girisi, "Belirsiz")
+
+    @property
+    def etkin_bolge_kodu(self) -> str:
+        from app.domain.bolgeler import il_bolgesi
+
+        return self.bolge_kodu or il_bolgesi(self.il or "")
+
+    @property
+    def bolge_adi(self) -> str:
+        from app.domain.bolgeler import bolge_adi
+
+        return bolge_adi(self.etkin_bolge_kodu)
+
+
 class SevkiyatPlani(Temel):
     __tablename__ = "sevkiyat_planlari"
 
@@ -227,6 +283,30 @@ class SevkiyatPlani(Temel):
     marka_paylari_metni: Mapped[str | None] = mapped_column(String(200), default=None)
     """Navlun faturasının markalar arasında dağıtımı: 'DEMİRDÖKÜM:0.25|VAİLLANT:0.75'."""
     mix_mi: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ---------------------------------------------------------------- iç piyasa
+    modul: Mapped[str] = mapped_column(String(20), index=True, default="RING")
+    """Planı üreten modül: RING ya da ROTA (iç piyasa). Ekranlar buna göre filtreler."""
+    sevkiyat_tipi: Mapped[str | None] = mapped_column(String(10), default=None)
+    """FTL / RUTIN / KARGO. Ring planlarında boştur."""
+    bolge_kodu: Mapped[str | None] = mapped_column(String(20), index=True, default=None)
+    durak_sayisi: Mapped[int] = mapped_column(Integer, default=0)
+    """Yükleme formundaki "Yer Miktarı" ile aynı değer."""
+    musteri_sayisi: Mapped[int] = mapped_column(Integer, default=0)
+    iller_metni: Mapped[str | None] = mapped_column(String(400), default=None)
+    """Uğranan iller, yakından uzağa: 'IZMIR, MANISA'."""
+    ilceler_metni: Mapped[str | None] = mapped_column(String(600), default=None)
+    """Yükleme formunda '+' ile birleşik yazılan ilçeler."""
+    son_ugrak: Mapped[str | None] = mapped_column(String(80), default=None)
+    son_ugrak_orani: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=0)
+    toplam_desi: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    yukleme_deposu: Mapped[str | None] = mapped_column(String(10), default=None)
+    """Ortak yüklemede aracın yükleneceği depo; diğer depoların malı buraya getirilir."""
+    nakliyeci: Mapped[str | None] = mapped_column(String(150), default=None)
+    plaka: Mapped[str | None] = mapped_column(String(30), default=None)
+    surucu: Mapped[str | None] = mapped_column(String(150), default=None)
+    surucu_telefon: Mapped[str | None] = mapped_column(String(40), default=None)
+
     durum: Mapped[PlanDurumu] = mapped_column(
         Enum(PlanDurumu, native_enum=False, length=20), default=PlanDurumu.TASLAK, index=True
     )
@@ -286,6 +366,48 @@ class SevkiyatPlani(Temel):
     def teslimat_nolar(self) -> list[str]:
         return sorted({satir.teslimat_no for satir in self.satirlar})
 
+    @property
+    def ic_piyasa_mi(self) -> bool:
+        return self.modul == "ROTA"
+
+    @property
+    def sevkiyat_tipi_adi(self) -> str:
+        from app.domain.ic_piyasa import SevkiyatTipi
+
+        if not self.sevkiyat_tipi:
+            return "Ring"
+        try:
+            return SevkiyatTipi(self.sevkiyat_tipi).ad
+        except ValueError:
+            return self.sevkiyat_tipi
+
+    @property
+    def bolge_adi(self) -> str:
+        from app.domain.bolgeler import bolge_adi
+
+        return bolge_adi(self.bolge_kodu) if self.bolge_kodu else ""
+
+    @property
+    def il_yeri_metni(self) -> str:
+        """Yükleme formunun 'İl' satırı: 'İZMİR2YER' — il adı + durak sayısı."""
+        ilk_il = (self.iller_metni or "").split(",")[0].strip()
+        if not ilk_il:
+            return ""
+        return f"{ilk_il}{self.durak_sayisi}YER" if self.durak_sayisi else ilk_il
+
+    @property
+    def ilce_metni(self) -> str:
+        """Formda ilçeler '+' ile birleşik yazılır: 'KARABAĞLAR+BERGAMA'."""
+        return "+".join(
+            parca.strip() for parca in (self.ilceler_metni or "").split(",") if parca.strip()
+        )
+
+    def aktarma_notu(self, satir: SiparisSatiri) -> str:
+        """Ortak yüklemede malı başka depoda olan satırın notu."""
+        from app.domain.ic_piyasa import aktarma_notu
+
+        return aktarma_notu(satir.depo_kodu, self.yukleme_deposu or "")
+
 
 class AxataNumarasi(Temel):
     """Bir plana ait WMS iş emri numarası.
@@ -333,6 +455,11 @@ class SiparisSatiri(Temel):
     sevk_adresi: Mapped[str | None] = mapped_column(String(250), default=None)
     """Kaynak dosyada ilçe bu sütunda gelir."""
     teslim_sekli: Mapped[str | None] = mapped_column(String(30), default=None)
+    """Kaynak dosyanın `Not` sütunu, ham hâliyle."""
+    incoterms: Mapped[str | None] = mapped_column(String(10), index=True, default=None)
+    """`Not` sütunundan ayrıştırılan teslim şekli: CIF / EXW ... EXW olanlar kargoya gider."""
+    ilce: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+    """İlçe. Kaynak dosyada bazen `SevkAdresi`, bazen `Not` sütununun içinde gelir."""
     siparis_tarihi: Mapped[date | None] = mapped_column(Date, default=None)
     termin_tarihi: Mapped[date | None] = mapped_column(Date, index=True, default=None)
     durum: Mapped[SiparisDurumu] = mapped_column(

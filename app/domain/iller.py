@@ -12,6 +12,31 @@ güncellenmelidir.
 """
 from __future__ import annotations
 
+_TR_ASCII = str.maketrans("ıİşŞğĞüÜöÖçÇâÂîÎûÛ", "iIsSgGuUoOcCaAiIuU")
+
+IL_ESANLAMLILARI = {
+    "AFYON": "AFYONKARAHISAR",
+    "K.MARAS": "KAHRAMANMARAS",
+    "KMARAS": "KAHRAMANMARAS",
+    "URFA": "SANLIURFA",
+    "ICEL": "MERSIN",
+}
+"""Kaynak dosyalarda kullanılan kısaltmaların resmî il adı karşılığı."""
+
+
+def yer_adi(deger: object) -> str:
+    """İl/ilçe adını tek biçime indirger.
+
+    Kaynak veride aynı il hem 'ISTANBUL' hem 'İSTANBUL' geçiyor; Türkçe karakterler
+    ASCII karşılığına çevrilip büyük harfe alınmazsa aynı il iki ayrı il gibi sayılıyor
+    ve bölge/rota hesapları bölünüyor.
+    """
+    if deger is None:
+        return ""
+    ad = str(deger).strip().translate(_TR_ASCII).upper()
+    return IL_ESANLAMLILARI.get(ad, ad)
+
+
 ESKISEHIR_MESAFELERI: dict[str, int] = {
     "ESKISEHIR": 0, "BILECIK": 80, "KUTAHYA": 80, "AFYONKARAHISAR": 145,
     "BURSA": 155, "USAK": 220, "SAKARYA": 220, "ANKARA": 235, "YALOVA": 250,
@@ -44,7 +69,7 @@ ESKISEHIR_DEPOLARI = {"64", "64-D", "64-V", "64-P", "-1"}
 
 def mesafe(il: str) -> int | None:
     """İlin Eskişehir'e yaklaşık karayolu mesafesi. Tanımsız il için None."""
-    return ESKISEHIR_MESAFELERI.get((il or "").strip().upper())
+    return ESKISEHIR_MESAFELERI.get(yer_adi(il))
 
 
 def yukleme_tesisi(depo_kodu: str) -> str:

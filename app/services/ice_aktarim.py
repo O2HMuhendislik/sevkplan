@@ -9,14 +9,19 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import IceAktarim, SiparisDurumu, SiparisSatiri, Urun
+from app.domain.iller import yer_adi
+from app.models import IceAktarim, Musteri, SiparisDurumu, SiparisSatiri, Urun
 from app.services import excel
 from app.services.excel import ExcelHatasi
 from app.services.veri_formatlari import (
+    MUSTERI_ALANLARI,
+    MUSTERI_ALIAS,
     SIPARIS_ALANLARI,
     SIPARIS_ALIAS,
     URUN_ALANLARI,
     URUN_ALIAS,
+    bayi_adini_coz,
+    yer_alanlarini_coz,
     zorunlu_alanlar,
 )
 
@@ -166,13 +171,13 @@ def siparisleri_aktar(
             if not teslimat_no:
                 raise ExcelHatasi("Teslimat No boş olamaz")
             if not any(karakter.isdigit() for karakter in str(teslimat_no)):
-                # Havuz listelerinde teslimat henüz atanmamış satırlar "BAYİ DEPO"
-                # gibi metinlerle gelir; bunlar planlanamaz.
-                raise ExcelHatasi(
-                    f"Teslimat numarası atanmamış ({teslimat_no}); bu satır planlanamaz"
-                )
+                # Bayi ortak deposu (-1) satırlarında bu sütun teslimat numarası yerine
+                # "BAYİ DEPO" gibi bir etiket taşıyor. Sipariş bölünemez birim olduğu
+                # için teslimat anahtarı olarak sipariş numarası kullanılır.
+                teslimat_no = f"{siparis_no}-{yer_adi(teslimat_no) or 'SIPARIS'}"
             depo_kodu = excel.metin(kayit.get("depo_kodu"))
-            if not depo_kodu or depo_kodu.strip() in {"-1", "0"}:
+            # "-1" bayi ortak deposudur (Eskişehir) — geçerli bir depo kodudur.
+            if not depo_kodu or depo_kodu.strip() == "0":
                 raise ExcelHatasi(
                     f"Depo kodu atanmamış ({depo_kodu or 'boş'}); bu satır planlanamaz"
                 )
@@ -226,9 +231,18 @@ def siparisleri_aktar(
         mevcut.depo_kodu = depo_kodu.strip().upper()
         mevcut.sehir = excel.metin(kayit.get("sehir"))
         mevcut.bayi_adi = excel.metin(kayit.get("bayi_adi"))
-        mevcut.alici_firma = excel.metin(kayit.get("alici_firma"))
-        mevcut.sevk_adresi = excel.metin(kayit.get("sevk_adresi"))
         mevcut.teslim_sekli = excel.metin(kayit.get("teslim_sekli"))
+        # Alıcı firma / adres / ilçe sütunlarının anlamı satır tipine göre kayıyor;
+        # hangisinin ne olduğu içeriğe bakılarak çözülür (bkz. yer_alanlarini_coz).
+        firma, adres, ilce, incoterms = yer_alanlarini_coz(
+            excel.metin(kayit.get("alici_firma")),
+            excel.metin(kayit.get("sevk_adresi")),
+            mevcut.teslim_sekli,
+        )
+        mevcut.alici_firma = firma or None
+        mevcut.sevk_adresi = adres or None
+        mevcut.incoterms = incoterms or None
+        mevcut.ilce = ilce or None
         mevcut.siparis_tarihi = siparis_tarihi
         mevcut.termin_tarihi = termin_tarihi
         mevcut.durum = SiparisDurumu.BEKLEMEDE
@@ -315,3 +329,63 @@ def _aktarim_kaydet(
     )
     db.add(aktarim)
     return aktarim
+
+
+def musterileri_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """İç piyasa müşteri master datasını yükler.
+
+    Anahtar bayi adının normalize hâlidir: kaynak dosyalarda aynı bayi hem 'İSTANBUL
+    ISITMA' hem 'ISTANBUL ISITMA' geçebiliyor; normalize edilmezse aynı müşteri iki
+    ayrı kayda bölünür ve 3 palet kuralı yanlış hesaplanır.
+    """
+    _kontrol_et(dosya, MUSTERI_ALANLARI, MUSTERI_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, MUSTERI_ALIAS, zorunlu_alanlar(MUSTERI_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    mevcutlar = {m.anahtar: m for m in db.scalars(select(Musteri)).all()}
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        bayi_adi = excel.metin(kayit.get("bayi_adi"))
+        anahtar = yer_adi(bayi_adi)
+        if not anahtar:
+            sonuc.hatalar.append(SatirHatasi(satir_no, "-", "Bayi adı boş olamaz"))
+            continue
+
+        musteri = mevcutlar.get(anahtar)
+        if musteri is None:
+            musteri = Musteri(anahtar=anahtar, bayi_adi=bayi_adi)
+            db.add(musteri)
+            mevcutlar[anahtar] = musteri
+            sonuc.eklenen += 1
+        else:
+            sonuc.guncellenen += 1
+
+        musteri.bayi_adi = bayi_adi
+        musteri.bayi_kodu = excel.metin(kayit.get("bayi_kodu")) or None
+        musteri.alici_firma = excel.metin(kayit.get("alici_firma")) or None
+        musteri.il = yer_adi(kayit.get("il")) or None
+        musteri.ilce = yer_adi(kayit.get("ilce")) or None
+        musteri.sevk_adresi = excel.metin(kayit.get("sevk_adresi")) or None
+        musteri.telefon = excel.metin(kayit.get("telefon")) or None
+        musteri.incoterms = (excel.metin(kayit.get("incoterms")) or "").upper() or None
+        tir = (excel.metin(kayit.get("tir_girisi")) or "?").strip().upper()[:1]
+        musteri.tir_girisi = tir if tir in {"E", "H"} else "?"
+        musteri.bolge_kodu = excel.metin(kayit.get("bolge_kodu")) or None
+        musteri.notlar = excel.metin(kayit.get("notlar")) or None
+        musteri.aktif = excel.evet_hayir(kayit.get("aktif"), True)
+
+        if not musteri.il:
+            sonuc.uyarilar.append(
+                SatirHatasi(
+                    satir_no, bayi_adi,
+                    "İl boş; bu müşteri bölgeye yerleştirilemez ve FTL planına giremez",
+                )
+            )
+
+    _aktarim_kaydet(db, dosya_adi, "MUSTERI", sonuc, kullanici)
+    db.flush()
+    return sonuc

@@ -1,0 +1,60 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'ROTA' %}
+{% set aktif_menu = 'siparisler' %}
+{% block icerik %}
+<h1>Sipariş Önizleme</h1>
+
+<div class="kart">
+  <p class="soluk">
+    Beklemedeki <b>{{ satir_sayisi }}</b> sipariş satırı müşteri bazında toplandı ve her
+    müşterinin hangi sevkiyat tipiyle gideceği hesaplandı. Plan üretmeden önce buradan
+    kontrol edin: bir müşteri beklediğinizden farklı bir tipe düşüyorsa gerekçesi son
+    sütunda yazıyor. Sipariş dosyası Ring modülündeki <b>Siparişler</b> ekranından
+    yüklenir — iki modül aynı sipariş havuzunu kullanır.
+  </p>
+  <p class="soluk">
+    <b>Tır girişi</b> müşteri master datasından gelir. <span class="rozet HATALI">H</span>
+    işaretli müşteriye tır planlanması engellenmez ama uyarılır; adres tır almıyorsa
+    kamyon ya da rutin tercih edilmelidir.
+  </p>
+</div>
+
+<div class="kart">
+  {% if musteriler %}
+  <table>
+    <thead><tr>
+      <th>Tip</th><th>Bayi</th><th>İl / İlçe</th><th>Bölge</th>
+      <th class="sag">Palet</th><th class="sag">Anahtar</th><th class="sag">Desi</th>
+      <th class="sag">Adet</th><th>Incoterms</th><th>Tır</th><th>Depo</th><th>Gerekçe</th>
+    </tr></thead>
+    <tbody>
+    {% for m in musteriler %}
+      <tr>
+        <td><span class="rozet {{ 'TAMAMLANDI' if m.tip.value == 'FTL' else ('PLANLANDI' if m.tip.value == 'RUTIN' else 'TASLAK') }}">
+          {{ m.tip.value }}</span></td>
+        <td><b>{{ m.bayi_adi }}</b>
+          <div class="soluk">{{ m.teslimat_sayisi }} teslimat</div></td>
+        <td>{{ m.il }}{% if m.ilce %} / {{ m.ilce }}{% endif %}</td>
+        <td>{{ m.bolge }}</td>
+        <td class="sag">{{ m.palet | sayi }}</td>
+        <td class="sag">{{ m.anahtar | sayi }}</td>
+        <td class="sag">{{ m.desi | sayi }}</td>
+        <td class="sag">{{ m.adet | sayi }}</td>
+        <td>{{ m.incoterms or '—' }}</td>
+        <td>{% if m.tir_girisi == 'H' %}<span class="rozet HATALI">H</span>
+            {% elif m.tir_girisi == 'E' %}<span class="rozet TAMAMLANDI">E</span>
+            {% else %}<span class="rozet TASLAK">?</span>{% endif %}</td>
+        <td>{{ m.depolar }}</td>
+        <td class="soluk">{{ m.gerekce }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">
+    Beklemede iç piyasa siparişi yok. Sipariş dosyasını Ring modülündeki
+    <a href="/ring/siparisler">Siparişler</a> ekranından yükleyin.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

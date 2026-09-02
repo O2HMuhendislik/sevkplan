@@ -23,6 +23,10 @@ class PlanFiltresi:
     bitis: date | None = None
     arama: str | None = None
     depo_kodu: str | None = None
+    modul: str | None = None
+    """RING ya da ROTA. Verilmezse bütün modüllerin planları döner."""
+    sevkiyat_tipi: str | None = None
+    bolge_kodu: str | None = None
 
 
 def planlari_getir(db: Session, filtre: PlanFiltresi, limit: int = 500) -> list[SevkiyatPlani]:
@@ -35,6 +39,12 @@ def planlari_getir(db: Session, filtre: PlanFiltresi, limit: int = 500) -> list[
         sorgu = sorgu.where(SevkiyatPlani.plan_tarihi <= filtre.bitis)
     if filtre.depo_kodu:
         sorgu = sorgu.where(SevkiyatPlani.depo_kodu == filtre.depo_kodu)
+    if filtre.modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == filtre.modul)
+    if filtre.sevkiyat_tipi:
+        sorgu = sorgu.where(SevkiyatPlani.sevkiyat_tipi == filtre.sevkiyat_tipi)
+    if filtre.bolge_kodu:
+        sorgu = sorgu.where(SevkiyatPlani.bolge_kodu == filtre.bolge_kodu)
     if filtre.arama:
         desen = f"%{filtre.arama.strip()}%"
         eslesen_plan_idleri = select(SiparisSatiri.plan_id).where(
@@ -48,6 +58,7 @@ def planlari_getir(db: Session, filtre: PlanFiltresi, limit: int = 500) -> list[
                 SevkiyatPlani.sefer_no.ilike(desen),
                 SevkiyatPlani.axata_no.ilike(desen),
                 SevkiyatPlani.urun_kodlari.ilike(desen),
+                SevkiyatPlani.iller_metni.ilike(desen),
                 SevkiyatPlani.id.in_(eslesen_plan_idleri),
             )
         )
@@ -104,8 +115,8 @@ def izleme_sorgusu(db: Session, anahtar: str) -> dict:
     return {"satirlar": satirlar, "planlar": list(planlar.values())}
 
 
-def gosterge_paneli(db: Session) -> dict:
-    """Ana ekran özet metrikleri."""
+def gosterge_paneli(db: Session, modul: str | None = None) -> dict:
+    """Ana ekran özet metrikleri. `modul` verilirse yalnızca o modülün planları sayılır."""
     siparis_durumlari = dict(
         db.execute(
             select(SiparisSatiri.durum, func.count(SiparisSatiri.id)).group_by(
@@ -113,20 +124,20 @@ def gosterge_paneli(db: Session) -> dict:
             )
         ).all()
     )
-    plan_durumlari = dict(
-        db.execute(
-            select(SevkiyatPlani.durum, func.count(SevkiyatPlani.id)).group_by(
-                SevkiyatPlani.durum
-            )
-        ).all()
-    )
+    plan_sorgusu = select(
+        SevkiyatPlani.durum, func.count(SevkiyatPlani.id)
+    ).group_by(SevkiyatPlani.durum)
+    if modul:
+        plan_sorgusu = plan_sorgusu.where(SevkiyatPlani.modul == modul)
+    plan_durumlari = dict(db.execute(plan_sorgusu).all())
     aktif = [PlanDurumu.TASLAK, PlanDurumu.AXATA_BEKLIYOR, PlanDurumu.MAIL_GONDERILDI,
              PlanDurumu.TAMAMLANDI]
-    ortalama_doluluk = db.scalar(
-        select(func.avg(SevkiyatPlani.doluluk_yuzdesi)).where(
-            SevkiyatPlani.durum.in_(aktif)
-        )
+    doluluk_sorgusu = select(func.avg(SevkiyatPlani.doluluk_yuzdesi)).where(
+        SevkiyatPlani.durum.in_(aktif)
     )
+    if modul:
+        doluluk_sorgusu = doluluk_sorgusu.where(SevkiyatPlani.modul == modul)
+    ortalama_doluluk = db.scalar(doluluk_sorgusu)
     return {
         "siparis": {durum.value: adet for durum, adet in siparis_durumlari.items()},
         "plan": {durum.value: adet for durum, adet in plan_durumlari.items()},
@@ -227,3 +238,90 @@ def bekleyen_ozeti(db: Session) -> list[dict]:
         }
         for urun_kodu, teslimat, miktar, termin in satirlar
     ]
+
+
+def ic_piyasa_ozeti(db: Session) -> dict:
+    """İç piyasa gösterge paneli: sevkiyat tipi bazında plan ve durak sayıları."""
+    satirlar = db.execute(
+        select(
+            SevkiyatPlani.sevkiyat_tipi,
+            func.count(SevkiyatPlani.id),
+            func.sum(SevkiyatPlani.durak_sayisi),
+            func.avg(SevkiyatPlani.doluluk_yuzdesi),
+            func.sum(SevkiyatPlani.toplam_adet),
+        )
+        .where(
+            SevkiyatPlani.modul == "ROTA",
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+        )
+        .group_by(SevkiyatPlani.sevkiyat_tipi)
+    ).all()
+    return {
+        (tip or "?"): {
+            "plan": adet,
+            "durak": int(durak or 0),
+            "doluluk": (
+                Decimal(doluluk).quantize(Decimal("0.1")) if doluluk else Decimal(0)
+            ),
+            "adet": Decimal(toplam_adet or 0),
+        }
+        for tip, adet, durak, doluluk, toplam_adet in satirlar
+    }
+
+
+def bolge_ozeti(db: Session) -> list[dict]:
+    """Bölge bazında iç piyasa plan dağılımı."""
+    from app.domain.bolgeler import bolge_adi
+
+    satirlar = db.execute(
+        select(
+            SevkiyatPlani.bolge_kodu,
+            func.count(SevkiyatPlani.id),
+            func.sum(SevkiyatPlani.durak_sayisi),
+            func.avg(SevkiyatPlani.doluluk_yuzdesi),
+        )
+        .where(
+            SevkiyatPlani.modul == "ROTA",
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+        )
+        .group_by(SevkiyatPlani.bolge_kodu)
+        .order_by(func.count(SevkiyatPlani.id).desc())
+    ).all()
+    return [
+        {
+            "kod": kod or "",
+            "ad": bolge_adi(kod or ""),
+            "plan": adet,
+            "durak": int(durak or 0),
+            "doluluk": (
+                Decimal(doluluk).quantize(Decimal("0.1")) if doluluk else Decimal(0)
+            ),
+        }
+        for kod, adet, durak, doluluk in satirlar
+    ]
+
+
+def musterileri_getir(
+    db: Session,
+    arama: str | None = None,
+    tir_girisi: str | None = None,
+    limit: int = 500,
+) -> list:
+    from app.models import Musteri
+
+    sorgu = select(Musteri)
+    if arama:
+        desen = f"%{arama.strip()}%"
+        sorgu = sorgu.where(
+            or_(
+                Musteri.bayi_adi.ilike(desen),
+                Musteri.alici_firma.ilike(desen),
+                Musteri.il.ilike(desen),
+                Musteri.ilce.ilike(desen),
+                Musteri.bayi_kodu.ilike(desen),
+            )
+        )
+    if tir_girisi:
+        sorgu = sorgu.where(Musteri.tir_girisi == tir_girisi)
+    sorgu = sorgu.order_by(Musteri.bayi_adi)
+    return list(db.scalars(sorgu.limit(limit)).all())

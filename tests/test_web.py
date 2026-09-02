@@ -85,6 +85,8 @@ def kitap(basliklar, satirlar) -> BytesIO:
     [
         "/", "/urunler", "/ring", "/ring/siparisler", "/ring/planlar",
         "/ring/raporlar", "/ring/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
+        "/rota", "/rota/siparisler", "/rota/planlar", "/rota/musteriler",
+        "/rota/raporlar",
     ],
 )
 def test_ekranlar_acilir(istemci, yol):
@@ -228,3 +230,134 @@ def test_veri_silme_onayla_calisir(istemci):
     )
     assert "1 sipariş satırı" in sorgu(cevap)
     assert "0" in istemci.get("/veri-yonetimi").text
+
+
+# --------------------------------------------------- İç piyasa modülü uçtan uca
+
+
+def ic_piyasa_verisi_yukle(istemci):
+    """Ürün + müşteri master datası ve iki müşterili bir sipariş dosyası yükler."""
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti",
+         "Ürün Desi"],
+        [
+            ["U1", "Kombi A", "KOMBİ", 10, 100, 12],
+            ["U2", "Panel B", "PANEL", 10, 100, 12],
+        ],
+    )
+    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+
+    musteriler = kitap(
+        ["Bayi Adı", "İl", "İlçe", "Tır Girişi (E/H/?)"],
+        [
+            ["EGE ISITMA", "İZMİR", "BORNOVA", "E"],
+            ["MANİSA TESİSAT", "MANİSA", "MERKEZ", "H"],
+        ],
+    )
+    istemci.post("/rota/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
+
+    siparisler = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi", "AliciFirma", "SevkAdresi", "Not"],
+        [
+            ["S1", "T1", "U1", 60, "64", "İZMİR", "EGE ISITMA", "EGE ISITMA A.Ş.",
+             "1234 SOK. NO:5", "CIF - BORNOVA"],
+            ["S2", "T2", "U2", 40, "74", "MANİSA", "MANİSA TESİSAT",
+             "MANİSA TESİSAT LTD.", "SANAYİ CAD. NO:8", "CIF - MERKEZ"],
+        ],
+    )
+    return istemci.post(
+        "/ring/siparisler/yukle", files={"dosya": ("siparis.xlsx", siparisler)}
+    )
+
+
+def test_ic_piyasa_plani_uretilir_ve_formu_indirilir(istemci, fabrika):
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+
+    onizleme = istemci.get("/rota/siparisler")
+    assert "EGE ISITMA" in onizleme.text
+
+    cevap = istemci.post(
+        "/rota/planlar/uret", data={"tipler": ["FTL"], "plan_tarihi": "2026-09-01"}
+    )
+    assert "plan üretildi" in sorgu(cevap)
+
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
+        # İzmir ve Manisa aynı bölgede (Ege), tek araca binerler. Duraklar
+        # Eskişehir'e uzaklığa göre sıralanır: Manisa 350 km, İzmir 400 km.
+        assert plan.sevkiyat_tipi == "FTL"
+        assert plan.sefer_no[4] == "S"
+        assert plan.durak_sayisi == 2
+        assert plan.son_ugrak == "IZMIR"
+        assert plan.iller_metni == "MANISA, IZMIR"
+        assert plan.ilce_metni == "MERKEZ+BORNOVA"
+        assert plan.il_yeri_metni == "MANISA2YER"
+        # 64 hacmin çoğunu taşıyor; 74'teki mal oraya getirilecek.
+        assert plan.yukleme_deposu == "64"
+        plan_id = plan.id
+
+    detay = istemci.get(f"/rota/planlar/{plan_id}")
+    assert "MANİSA TESİSAT" in detay.text
+    assert "64 depoya gönderilmelidir" in detay.text
+    assert "Tır girişi olmayan müşteri var" in detay.text
+
+    istemci.post(f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299, 3300"})
+    istemci.post(
+        f"/rota/planlar/{plan_id}/arac",
+        data={"nakliyeci": "OMSAN", "plaka": "34 ABC 12", "surucu": "Ali Veli",
+              "surucu_telefon": "555"},
+    )
+
+    form = istemci.get(f"/rota/planlar/{plan_id}/form")
+    assert form.status_code == 200
+    assert form.headers["content-type"].startswith("application/")
+
+    gunluk = istemci.get("/rota/gunluk-form?tarih=2026-09-01")
+    assert gunluk.status_code == 200
+
+
+def test_ic_piyasa_formu_sevkiyat_tipine_gore_sayfalanir(istemci, fabrika, tmp_path):
+    from openpyxl import load_workbook
+
+    from app.models import SevkiyatPlani
+    from app.services import ic_yukleme_formu
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+
+    with fabrika() as db:
+        planlar = db.query(SevkiyatPlani).filter_by(modul="ROTA").all()
+        hedef = ic_yukleme_formu.formlari_uret(planlar, tmp_path / "form.xlsx")
+
+    sayfa = load_workbook(hedef)["S-FTL Sevk"]
+    metinler = [h.value for satir in sayfa.iter_rows() for h in satir if h.value]
+    assert "Yer Miktarı" in metinler
+    assert "MANISA2YER" in metinler
+    assert "MERKEZ+BORNOVA" in metinler
+    assert "Nak.Firma" in metinler
+    assert "Yükleme yapacak depolar" in metinler
+    assert any("depoya gönderilmelidir" in str(m) for m in metinler)
+
+
+def test_musteri_ekranindan_tir_girisi_guncellenir(istemci, fabrika):
+    from app.models import Musteri
+
+    ic_piyasa_verisi_yukle(istemci)
+    with fabrika() as db:
+        musteri = db.query(Musteri).filter_by(bayi_adi="EGE ISITMA").one()
+        musteri_id = musteri.id
+        assert musteri.tir_girisi == "E"
+
+    istemci.post(
+        f"/rota/musteriler/{musteri_id}",
+        data={"tir_girisi": "H", "bolge_kodu": "", "il": "İZMİR", "ilce": "BORNOVA",
+              "notlar": "AVM içi", "aktif": "true"},
+    )
+    with fabrika() as db:
+        musteri = db.get(Musteri, musteri_id)
+        assert musteri.tir_girisi == "H"
+        assert musteri.notlar == "AVM içi"
+        assert musteri.il == "IZMIR"

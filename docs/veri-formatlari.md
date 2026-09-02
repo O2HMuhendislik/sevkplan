@@ -80,7 +80,40 @@ aynı plandadır ve planlama anahtarı olarak ürün grubunun önüne geçer.
 * Kaynak dosyada `AliciFirma` sütununda adres, `SevkAdresi` sütununda ilçe geliyor.
   Yükleme formu bu sırayı koruyarak yazar.
 
-## 3. Yükleme Formu (çıktı)
+## 3. İç Piyasa Müşteri Master Data
+
+İç piyasa modülünün (`/rota/musteriler`) verisi. Şablon ekrandan indirilebilir.
+Geçmiş sevk dosyalarından üretmek için:
+
+```bash
+python -m scripts.ic_piyasa_analiz "2025 tüm sevkleri.xlsx" "01.2026 Sevk Planları.xlsx" ...
+python -m scripts.musteri_yukle          # üretilen dosyayı veritabanına aktarır
+```
+
+Eşleştirme **bayi adı** üzerinden yapılır (adın Türkçe karakterleri ASCII'ye çevrilip
+büyük harfe alınmış hâli anahtardır); aynı ad tekrar yüklenirse kayıt güncellenir.
+
+| Kolon başlığı | Zorunlu | Açıklama | Kabul edilen diğer başlıklar |
+|---|---|---|---|
+| **Bayi Adı** | Evet | Müşterinin anahtarı. Bayi kodlarına ulaşılana kadar eşleştirme bu adla yapılır. | BayiAdi, Bayii Adı, Müşteri Adı |
+| **Bayi Kodu** | Hayır | Varsa bayi kodu; ileride anahtar olacak. | Müşteri Kodu, Cari Kod |
+| **Alıcı Firma** | Hayır | Sevkiyatın teslim edileceği firma adı. | AliciFirma |
+| **İl** | Evet | Rota ve bölge hesabı bu alandan yapılır. | SehirAdi, Şehir, İl Adı |
+| **İlçe** | Hayır | Yükleme formunda '+' ile birleşik yazılır. | Ilce, İlçe Adı |
+| **Sevk Adresi** | Hayır | Açık adres. | SevkAdresi, Adres |
+| **Telefon** | Hayır | İrtibat telefonu. | Tel |
+| **Incoterms** | Hayır | CIF / EXW ... EXW olan müşteriler kargoya yönlendirilir. | Teslim Şekli, Incoterm |
+| **Tır Girişi (E/H/?)** | Hayır | E = tır girebilir, H = fiziki adres tır almıyor, ? = belirsiz. Boş bırakılırsa ? kabul edilir. | Tır Girişi, Tir Girisi, Tır Girer mi |
+| **Bölge** | Hayır | Boş bırakılırsa ilin varsayılan bölgesi kullanılır. | Bolge, Bölge Kodu |
+| **Notlar** | Hayır | Serbest not. | Not, Açıklama |
+| **Aktif** | Hayır | E / H. Boş bırakılırsa E kabul edilir. | — |
+
+**Tır girişi** üç değerlidir: `E` girebilir, `H` fiziki adres tır almıyor, `?` geçmiş
+veriden karar verilemedi. Geçmişten üretilen dosyada, en az 5 planı olup hiç tır
+gitmemiş müşteriler `H` işaretlenir. Sistem `H` olan müşteriye tır planlamasını
+engellemez; sipariş önizleme ve plan detay ekranlarında uyarır.
+
+## 4. Yükleme Formu (çıktı)
 
 Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir üretilir:
 
@@ -98,3 +131,34 @@ Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir �
 
 Bir günün bütün planları tek çalışma kitabına alt alta yazılır ve her form ayrı
 sayfaya basılacak şekilde sayfa sonu konur (yatay, A4).
+
+
+## 5. İç Piyasa Yükleme Formu (çıktı)
+
+Günlük bölge formatının karşılığı. Sevkiyat tipleri **ayrı sayfalara** yazılır:
+`S-FTL Sevk`, `R-Rutin`, `K-KARGO`. Üst blok Ring formuyla aynıdır; ek olarak sevkiyat
+tipi ve bölge yazılır.
+
+Satır tablosu: `No · İl Adi · Sipariş No · Belge No · Depo · Ürün Kodu · Ürün Adi ·
+Adet · Bayii Adı · Alıcı Firma · Sevk Adresi · İlçe · Teslimat · Axata · Not`.
+Satırlar rota sırasına göre dizilir (yakın duraktan uzağa); ilk satırın `No` sütununda
+araç tipi yazar. Ortak yüklemede malı başka depoda olan satırın `Not` sütununda
+*"… depoya gönderilmelidir"* uyarısı kırmızı görünür.
+
+Alt blok — Ring formunda olmayan kısım:
+
+```
+Toplam parça sayısı                      333
+Araç, Yer, Sürücü ve Yükleme Yapanın Bilgileri | Sevkiyat Palet Detayı ve Ürün Bilgileri
+Araç Tipi     TIR                        Faturalama    DEMİRDÖKÜM   25%
+İl            İZMİR2YER   <- il + durak                VAİLLANT     75%
+İlçe          KARABAĞLAR+BERGAMA
+Yer Miktarı   2           <- durak sayısı  Yükleme yapacak depolar  Kalem  Adet
+Plaka / Şöför Adı / Telefon                  64 VAİLLANT              2     800
+Nak.Firma     OMSAN                          64 DEMİRDÖKÜM           20     164
+Planlayan     ...
+Sevk Kontrol / Adı Soyadı / İmzası
+```
+
+Araç, plaka, şoför ve nakliyeci bilgileri plan detay ekranındaki **Araç ve sürücü**
+kartından girilir.
