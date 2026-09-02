@@ -3,8 +3,10 @@
 Sipariş verisinden otomatik sevkiyat planı üreten, planları sefer numarasıyla
 takip eden ve depo operasyona yükleme formu çıkaran uygulama.
 
-İki planlama modülü hazır: **Ring** (depo çıkışlı, ürün bazlı) ve **İç Piyasa**
-(müşteri ve bölge bazlı; FTL, rutin/parsiyel, kargo).
+Üç planlama modülü hazır: **Ring** (depo çıkışlı, ürün bazlı), **İç Piyasa**
+(müşteri ve bölge bazlı; FTL, rutin/parsiyel, kargo) ve **İhracat** (müşteri bazlı,
+tek noktaya giden tır/konteyner). Her modülün **sipariş havuzu ayrıdır**; hepsi bir
+arada yalnızca **Raporlama** modülünde görünür.
 
 İş kurallarının tamamı → [`docs/ANALIZ.md`](docs/ANALIZ.md)
 Excel formatları → [`docs/veri-formatlari.md`](docs/veri-formatlari.md)
@@ -94,7 +96,8 @@ kullanıcı yalnızca yetkili olduğu modülleri açabilir.
 |---|---|
 | **Ring Planlama** | Hazır |
 | **İç Piyasa Sevkiyat Planlama** | Hazır — FTL / rutin / kargo |
-| İhracat Planlama | Yakında |
+| **İhracat Planlama** | Hazır — tır / konteyner, kara / deniz |
+| **Raporlama** | Hazır — modüller arası liste ve plana alınma KPI'ı |
 | Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
 | **Master Data** | Hazır — modüllerin ortak ürün verisi |
 | **Sistem Yönetimi** | Hazır — kullanıcılar, yetkiler, veri yönetimi |
@@ -143,6 +146,24 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
+### İhracat modülü (`/ihracat`)
+
+| Ekran | İşlev |
+|---|---|
+| **Gösterge Paneli** (`/ihracat`) | Ülke ve taşıma modu dağılımı, planlamayı çalıştırma |
+| **Siparişler** | Sipariş yükleme; müşteri bazında araç tipi, taşıma modu, kaç araç gerekeceği ve hangi sınırın (hacim/ağırlık) dolduracağı |
+| **Planlar** | Durum filtresi, günlük yükleme formu, Excel'e aktarma |
+| **Plan Detayı** | Hacim/ağırlık doluluğu, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
+| **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj ve müşteriye özel yükleme notu |
+
+### Raporlama modülü (`/raporlama`)
+
+| Ekran | İşlev |
+|---|---|
+| **Özet ve KPI** | Modül bazında sipariş/plan sayıları; siparişin plana alınma süresi dağılımı ve termin gecikme oranı |
+| **Tüm Siparişler** | Bütün modüllerin sipariş satırları, modül sekmeleriyle filtrelenir; her satırın plana alınma süresi |
+| **Tüm Planlar** | Bütün modüllerin planları, modüle göre filtrelenir |
+
 ## İç piyasa planlama kuralları (özet)
 
 Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-ANALIZ.md)
@@ -169,6 +190,26 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    *"… depoya gönderilmelidir"* notu düşülür. Aktarma için ayrı plan üretilmez.
 9. **Tır girişi olmayan müşteri** engellenmez ama plan detayında ve sipariş
    önizlemesinde uyarı çıkar.
+
+## İhracat planlama kuralları (özet)
+
+1. **Araç tek noktaya gider:** plan = bir müşteri + bir araç. 2025 verisinde planların
+   %98,3'ü tek müşterili; rota, durak ve son uğrak kuralı yoktur.
+2. **Kapasite iki boyutludur:** hacim (desi) ve ağırlık (kg). Hangisi önce dolarsa araç
+   dolmuş sayılır; plan hangi sınırın doldurduğunu da kaydeder. Kapasiteler 2025
+   sevklerinin yüzdeliklerinden: **tır 22.000 desi / 22.000 kg**, **konteyner 15.500
+   desi / 19.500 kg**. Müşterinin azami tonajı varsayılanın önüne geçer.
+3. **Taşıma modu müşteriden çıkar:** konteyner yüklenen müşteri **deniz**, tır yüklenen
+   **kara** yoludur. Şili konteyner, Romanya tır.
+4. **Sefer belge kodu müşteri bazındadır:** `N` (NSC) ya da `E` (Export) —
+   `2608E4001`. Geçmiş 9.708 satırda ikisi birebir bu alana göre ayrışıyor.
+5. **Desi ve kg satır bazında dosyadan okunur;** ihracat SKU'ları ürün master
+   datasında bulunmadığı için ölçü oradan alınamaz.
+6. **Alt limit araç başına değil müşteri toplamına** uygulanır: sorulan soru "bu
+   müşteriye bugün araç kaldırmaya değer mi?" Cevap evetse araç sayısını teslimatların
+   bölünmezliği belirler.
+7. **Müşteriye özel yükleme notu** (hava yastığı, silika jel, paletsiz dökme) ve
+   **yükleme tipi** (standart / palet yükseltme / dökme / köşebent) forma basılır.
 
 ## Ring planlama kuralları (özet)
 
@@ -200,10 +241,32 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 Yükleme formundaki `64-D DEPO` satırı ayrı bir depo değil, depo 64'ün form üzerindeki
 adıdır.
 
+## Modüllerin sipariş havuzu
+
+Her sipariş satırı bir modüle aittir (`RING` / `ROTA` / `IHRACAT`) ve **yalnızca o
+modülde görünür**. İç piyasadan yüklenen bir dosya Ring ekranında çıkmaz, Ring
+planlaması onu almaz. Hepsini bir arada görmenin tek yeri Raporlama modülüdür; orada
+modül sekmeleriyle filtrelenir.
+
+Sipariş dosyası hangi modülün ekranından yüklendiyse o havuza yazılır.
+
 ## Sefer numarası
 
-`2608D1001` = `26` yıl · `08` ay · `D` Ring belge kodu · `1001` sayaç.
-Sayaç her ay `1001`'den başlar. İptal edilen planın numarası geri kullanılmaz.
+`2608D1001` = `26` yıl · `08` ay · `D` belge kodu · `1001` sayaç.
+Sayaç her ay ve her belge kodu için `1001`'den başlar. İptal edilen planın numarası
+geri kullanılmaz.
+
+| Belge kodu | Nerede |
+|---|---|
+| `D` | Ring |
+| `S` | İç piyasa — FTL |
+| `R` | İç piyasa — rutin / parsiyel |
+| `K` | İç piyasa — kargo |
+| `N` | İhracat — NSC müşterileri |
+| `E` | İhracat — Export müşterileri |
+
+İhracatta belge kodu plana değil **müşteriye** bağlıdır; müşteri master datasındaki
+"sefer kodu" alanından gelir.
 
 ## Yükleme formu
 
