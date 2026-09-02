@@ -54,7 +54,8 @@ def urun_ekle(
 
 
 def satir_ekle(
-    db, teslimat_no, urun_kodu, miktar, depo_kodu="64", termin=None, siparis_no=None
+    db, teslimat_no, urun_kodu, miktar, depo_kodu="64", termin=None, siparis_no=None,
+    modul="RING",
 ):
     sayac = db.query(models.SiparisSatiri).count() + 1
     satir = models.SiparisSatiri(
@@ -64,6 +65,7 @@ def satir_ekle(
         urun_kodu=urun_kodu,
         miktar=Decimal(str(miktar)),
         depo_kodu=depo_kodu,
+        modul=modul,
         sehir="ESKİŞEHİR",
         bayi_adi="TEST BAYİ",
         # Varsayılan termin uzak bırakılır ki alt limit esnetmesi kendiliğinden

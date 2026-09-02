@@ -66,6 +66,15 @@ BOZUYUK_FARKI = 80
 ESKISEHIR_DEPOLARI = {"64", "64-D", "64-V", "64-P", "-1"}
 """Eskişehir'den yüklenen depolar. Diğerleri (34, 44, 74 ...) Bozüyük'ten yüklenir."""
 
+BOLUNEBILIR_DEPOLAR = {"-1"}
+"""Teslimatı araç kapasitesine göre kesilebilen depolar.
+
+Bayi ortak deposu (-1) ayrı bir ERP'de tutuluyor ve araç planı oraya kaydedildiğinde
+siparişi kendisi bölüyor. Bu yüzden planlama 1000 adetlik bir siparişin araca sığan
+kısmını alıp kalanını aynı teslimat numarasıyla beklemede bırakabilir. Diğer
+depolarda teslimat bölünmez.
+"""
+
 MARKA_SONEKLERI = ("V", "P", "D")
 """Depo kodunun sonundaki marka harfleri: 64-V, 64-P, 64-D hepsi 64 deposundadır."""
 

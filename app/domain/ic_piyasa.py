@@ -22,14 +22,14 @@ from __future__ import annotations
 
 import enum
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from app.domain.bolgeler import il_bolgesi
-from app.domain.iller import ana_depo, mesafe, yer_adi
+from app.domain.iller import BOLUNEBILIR_DEPOLAR, ana_depo, mesafe, yer_adi
 from app.domain.kapasite import KapasiteProfili
-from app.domain.planlama import Teslimat
+from app.domain.planlama import Teslimat, palet_hesapla
 
 
 class SevkiyatTipi(str, enum.Enum):
@@ -155,26 +155,168 @@ class MusteriSiparisi:
         )
 
 
+def _teslimat_olcusu(teslimat: Teslimat, tip: SevkiyatTipi) -> Decimal:
+    return (
+        teslimat.birim
+        if tip is SevkiyatTipi.FTL
+        else (teslimat.ham_anahtar or teslimat.birim)
+    )
+
+
+def teslimati_bol(
+    teslimat: Teslimat,
+    kapasite: Decimal,
+    tip: SevkiyatTipi,
+    palet_ici: Mapping[str, int] | None = None,
+    yukleme_adeti: Mapping[str, int] | None = None,
+) -> list[Teslimat]:
+    """Araç kapasitesini aşan **bölünebilir** teslimatı araç boyutunda parçalara ayırır.
+
+    Önce satırlar bütün hâlde yerleştirilir; bir satır tek başına sığmıyorsa miktarı
+    kesilir. Kesim **tam palet** sınırında yapılır: 1000 adetlik bir siparişten araca
+    800 adet (tam palet karşılığı) alınır, kalan 200 adet aynı teslimat numarasıyla
+    beklemede kalır.
+
+    Bölünemeyen ya da zaten sığan teslimat olduğu gibi döner.
+    """
+    if not teslimat.bolunebilir_mi or not teslimat.satir_miktarlari:
+        return [teslimat]
+    if _teslimat_olcusu(teslimat, tip) <= kapasite:
+        return [teslimat]
+
+    palet_ici = palet_ici or {}
+    yukleme_adeti = yukleme_adeti or {}
+
+    def satir_olcusu(sku: str, miktar: Decimal) -> Decimal:
+        adet = yukleme_adeti.get(sku)
+        if not adet:
+            return Decimal(0)
+        ici = palet_ici.get(sku)
+        islenen = (
+            palet_hesapla(miktar, ici) * ici
+            if ici and tip is SevkiyatTipi.FTL
+            else miktar
+        )
+        return Decimal(islenen) / Decimal(adet)
+
+    def sigan_miktar(sku: str, kalan_kapasite: Decimal) -> Decimal:
+        """Kalan boşluğa bu üründen kaç adet sığar? Tam palete yuvarlanır."""
+        adet = yukleme_adeti.get(sku)
+        if not adet or kalan_kapasite <= 0:
+            return Decimal(0)
+        ham = int(kalan_kapasite * Decimal(adet))
+        ici = palet_ici.get(sku)
+        if ici:
+            return Decimal((ham // ici) * ici)
+        return Decimal(ham)
+
+    # Büyük satır önce: aracın çoğunu dolduran satır kesilmeye aday olsun.
+    kalanlar = sorted(
+        ((sid, sku, Decimal(miktar)) for sid, (sku, miktar) in teslimat.satir_miktarlari.items()),
+        key=lambda k: (-satir_olcusu(k[1], k[2]), k[0]),
+    )
+
+    parcalar: list[dict[int, tuple[str, Decimal]]] = []
+    while kalanlar:
+        kutu: dict[int, tuple[str, Decimal]] = {}
+        bos = kapasite
+        yeni_kalanlar: list[tuple[int, str, Decimal]] = []
+        for sid, sku, miktar in kalanlar:
+            deger = satir_olcusu(sku, miktar)
+            if deger <= bos:
+                kutu[sid] = (sku, miktar)
+                bos -= deger
+                continue
+            alinan = sigan_miktar(sku, bos)
+            if alinan > 0:
+                kutu[sid] = (sku, alinan)
+                bos -= satir_olcusu(sku, alinan)
+                yeni_kalanlar.append((sid, sku, miktar - alinan))
+            else:
+                yeni_kalanlar.append((sid, sku, miktar))
+        if not kutu:
+            # Tek palet bile sığmıyor: bölmek çözmüyor, teslimat olduğu gibi kalsın.
+            return [teslimat]
+        parcalar.append(kutu)
+        kalanlar = yeni_kalanlar
+
+    return [_teslimat_parcasi(teslimat, kutu, palet_ici, yukleme_adeti) for kutu in parcalar]
+
+
+def _teslimat_parcasi(
+    teslimat: Teslimat,
+    satirlar: dict[int, tuple[str, Decimal]],
+    palet_ici: Mapping[str, int],
+    yukleme_adeti: Mapping[str, int],
+) -> Teslimat:
+    """Teslimatın bir parçası: ölçüler alınan miktarlara göre yeniden hesaplanır."""
+    sku_miktarlari: dict[str, Decimal] = defaultdict(Decimal)
+    for sku, miktar in satirlar.values():
+        sku_miktarlari[sku] += miktar
+
+    palet = anahtar = ham = Decimal(0)
+    for sku, miktar in sku_miktarlari.items():
+        ici = palet_ici.get(sku)
+        adet = yukleme_adeti.get(sku)
+        if ici:
+            palet += palet_hesapla(miktar, ici)
+        if adet:
+            ham += miktar / Decimal(adet)
+            islenen = palet_hesapla(miktar, ici) * ici if ici else miktar
+            anahtar += Decimal(islenen) / Decimal(adet)
+
+    toplam_miktar = sum(sku_miktarlari.values(), Decimal(0))
+    oran = (
+        toplam_miktar / Decimal(teslimat.miktar) if teslimat.miktar else Decimal(1)
+    )
+    return replace(
+        teslimat,
+        miktar=toplam_miktar,
+        birim=anahtar or teslimat.birim * oran,
+        palet=palet,
+        anahtar=anahtar,
+        ham_anahtar=ham,
+        agirlik=(Decimal(teslimat.agirlik) * oran).quantize(Decimal("0.001")),
+        sku_miktarlari=dict(sku_miktarlari),
+        sku_kodlari=tuple(sorted(sku_miktarlari)),
+        satir_idleri=tuple(sorted(satirlar)),
+        satir_miktarlari=dict(satirlar),
+        depo_katkilari={teslimat.depo_kodu: anahtar},
+    )
+
+
 def musteriyi_bol(
-    musteri: MusteriSiparisi, tip: SevkiyatTipi, ust_limit: Decimal
+    musteri: MusteriSiparisi,
+    tip: SevkiyatTipi,
+    ust_limit: Decimal,
+    palet_ici: Mapping[str, int] | None = None,
+    yukleme_adeti: Mapping[str, int] | None = None,
 ) -> list[MusteriSiparisi]:
     """Tek aracı aşan müşteriyi araç boyutunda parçalara ayırır.
 
-    Bölünmez olan **teslimattır**, müşteri değil: 3,6 araçlık sipariş veren bir bayiye
-    gerçekte de dört araç gider. Teslimatlar büyükten küçüğe yerleştirilir; tek başına
-    aracı aşan bir teslimat kendi parçasında kalır ve o araç istisna olarak işaretlenir.
+    Kural olarak bölünmez olan **teslimattır**, müşteri değil: 3,6 araçlık sipariş
+    veren bir bayiye gerçekte de dört araç gider. Teslimatlar büyükten küçüğe
+    yerleştirilir; tek başına aracı aşan bir teslimat kendi parçasında kalır ve o araç
+    istisna olarak işaretlenir.
+
+    Bayi ortak deposu (-1) teslimatları bunun istisnasıdır: miktarları araç
+    kapasitesine göre kesilir (bkz. `teslimati_bol`).
     """
     if musteri.olcu(tip) <= ust_limit:
         return [musteri]
 
     def olcu(teslimat: Teslimat) -> Decimal:
-        return teslimat.birim if tip is SevkiyatTipi.FTL else (
-            teslimat.ham_anahtar or teslimat.birim
+        return _teslimat_olcusu(teslimat, tip)
+
+    bolunmus: list[Teslimat] = []
+    for teslimat in musteri.teslimatlar:
+        bolunmus.extend(
+            teslimati_bol(teslimat, ust_limit, tip, palet_ici, yukleme_adeti)
         )
 
     kutular: list[list[Teslimat]] = []
     toplamlar: list[Decimal] = []
-    for teslimat in sorted(musteri.teslimatlar, key=lambda t: (-olcu(t), t.teslimat_no)):
+    for teslimat in sorted(bolunmus, key=lambda t: (-olcu(t), t.teslimat_no)):
         deger = olcu(teslimat)
         for sira, toplam in enumerate(toplamlar):
             if toplam + deger <= ust_limit:
@@ -375,6 +517,8 @@ def _paketle(
     tip: SevkiyatTipi,
     profil: KapasiteProfili,
     kurallar: Kurallar,
+    palet_ici: Mapping[str, int] | None = None,
+    yukleme_adeti: Mapping[str, int] | None = None,
 ) -> list[RotaPlani]:
     """Bir bölgedeki müşterileri araçlara yerleştirir.
 
@@ -385,7 +529,9 @@ def _paketle(
     normal: list[MusteriSiparisi] = []
     for ham_musteri in grup:
         # Bir aracı aşan müşteri önce araç boyutunda parçalara ayrılır.
-        for musteri in musteriyi_bol(ham_musteri, tip, profil.ust_limit):
+        for musteri in musteriyi_bol(
+            ham_musteri, tip, profil.ust_limit, palet_ici, yukleme_adeti
+        ):
             if musteri.olcu(tip) > profil.ust_limit:
                 # Tek teslimat bile aracı aşıyor: bölünemez, istisna aracıyla gider.
                 planlar.append(
@@ -454,6 +600,8 @@ def planla(
     kurallar: Kurallar = VARSAYILAN_KURALLAR,
     gunluk_sinir: int | None = None,
     kalanlari_zorla: bool = False,
+    palet_ici: Mapping[str, int] | None = None,
+    yukleme_adeti: Mapping[str, int] | None = None,
 ) -> IcPiyasaSonucu:
     """Verilen tipteki müşterileri araçlara böler.
 
@@ -478,7 +626,9 @@ def planla(
 
     ham_planlar: list[RotaPlani] = []
     for bolge_kodu, grup in _bolgelere_ayir(musteriler):
-        ham_planlar.extend(_paketle(grup, bolge_kodu, tip, profil, kurallar))
+        ham_planlar.extend(
+            _paketle(grup, bolge_kodu, tip, profil, kurallar, palet_ici, yukleme_adeti)
+        )
 
     if tip is SevkiyatTipi.FTL:
         ham_planlar, cikanlar = _son_ugragi_duzelt(ham_planlar, kurallar)

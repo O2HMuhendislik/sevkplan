@@ -310,7 +310,9 @@ def siparisler(
         istek,
         "siparisler.html",
         kullanici,
-        satirlar=rapor_servisi.siparisleri_getir(db, durum or None, arama or None),
+        satirlar=rapor_servisi.siparisleri_getir(
+            db, durum or None, arama or None, modul="RING"
+        ),
         durum=durum,
         arama=arama,
         durumlar=[d.value for d in SiparisDurumu],
@@ -325,7 +327,8 @@ async def siparisleri_yukle(
 ):
     try:
         sonuc = ice_aktarim.siparisleri_aktar(
-            db, dosya.file, dosya.filename or "siparisler.xlsx", kullanici.kullanici_adi
+            db, dosya.file, dosya.filename or "siparisler.xlsx",
+            kullanici.kullanici_adi, modul="RING",
         )
         db.commit()
     except ExcelHatasi as hata:
@@ -629,13 +632,17 @@ def rota_siparisler(
             select(SiparisSatiri).where(
                 SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
                 SiparisSatiri.plan_id.is_(None),
+                SiparisSatiri.modul == "ROTA",
             )
         ).all()
     )
     hatalilar = list(
         db.scalars(
             select(SiparisSatiri)
-            .where(SiparisSatiri.durum == SiparisDurumu.HATALI)
+            .where(
+                SiparisSatiri.durum == SiparisDurumu.HATALI,
+                SiparisSatiri.modul == "ROTA",
+            )
             .order_by(SiparisSatiri.teslimat_no)
             .limit(200)
         ).all()
@@ -664,7 +671,8 @@ async def rota_siparisleri_yukle(
     """
     try:
         sonuc = ice_aktarim.siparisleri_aktar(
-            db, dosya.file, dosya.filename or "siparisler.xlsx", kullanici.kullanici_adi
+            db, dosya.file, dosya.filename or "siparisler.xlsx",
+            kullanici.kullanici_adi, modul="ROTA",
         )
         db.commit()
     except ExcelHatasi as hata:

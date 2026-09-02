@@ -29,6 +29,7 @@ from app.domain.planlama import (
     planla,
     toplam_birim as planlama_toplam_birim,
 )
+from app.domain.iller import BOLUNEBILIR_DEPOLAR
 from app.domain.marka import paylari_hesapla, paylari_metne_cevir
 from app.services.planlama_anahtari import teslimat_anahtari, urun_grubu
 from app.models import (
@@ -282,6 +283,10 @@ def teslimatlari_hazirla(
                 satir_idleri=tuple(s.id for s in grup),
                 sku_kodlari=tuple(sorted(olculer.sku_miktarlari)),
                 sku_miktarlari=dict(olculer.sku_miktarlari),
+                satir_miktarlari={
+                    s.id: (s.urun_kodu, Decimal(s.miktar)) for s in grup
+                },
+                bolunebilir_mi=ana_satir.depo_kodu.strip() in BOLUNEBILIR_DEPOLAR,
                 depo_katkilari=dict(olculer.depo_katkilari),
                 urun_grubu=grup_adi,
                 karma_mi=karma_mi,
@@ -328,6 +333,9 @@ def plan_uret(
             SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
             SiparisSatiri.depo_kodu == depo_kodu,
             SiparisSatiri.plan_id.is_(None),
+            # Ring yalnızca kendi havuzunu planlar; iç piyasa ve ihracat siparişleri
+            # bu ekrandan görünmez.
+            SiparisSatiri.modul == "RING",
         )
     ).all()
 

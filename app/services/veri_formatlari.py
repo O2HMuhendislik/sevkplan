@@ -12,8 +12,13 @@ from dataclasses import dataclass
 
 from app.domain.iller import yer_adi
 
-INCOTERMS = {"CIF", "EXW", "FOB", "DAP", "FCA", "DDP", "CPT"}
-"""Sipariş dosyasının `Not` sütununda geçebilen teslim şekilleri."""
+INCOTERMS = {"CIF", "EXW", "FOB", "DAP", "FCA", "DDP", "CPT", "ZKL"}
+"""Sipariş dosyasının `Not` sütununda geçebilen teslim şekilleri.
+
+`ZKL` de bir teslim şeklidir (geçmiş veride 19.425 satır). İlçe sanılırsa müşteri
+master datasında "ZKL" diye olmayan bir ilçe oluşuyor; o satırlarda gerçek ilçe
+`SevkAdresi` sütununda duruyor.
+"""
 
 
 def not_alanini_coz(deger: object) -> tuple[str, str]:

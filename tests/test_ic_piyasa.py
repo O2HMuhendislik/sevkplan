@@ -5,6 +5,7 @@ Yani 100 adet = tam tır = 10 palet; 30 adet = 3 palet = %30 tır.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -307,7 +308,8 @@ def ic_veri(db):
 
 
 def _siparis(db, teslimat_no, miktar, bayi, sehir, depo="64", ilce="MERKEZ"):
-    satir = satir_ekle(db, teslimat_no, "U1", miktar, depo_kodu=depo)
+    """İç piyasa havuzuna sipariş satırı ekler (modül = ROTA)."""
+    satir = satir_ekle(db, teslimat_no, "U1", miktar, depo_kodu=depo, modul="ROTA")
     satir.bayi_adi = bayi
     satir.sehir = sehir
     satir.ilce = ilce
@@ -443,3 +445,109 @@ def test_sutun_duzeni_icerikten_cozulur():
         "MERKEZ",
         "",
     )
+
+
+# ------------------------------------------- bayi ortak deposu (-1) teslimat bölme
+
+
+def bolunebilir_teslimat(no, miktar, satirlar):
+    """`-1` deposundan gelen, miktarı kesilebilen teslimat.
+
+    Ölçek: palete 10, tıra 100 adet. Yani 100 adet = tam tır.
+    """
+    return Teslimat(
+        teslimat_no=no,
+        depo_kodu="-1",
+        planlama_anahtari="U1",
+        urun_kodu="U1",
+        urun_adi="U1 ürünü",
+        miktar=Decimal(miktar),
+        birim=Decimal(miktar) / 100,
+        oncelik_tarihi=date(2026, 9, 1),
+        satir_idleri=tuple(satirlar),
+        sku_kodlari=("U1",),
+        sku_miktarlari={"U1": Decimal(miktar)},
+        satir_miktarlari={
+            sid: ("U1", Decimal(miktar) / len(satirlar)) for sid in satirlar
+        },
+        bolunebilir_mi=True,
+        depo_katkilari={"-1": Decimal(miktar) / 100},
+        palet=Decimal(miktar) / 10,
+        anahtar=Decimal(miktar) / 100,
+        ham_anahtar=Decimal(miktar) / 100,
+    )
+
+
+PALET_ICI = {"U1": 10}
+YUKLEME = {"U1": 100}
+
+
+def test_bayi_depo_teslimati_arac_kapasitesine_gore_kesilir():
+    """1000 adetlik sipariş, 100 adetlik araçlara tam palet sınırında bölünür."""
+    from app.domain.ic_piyasa import teslimati_bol
+
+    t = bolunebilir_teslimat("BD-1", 1000, [1])
+    parcalar = teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, PALET_ICI, YUKLEME)
+
+    assert len(parcalar) == 10
+    assert all(p.birim <= 1 for p in parcalar)
+    assert sum(p.miktar for p in parcalar) == 1000
+    # Her parça tam palet: 100 adet = 10 palet
+    assert all(p.miktar % 10 == 0 for p in parcalar)
+
+
+def test_kesim_tam_palet_sinirinda_yapilir():
+    """Araca 85 adet sığsa bile 80 alınır: kırık palet yüklenmez."""
+    from app.domain.ic_piyasa import teslimati_bol
+
+    t = bolunebilir_teslimat("BD-2", 200, [1])
+    parcalar = teslimati_bol(
+        t, Decimal("0.85"), SevkiyatTipi.FTL, PALET_ICI, YUKLEME
+    )
+    assert [p.miktar for p in parcalar] == [Decimal(80), Decimal(80), Decimal(40)]
+
+
+def test_bolunemeyen_depoda_teslimat_kesilmez():
+    """64 ve 74 depolarında teslimat bölünmez; olduğu gibi kalır."""
+    from app.domain.ic_piyasa import teslimati_bol
+
+    t = replace(bolunebilir_teslimat("T-1", 1000, [1]), depo_kodu="64", bolunebilir_mi=False)
+    assert teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, PALET_ICI, YUKLEME) == [t]
+
+
+def test_bayi_depo_musterisi_istisna_plani_uretmez():
+    """Bölünebilir teslimatta artık %100'ü aşan araç kalmaz."""
+    dev = musteri(
+        "BAYİ DEPO MÜŞTERİSİ", "IZMIR", 10,
+        teslimatlar=(bolunebilir_teslimat("BD-3", 1000, [1]),),
+    )
+    sonuc = planla(
+        [dev], SevkiyatTipi.FTL, IC_FTL,
+        palet_ici=PALET_ICI, yukleme_adeti=YUKLEME,
+    )
+    assert len(sonuc.planlar) == 10
+    assert not any(plan.istisna_asim for plan in sonuc.planlar)
+    assert all(plan.doluluk_yuzdesi <= 100 for plan in sonuc.planlar)
+
+
+def test_kesilen_satirin_kalani_ayni_teslimatla_beklemede_kalir(ic_veri):
+    """Araca sığmayan miktar aynı teslimat numarasıyla beklemede kalır."""
+    from app.models import SiparisDurumu, SiparisSatiri
+
+    db = ic_veri
+    # 100 adet = tam tır; 250 adetlik tek satırlık bir bayi depo siparişi.
+    _siparis(db, "BD-100", 250, "BAYİ DEPO", "IZMIR", depo="-1")
+    db.flush()
+
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert len(sonuc.planlar) == 2
+    assert all(p.doluluk_yuzdesi <= 100 for p in sonuc.planlar)
+
+    satirlar = db.query(SiparisSatiri).filter_by(teslimat_no="BD-100").all()
+    assert sum(Decimal(s.miktar) for s in satirlar) == 250
+    bekleyen = [s for s in satirlar if s.durum is SiparisDurumu.BEKLEMEDE]
+    assert [Decimal(s.miktar) for s in bekleyen] == [Decimal(50)]
+    # Bölünen parçalar aynı teslimat ve sipariş numarasını taşır.
+    assert len({s.siparis_no for s in satirlar}) == 1

@@ -295,7 +295,8 @@ def test_ic_piyasa_plani_uretilir_ve_formu_indirilir(istemci, fabrika):
         assert plan.son_ugrak == "IZMIR"
         assert plan.iller_metni == "MANISA, IZMIR"
         assert plan.ilce_metni == "MERKEZ+BORNOVA"
-        assert plan.il_yeri_metni == "MANISA2YER"
+        # Araçtaki her il yazılır, sonuna toplam durak: "MANISA+IZMIR2YER".
+        assert plan.il_yeri_metni == "MANISA+IZMIR2YER"
         # 64 hacmin çoğunu taşıyor; 74'teki mal oraya getirilecek.
         assert plan.yukleme_deposu == "64"
         plan_id = plan.id
@@ -336,7 +337,7 @@ def test_ic_piyasa_formu_sevkiyat_tipine_gore_sayfalanir(istemci, fabrika, tmp_p
     sayfa = load_workbook(hedef)["S-FTL Sevk"]
     metinler = [h.value for satir in sayfa.iter_rows() for h in satir if h.value]
     assert "Yer Miktarı" in metinler
-    assert "MANISA2YER" in metinler
+    assert "MANISA+IZMIR2YER" in metinler
     assert "MERKEZ+BORNOVA" in metinler
     assert "Nak.Firma" in metinler
     assert "Yükleme yapacak depolar" in metinler

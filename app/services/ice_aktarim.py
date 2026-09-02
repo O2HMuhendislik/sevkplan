@@ -143,12 +143,22 @@ def urunleri_aktar(
 
 
 def siparisleri_aktar(
-    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+    db: Session,
+    dosya: Path | Any,
+    dosya_adi: str,
+    kullanici: str = "sistem",
+    modul: str = "RING",
 ) -> IceAktarimSonucu:
+    """Sipariş dosyasını yükler.
+
+    `modul` siparişi hangi havuza yazacağımızı söyler: RING, ROTA (iç piyasa) ya da
+    IHRACAT. Her modül yalnızca kendi havuzunu görür ve planlar; aynı satır iki
+    modülde birden görünmez.
+    """
     _kontrol_et(dosya, SIPARIS_ALANLARI, SIPARIS_ALIAS)
     kayitlar = excel.satirlari_oku(dosya, SIPARIS_ALIAS, zorunlu_alanlar(SIPARIS_ALANLARI))
     sonuc = IceAktarimSonucu(toplam=len(kayitlar))
-    aktarim = _aktarim_kaydet(db, dosya_adi, "SIPARIS", sonuc, kullanici)
+    aktarim = _aktarim_kaydet(db, dosya_adi, f"SIPARIS/{modul}", sonuc, kullanici)
     db.flush()
 
     etkilenen_teslimatlar: set[str] = set()
@@ -247,6 +257,7 @@ def siparisleri_aktar(
         mevcut.termin_tarihi = termin_tarihi
         mevcut.durum = SiparisDurumu.BEKLEMEDE
         mevcut.hata_aciklamasi = None
+        mevcut.modul = modul
         mevcut.ice_aktarim_id = aktarim.id
         parti[satir_anahtari] = mevcut
         etkilenen_teslimatlar.add(teslimat_no)

@@ -389,11 +389,19 @@ class SevkiyatPlani(Temel):
 
     @property
     def il_yeri_metni(self) -> str:
-        """Yükleme formunun 'İl' satırı: 'İZMİR2YER' — il adı + durak sayısı."""
-        ilk_il = (self.iller_metni or "").split(",")[0].strip()
-        if not ilk_il:
+        """Yükleme formunun 'İl' satırı.
+
+        Sahadaki biçim: iller '+' ile birleşir, sonuna toplam durak sayısı eklenir —
+        tek illi araçta `İZMİR2YER`, çok illi araçta `ISPARTA+ANTALYA2YER`. Araçtaki
+        her il ayrı yazılır; yalnızca ilkini yazmak rotayı yanlış gösterir.
+        """
+        iller = [
+            parca.strip() for parca in (self.iller_metni or "").split(",") if parca.strip()
+        ]
+        if not iller:
             return ""
-        return f"{ilk_il}{self.durak_sayisi}YER" if self.durak_sayisi else ilk_il
+        birlesik = "+".join(iller)
+        return f"{birlesik}{self.durak_sayisi}YER" if self.durak_sayisi else birlesik
 
     @property
     def ilce_metni(self) -> str:
@@ -472,7 +480,14 @@ class SiparisSatiri(Temel):
     ice_aktarim_id: Mapped[int | None] = mapped_column(
         ForeignKey("ice_aktarimlar.id"), default=None
     )
+    modul: Mapped[str] = mapped_column(String(20), index=True, default="RING")
+    """Siparişi yükleyen modül: RING / ROTA (iç piyasa) / IHRACAT.
+
+    Her modül yalnızca kendi siparişlerini görür ve planlar; havuzlar ayrıdır.
+    Bütün siparişler yalnızca Raporlama modülünde bir arada görünür.
+    """
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    """Siparişin sisteme girdiği an. Plana alınma süresi KPI'ı bundan hesaplanır."""
 
     plan: Mapped[SevkiyatPlani | None] = relationship(back_populates="satirlar")
     urun: Mapped[Urun | None] = relationship(
@@ -494,6 +509,24 @@ class SiparisSatiri(Temel):
     @property
     def oncelik_tarihi(self) -> date:
         return self.termin_tarihi or self.siparis_tarihi or date.today()
+
+    @property
+    def plana_alinma_gunu(self) -> int | None:
+        """Sipariş sisteme girdikten kaç gün sonra plana alındı?
+
+        Planlanmamış satırda None döner. KPI ekranı bu değerin ortalamasını ve
+        dağılımını gösterir.
+        """
+        if self.plan is None or self.plan.olusturma_tarihi is None:
+            return None
+        return (self.plan.olusturma_tarihi.date() - self.olusturma_tarihi.date()).days
+
+    @property
+    def termine_gore_gun(self) -> int | None:
+        """Plan, terminden kaç gün önce (+) ya da sonra (-) yapıldı?"""
+        if self.plan is None or self.termin_tarihi is None:
+            return None
+        return (self.termin_tarihi - self.plan.plan_tarihi).days
 
 
 class SeferSayaci(Temel):

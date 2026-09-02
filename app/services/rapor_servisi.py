@@ -72,8 +72,12 @@ def siparisleri_getir(
     arama: str | None = None,
     depo_kodu: str | None = None,
     limit: int = 1000,
+    modul: str | None = None,
 ) -> list[SiparisSatiri]:
+    """`modul` verilirse yalnızca o modülün sipariş havuzu döner."""
     sorgu = select(SiparisSatiri).options(selectinload(SiparisSatiri.plan))
+    if modul:
+        sorgu = sorgu.where(SiparisSatiri.modul == modul)
     if durum:
         sorgu = sorgu.where(SiparisSatiri.durum == SiparisDurumu(durum))
     if depo_kodu:

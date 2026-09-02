@@ -36,11 +36,14 @@ from app.models import (
     SevkiyatPlani,
     SiparisDurumu,
     SiparisSatiri,
+    Urun,
 )
 from app.services.plan_servisi import (
     PlanHatasi,
+    palet_haritasi,
     sonraki_sefer_no,
     teslimatlari_hazirla,
+    yukleme_haritasi,
 )
 
 MODUL_KODU = "ROTA"
@@ -91,6 +94,21 @@ def _bayi_anahtari(satir: SiparisSatiri) -> str:
         yer_adi(satir.bayi_adi)
         or yer_adi(satir.alici_firma)
         or f"TESLIMAT:{satir.teslimat_no}"
+    )
+
+
+def _durak_adi(satir: SiparisSatiri) -> str:
+    """Ekranda ve yükleme formunda görünecek durak adı.
+
+    Kaynak dosyada bayi adı boş gelebiliyor; o zaman alıcı firma, o da yoksa açık
+    adres kullanılır. Teslimat numarası ad yerine geçmez — ekranda "TESLIMAT:2013…"
+    yazması bilgi vermiyor.
+    """
+    return (
+        (satir.bayi_adi or "").strip()
+        or (satir.alici_firma or "").strip()
+        or (satir.sevk_adresi or "").strip()
+        or "(bayi adı yok)"
     )
 
 
@@ -155,7 +173,7 @@ def musterileri_topla(
         musteriler.append(
             MusteriSiparisi(
                 anahtar=anahtar,
-                bayi_adi=ilk.bayi_adi or ilk.alici_firma or anahtar.split("|")[0],
+                bayi_adi=_durak_adi(ilk),
                 il=il,
                 ilce=ilce,
                 teslimatlar=tuple(grup),
@@ -225,6 +243,7 @@ def plan_uret(
     sorgu = select(SiparisSatiri).where(
         SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
         SiparisSatiri.plan_id.is_(None),
+        SiparisSatiri.modul == MODUL_KODU,
     )
     if depolar:
         sorgu = sorgu.where(SiparisSatiri.depo_kodu.in_(depolar))
@@ -248,6 +267,19 @@ def plan_uret(
         tip.value: len(grup) for tip, grup in kovalar.items() if grup
     }
 
+    # Bayi ortak deposu teslimatlarını araç kapasitesine göre kesebilmek için
+    # ürünlerin palet ve yükleme adetleri gerekiyor.
+    urunler = {
+        urun.urun_kodu: urun
+        for urun in db.scalars(
+            select(Urun).where(
+                Urun.urun_kodu.in_({s.urun_kodu for s in satirlar})
+            )
+        ).all()
+    }
+    palet_haritasi_ = palet_haritasi(urunler)
+    yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL.arac_tipi)
+
     satir_haritasi = {satir.id: satir for satir in satirlar}
     for tip in tipler:
         grup = kovalar[tip]
@@ -261,6 +293,8 @@ def plan_uret(
             kurallar,
             gunluk_sinir=_gunluk_sinir(db, plan_tarihi, tip, kurallar),
             kalanlari_zorla=kalanlari_zorla,
+            palet_ici=palet_haritasi_,
+            yukleme_adeti=yukleme_haritasi_,
         )
         for taslak in planlama.planlar:
             sonuc.planlar.append(
@@ -339,9 +373,14 @@ def _plani_kaydet(
     db.add(plan)
     db.flush()
 
+    bolunen_satir = 0
     for teslimat in taslak.teslimatlar:
         for satir_id in teslimat.satir_idleri:
             satir = satir_haritasi[satir_id]
+            _, alinan = teslimat.satir_miktarlari.get(satir_id, (None, None))
+            if alinan is not None and alinan < Decimal(satir.miktar):
+                satir = _satiri_ayir(db, satir, alinan)
+                bolunen_satir += 1
             satir.plan_id = plan.id
             satir.durum = SiparisDurumu.PLANLANDI
 
@@ -358,6 +397,11 @@ def _plani_kaydet(
             "Tır giremeyen müşteri: "
             + ", ".join(m.bayi_adi for m in taslak.tir_giremeyen_musteriler)
         )
+    if bolunen_satir:
+        notlar.append(
+            f"{bolunen_satir} satır araç kapasitesine göre bölündü; kalan miktar "
+            "aynı teslimat numarasıyla beklemede"
+        )
     if taslak.alt_limit_esnetildi:
         notlar.append("alt limit esnetildi")
     if taslak.istisna_asim:
@@ -373,6 +417,60 @@ def _plani_kaydet(
         )
     )
     return plan
+
+
+def _satiri_ayir(
+    db: Session, satir: SiparisSatiri, alinan: Decimal
+) -> SiparisSatiri:
+    """Satırın `alinan` kadarını yeni bir satıra ayırır; kalan orijinalde bekler.
+
+    Bayi ortak deposu (-1) siparişleri araç kapasitesine göre bölünebiliyor. Bölünen
+    parça **aynı teslimat ve sipariş numarasını** taşır — ERP tarafında bölünme de
+    böyle görünüyor; ayırt etmek için satır numarasına sıra eki verilir.
+    """
+    alinan = min(Decimal(alinan), Decimal(satir.miktar))
+    kalan = Decimal(satir.miktar) - alinan
+    satir.miktar = kalan
+
+    kok = satir.siparis_satir_no.split("#")[0]
+    mevcut_ekler = {
+        s.siparis_satir_no
+        for s in db.scalars(
+            select(SiparisSatiri).where(
+                SiparisSatiri.siparis_no == satir.siparis_no,
+                SiparisSatiri.teslimat_no == satir.teslimat_no,
+            )
+        ).all()
+    }
+    sira = 2
+    while f"{kok}#{sira}" in mevcut_ekler:
+        sira += 1
+
+    yeni = SiparisSatiri(
+        siparis_no=satir.siparis_no,
+        siparis_satir_no=f"{kok}#{sira}",
+        teslimat_no=satir.teslimat_no,
+        urun_kodu=satir.urun_kodu,
+        urun_adi=satir.urun_adi,
+        miktar=alinan,
+        depo_kodu=satir.depo_kodu,
+        sehir=satir.sehir,
+        bayi_adi=satir.bayi_adi,
+        alici_firma=satir.alici_firma,
+        sevk_adresi=satir.sevk_adresi,
+        teslim_sekli=satir.teslim_sekli,
+        incoterms=satir.incoterms,
+        ilce=satir.ilce,
+        siparis_tarihi=satir.siparis_tarihi,
+        termin_tarihi=satir.termin_tarihi,
+        durum=SiparisDurumu.BEKLEMEDE,
+        modul=satir.modul,
+        ice_aktarim_id=satir.ice_aktarim_id,
+        olusturma_tarihi=satir.olusturma_tarihi,
+    )
+    db.add(yeni)
+    db.flush()
+    return yeni
 
 
 def plan_musterileri(db: Session, plan: SevkiyatPlani) -> list[dict]:
@@ -399,7 +497,7 @@ def plan_musterileri(db: Session, plan: SevkiyatPlani) -> list[dict]:
         durak = gruplar.setdefault(
             anahtar,
             {
-                "bayi_adi": satir.bayi_adi or satir.alici_firma or anahtar,
+                "bayi_adi": _durak_adi(satir),
                 "il": yer_adi(satir.sehir),
                 "ilce": yer_adi(satir.ilce),
                 "tir_girisi": kayit.tir_girisi if kayit else "?",

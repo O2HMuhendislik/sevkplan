@@ -25,7 +25,12 @@ from app.domain.kapasite import KapasiteProfili
 
 @dataclass(frozen=True)
 class Teslimat:
-    """Planlamanın atomik birimi. Asla bölünmez."""
+    """Planlamanın atomik birimi.
+
+    Kural olarak bölünmez. Tek istisna bayi ortak deposudur (-1): orası ayrı bir ERP
+    ve araç planı oraya kaydedildiğinde siparişi kendisi bölüyor, bu yüzden planlama
+    da bölebilir (`bolunebilir_mi`).
+    """
 
     teslimat_no: str
     depo_kodu: str
@@ -53,6 +58,14 @@ class Teslimat:
     """Palete yuvarlanmamış anahtar değer; parsiyel (karışık istifli) araçlarda kullanılır."""
     agirlik: Decimal = Decimal(0)
     """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
+    bolunebilir_mi: bool = False
+    """Araç kapasitesine göre miktarı kesilebilir mi? (bayi ortak deposu -1)"""
+    satir_miktarlari: dict[int, tuple[str, Decimal]] = field(default_factory=dict)
+    """Sipariş satırı id -> (ürün kodu, miktar).
+
+    Bölünebilir teslimatta satırların araçlara dağıtılması ve gerekirse bir satırın
+    kesilmesi bunun üzerinden yapılır; hangi plana ne kadar gittiği buradan bilinir.
+    """
 
     @property
     def kodlar(self) -> tuple[str, ...]:
