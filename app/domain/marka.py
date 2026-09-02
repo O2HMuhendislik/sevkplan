@@ -15,13 +15,12 @@ VARSAYILAN_MARKA = "DEMİRDÖKÜM"
 
 DEPO_SONEK_MARKALARI: dict[str, str] = {
     "V": "VAİLLANT",
-    "P": "VAİLLANT",
+    "P": "PROTHERM",
 }
 """Depo kodunun son eki -> marka.
 
-Sahadaki kural: sonu `-V` ya da `-P` olan depolar Vaillant, diğerleri DemirDöküm.
-Yükleme formunda PROTHERM ayrı bir satır olarak da görünüyor; ayrı izlenmesi
-istenirse `"P": "PROTHERM"` yapmak yeterli.
+Sonu `-V` olan depolar Vaillant, `-P` olanlar Protherm, diğerleri DemirDöküm.
+Navlun faturası her üçü için ayrı kesildiğinden fatura satırında da ayrı görünürler.
 """
 
 

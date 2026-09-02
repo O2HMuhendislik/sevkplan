@@ -195,7 +195,16 @@ def test_marka_payi_depo_koduna_gore_bolunur():
     assert marka("64") == "DEMİRDÖKÜM"
     assert marka("-1") == "DEMİRDÖKÜM"
     assert marka("64-V") == "VAİLLANT"
-    assert marka("64-P") == "VAİLLANT"
+    assert marka("64-P") == "PROTHERM"
 
     paylar = paylari_hesapla({"64": Decimal("0.25"), "64-V": Decimal("0.75")})
     assert paylar == {"DEMİRDÖKÜM": Decimal("0.2500"), "VAİLLANT": Decimal("0.7500")}
+
+    uclu = paylari_hesapla(
+        {"64": Decimal("0.50"), "64-V": Decimal("0.25"), "64-P": Decimal("0.25")}
+    )
+    assert uclu == {
+        "DEMİRDÖKÜM": Decimal("0.5000"),
+        "PROTHERM": Decimal("0.2500"),
+        "VAİLLANT": Decimal("0.2500"),
+    }

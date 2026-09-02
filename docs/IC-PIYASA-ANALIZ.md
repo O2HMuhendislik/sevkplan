@@ -190,7 +190,7 @@ depolar"** bloğunun yanına yazılacak.
 | 10 | Doğu/Güneydoğu bölge bölünmesi | Kullanıcı **elle** böler; sistem 29 illik bölgeyi otomatik parçalamaz. |
 | 11 | Rutin günlük araç sınırı | **Toplam** 3–4 araç (bölge başına değil). |
 | 12 | Kapsam | `M-ARÇELİK`, `T-SİSTEMSEL`, `KOÇTAŞ` ve `B` (Arçelik İzmir Kemalpaşa) **kapsam dışı**. |
-| 13 | Marka bazlı fatura yüzdesi | **Anahtar değerdeki paya** göre. Depo kodunun yanında `V` veya `P` olanlar **VAİLLANT**, diğerleri **DEMİRDÖKÜM**. Navlun faturalarının dağıtımında kullanılıyor; yükleme formunda ve plan detayında gösterilir. |
+| 13 | Marka bazlı fatura yüzdesi | **Anahtar değerdeki paya** göre. Depo kodu sonu `-V` olanlar **VAİLLANT**, `-P` olanlar **PROTHERM**, diğerleri **DEMİRDÖKÜM**. Navlun faturası üç marka için ayrı kesildiğinden fatura satırında da ayrı gösterilirler. Navlun faturalarının dağıtımında kullanılıyor; yükleme formunda ve plan detayında gösterilir. |
 | 14 | "Yer Miktarı" | **Durak sayısı** ile aynı. |
 | 15 | Birden fazla Axata numarası | Depo operasyonunun toplama işini kolaylaştırmak için ürünler farklı gruplanarak **bir plana birden çok Axata numarası** verilebiliyor. |
 
@@ -198,9 +198,8 @@ depolar"** bloğunun yanına yazılacak.
 
 | # | Konu |
 |---|---|
-| 1 | Yükleme formundaki `PROTHERM` satırı: kullanıcı `-P` deposunu da VAİLLANT saydı, ancak formda PROTHERM ayrı bir fatura satırı olarak görünüyor. Ayrı marka olarak ayrılacaksa tek satırlık bir değişiklik (`app/domain/marka.py`). |
-| 2 | Bayi ortak deposu (`-1`) sipariş dosyası henüz iletilmedi. |
-| 3 | SMTP ayarları (otomatik mail gönderimi). |
+| 1 | Bayi ortak deposu (`-1`) sipariş dosyası henüz iletilmedi. |
+| 2 | SMTP ayarları (otomatik mail gönderimi). |
 
 ## 9. Uygulanan kısımlar
 
