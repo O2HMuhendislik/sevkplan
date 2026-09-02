@@ -61,6 +61,16 @@ MODULLER: tuple[Modul, ...] = (
         hazir=False,
     ),
     Modul(
+        kod="RAPORLAMA",
+        ad="Raporlama",
+        aciklama=(
+            "Bütün modüllerin siparişleri tek ekranda; modüle göre filtrelenir. "
+            "Siparişin plana alınma süresi (KPI) burada izlenir."
+        ),
+        yol="/raporlama",
+        simge="📊",
+    ),
+    Modul(
         kod="MASTERDATA",
         ad="Master Data",
         aciklama="Ürün tanımları, palet ve araç kapasite bilgileri. Modüllerin ortak verisi.",

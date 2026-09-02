@@ -329,3 +329,148 @@ def musterileri_getir(
         sorgu = sorgu.where(Musteri.tir_girisi == tir_girisi)
     sorgu = sorgu.order_by(Musteri.bayi_adi)
     return list(db.scalars(sorgu.limit(limit)).all())
+
+
+# ------------------------------------------------------------ modüller arası rapor
+
+MODUL_ADLARI = {
+    "RING": "Ring",
+    "ROTA": "İç Piyasa",
+    "IHRACAT": "İhracat",
+}
+
+
+def modul_ozeti(db: Session) -> list[dict]:
+    """Modül bazında sipariş ve plan sayıları — Raporlama ekranının üst tablosu."""
+    siparisler = dict(
+        db.execute(
+            select(SiparisSatiri.modul, func.count(SiparisSatiri.id)).group_by(
+                SiparisSatiri.modul
+            )
+        ).all()
+    )
+    bekleyenler = dict(
+        db.execute(
+            select(SiparisSatiri.modul, func.count(SiparisSatiri.id))
+            .where(SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE)
+            .group_by(SiparisSatiri.modul)
+        ).all()
+    )
+    planlar = dict(
+        db.execute(
+            select(SevkiyatPlani.modul, func.count(SevkiyatPlani.id))
+            .where(SevkiyatPlani.durum != PlanDurumu.IPTAL)
+            .group_by(SevkiyatPlani.modul)
+        ).all()
+    )
+    kodlar = sorted(set(siparisler) | set(planlar) | set(MODUL_ADLARI))
+    return [
+        {
+            "kod": kod,
+            "ad": MODUL_ADLARI.get(kod, kod),
+            "siparis": siparisler.get(kod, 0),
+            "bekleyen": bekleyenler.get(kod, 0),
+            "plan": planlar.get(kod, 0),
+        }
+        for kod in kodlar
+    ]
+
+
+@dataclass
+class PlanlamaKpi:
+    """Siparişin sisteme girmesiyle plana alınması arasındaki süre.
+
+    Sahadaki soru şu: "sipariş elimize geldikten kaç gün sonra araca bindi?"
+    Ölçü, sipariş satırının sisteme yüklendiği gün ile planın üretildiği gün
+    arasındaki farktır. Termin verilmişse plan tarihinin termine göre kaç gün
+    erken/geç olduğu da ayrıca tutulur.
+    """
+
+    modul: str
+    planlanan: int = 0
+    bekleyen: int = 0
+    gun_toplami: int = 0
+    ayni_gun: int = 0
+    bir_gun: int = 0
+    iki_uc_gun: int = 0
+    dort_yedi_gun: int = 0
+    yedi_ustu: int = 0
+    termin_gecikmesi: int = 0
+    """Termini geçtikten sonra plana alınan satır sayısı."""
+    termin_olculen: int = 0
+
+    @property
+    def ad(self) -> str:
+        return MODUL_ADLARI.get(self.modul, self.modul)
+
+    @property
+    def ortalama_gun(self) -> Decimal:
+        if not self.planlanan:
+            return Decimal(0)
+        return (Decimal(self.gun_toplami) / self.planlanan).quantize(Decimal("0.1"))
+
+    @property
+    def gununde_orani(self) -> Decimal:
+        """Aynı gün ya da ertesi gün plana alınanların payı (%)."""
+        if not self.planlanan:
+            return Decimal(0)
+        hedefte = self.ayni_gun + self.bir_gun
+        return (Decimal(hedefte) * 100 / self.planlanan).quantize(Decimal("0.1"))
+
+    @property
+    def termin_gecikme_orani(self) -> Decimal:
+        if not self.termin_olculen:
+            return Decimal(0)
+        return (
+            Decimal(self.termin_gecikmesi) * 100 / self.termin_olculen
+        ).quantize(Decimal("0.1"))
+
+
+def planlama_kpi(db: Session, modul: str | None = None) -> list[PlanlamaKpi]:
+    """Modül bazında plana alınma süresi dağılımı.
+
+    Yalnızca planlanmış satırlar süreye girer; beklemedekiler ayrı sayılır ki
+    "hızlı planladık ama yarısı beklemede" durumu gizlenmesin.
+    """
+    sorgu = select(SiparisSatiri).options(selectinload(SiparisSatiri.plan))
+    if modul:
+        sorgu = sorgu.where(SiparisSatiri.modul == modul)
+    satirlar = list(db.scalars(sorgu).all())
+
+    kpiler: dict[str, PlanlamaKpi] = {}
+    for satir in satirlar:
+        kpi = kpiler.setdefault(satir.modul, PlanlamaKpi(modul=satir.modul))
+        gun = satir.plana_alinma_gunu
+        if gun is None:
+            kpi.bekleyen += 1
+            continue
+        kpi.planlanan += 1
+        kpi.gun_toplami += gun
+        if gun <= 0:
+            kpi.ayni_gun += 1
+        elif gun == 1:
+            kpi.bir_gun += 1
+        elif gun <= 3:
+            kpi.iki_uc_gun += 1
+        elif gun <= 7:
+            kpi.dort_yedi_gun += 1
+        else:
+            kpi.yedi_ustu += 1
+
+        termin_farki = satir.termine_gore_gun
+        if termin_farki is not None:
+            kpi.termin_olculen += 1
+            if termin_farki < 0:
+                kpi.termin_gecikmesi += 1
+    return sorted(kpiler.values(), key=lambda k: k.ad)
+
+
+def tum_siparisler(
+    db: Session,
+    modul: str | None = None,
+    durum: str | None = None,
+    arama: str | None = None,
+    limit: int = 500,
+) -> list[SiparisSatiri]:
+    """Raporlama ekranının sipariş listesi: bütün modüller, modüle göre filtrelenebilir."""
+    return siparisleri_getir(db, durum, arama, limit=limit, modul=modul)

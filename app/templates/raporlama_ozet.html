@@ -1,0 +1,84 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'ozet' %}
+{% block icerik %}
+<h1>Raporlama — Özet ve KPI</h1>
+
+<div class="kart">
+  <h2>Modüllere göre</h2>
+  <p class="soluk">
+    Her modülün sipariş havuzu ayrıdır: bir modülden yüklenen sipariş diğerinde
+    görünmez. Hepsini bir arada yalnızca bu ekranda görürsünüz.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Modül</th><th class="sag">Sipariş satırı</th><th class="sag">Beklemede</th>
+      <th class="sag">Plan</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for satir in modul_ozeti %}
+      <tr>
+        <td><b>{{ satir.ad }}</b></td>
+        <td class="sag">{{ satir.siparis }}</td>
+        <td class="sag">{{ satir.bekleyen }}</td>
+        <td class="sag">{{ satir.plan }}</td>
+        <td>
+          <a href="/raporlama/siparisler?modul={{ satir.kod }}">Siparişler</a> ·
+          <a href="/raporlama/planlar?modul={{ satir.kod }}">Planlar</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart">
+  <h2>Plana alınma süresi</h2>
+  <p class="soluk">
+    Cevapladığı soru: <b>sipariş elimize geldikten kaç gün sonra araca bindi?</b>
+    Ölçü, sipariş satırının sisteme yüklendiği gün ile planın üretildiği gün
+    arasındaki farktır. Beklemedeki satırlar süreye girmez, ayrı sayılır — yoksa
+    "hızlı planladık ama yarısı beklemede" durumu gizlenir.
+  </p>
+  {% if kpiler %}
+  <table>
+    <thead><tr>
+      <th>Modül</th><th class="sag">Planlanan</th><th class="sag">Beklemede</th>
+      <th class="sag">Ort. gün</th><th>1 günde planlanan</th>
+      <th class="sag">Aynı gün</th><th class="sag">1 gün</th><th class="sag">2-3 gün</th>
+      <th class="sag">4-7 gün</th><th class="sag">7+ gün</th>
+      <th class="sag">Termin geçen</th>
+    </tr></thead>
+    <tbody>
+    {% for kpi in kpiler %}
+      <tr>
+        <td><b>{{ kpi.ad }}</b></td>
+        <td class="sag">{{ kpi.planlanan }}</td>
+        <td class="sag">{{ kpi.bekleyen }}</td>
+        <td class="sag"><b>{{ kpi.ortalama_gun }}</b></td>
+        <td><div class="doluluk" style="max-width:150px">
+          <span style="width: {{ kpi.gununde_orani | float }}%"></span>
+          <b>%{{ kpi.gununde_orani }}</b></div></td>
+        <td class="sag">{{ kpi.ayni_gun }}</td>
+        <td class="sag">{{ kpi.bir_gun }}</td>
+        <td class="sag">{{ kpi.iki_uc_gun }}</td>
+        <td class="sag">{{ kpi.dort_yedi_gun }}</td>
+        <td class="sag">{{ kpi.yedi_ustu }}</td>
+        <td class="sag">
+          {% if kpi.termin_olculen %}
+            %{{ kpi.termin_gecikme_orani }}
+            <div class="soluk">{{ kpi.termin_gecikmesi }} / {{ kpi.termin_olculen }}</div>
+          {% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk">
+    <b>Termin geçen:</b> termini verilmiş satırlar içinde, plan tarihi terminden
+    sonraya düşenlerin payı.
+  </p>
+  {% else %}
+  <div class="bos">Henüz sipariş yüklenmemiş.</div>
+  {% endif %}
+</div>
+{% endblock %}

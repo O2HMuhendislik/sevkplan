@@ -1,0 +1,61 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>Tüm Planlar</h1>
+
+<div class="sekmeler">
+  <a href="/raporlama/planlar" class="{{ 'aktif' if modul == '' }}">Tüm modüller</a>
+  {% for kod, ad in modul_adlari.items() %}
+    <a href="/raporlama/planlar?modul={{ kod }}"
+       class="{{ 'aktif' if modul == kod }}">{{ ad }}</a>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/planlar" style="margin-bottom:14px">
+    <input type="hidden" name="modul" value="{{ modul }}">
+    <div><label for="durum">Durum</label>
+      <select id="durum" name="durum">
+        <option value="">Tümü</option>
+        {% for d in durumlar %}
+          <option value="{{ d }}" {{ 'selected' if durum == d }}>{{ d }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Sefer no, axata no, il, teslimat no" style="width:340px"></div>
+    <button type="submit">Filtrele</button>
+  </form>
+
+  {% if planlar %}
+  <table>
+    <thead><tr>
+      <th>Modül</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Depo / Bölge</th>
+      <th class="sag">Teslimat</th><th class="sag">Büyüklük</th><th>Doluluk</th>
+      <th>Axata No</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for plan in planlar %}
+      <tr>
+        <td>{{ modul_adlari.get(plan.modul, plan.modul) }}</td>
+        <td><a href="{{ '/rota/planlar/' if plan.ic_piyasa_mi else '/ring/planlar/' }}{{ plan.id }}">
+          <b>{{ plan.sefer_no }}</b></a></td>
+        <td>{{ plan.plan_tarihi | tarih }}</td>
+        <td>{{ plan.sevkiyat_tipi_adi }}</td>
+        <td>{{ plan.depo_kodu }}
+          {% if plan.bolge_kodu %}<div class="soluk">{{ plan.bolge_adi }}</div>{% endif %}</td>
+        <td class="sag">{{ plan.teslimat_sayisi }}</td>
+        <td class="sag">{{ plan.birim_metni }}</td>
+        <td><div class="doluluk">
+          <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
+          <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>
+        <td>{{ plan.axata_ozeti or '—' }}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Plan bulunamadı.</div>{% endif %}
+</div>
+{% endblock %}

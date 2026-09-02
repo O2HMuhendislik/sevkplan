@@ -87,6 +87,7 @@ def kitap(basliklar, satirlar) -> BytesIO:
         "/ring/raporlar", "/ring/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
         "/rota", "/rota/siparisler", "/rota/planlar", "/rota/musteriler",
         "/rota/raporlar",
+        "/raporlama", "/raporlama/siparisler", "/raporlama/planlar",
     ],
 )
 def test_ekranlar_acilir(istemci, yol):
@@ -410,3 +411,55 @@ def test_giris_ekraninda_da_marka_gorunur(ham_istemci):
     cevap = ham_istemci.get("/giris")
     assert "Nakliye Yönetim Sistemi" in cevap.text
     assert '/static/logo.svg' in cevap.text
+
+
+def test_moduller_ayri_siparis_havuzu_kullanir(istemci, fabrika):
+    """İç piyasadan yüklenen sipariş Ring ekranında görünmemeli."""
+    from app.models import SiparisSatiri
+
+    ic_piyasa_verisi_yukle(istemci)
+
+    ring = istemci.get("/ring/siparisler")
+    assert "EGE ISITMA" not in ring.text
+
+    rota = istemci.get("/rota/siparisler")
+    assert "EGE ISITMA" in rota.text
+
+    # Raporlama ekranı hepsini bir arada gösterir.
+    hepsi = istemci.get("/raporlama/siparisler")
+    assert "EGE ISITMA" in hepsi.text
+    assert istemci.get("/raporlama/siparisler?modul=RING").text.count("EGE ISITMA") == 0
+
+    with fabrika() as db:
+        assert {s.modul for s in db.query(SiparisSatiri).all()} == {"ROTA"}
+
+
+def test_ring_planlamasi_ic_piyasa_siparisini_almaz(istemci, fabrika):
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    cevap = istemci.post("/ring/planlar/uret", data={"depo_kodu": "64"})
+    assert "Plan üretilemedi" in sorgu(cevap)
+
+    with fabrika() as db:
+        assert db.query(SevkiyatPlani).count() == 0
+
+
+def test_plana_alinma_kpisi_hesaplanir(istemci, fabrika):
+    """Sipariş sisteme girdikten kaç gün sonra plana alındı?"""
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+
+    ekran = istemci.get("/raporlama")
+    assert "Plana alınma süresi" in ekran.text
+    assert "İç Piyasa" in ekran.text
+
+    with fabrika() as db:
+        from app.services import rapor_servisi
+
+        kpiler = {k.modul: k for k in rapor_servisi.planlama_kpi(db)}
+        kpi = kpiler["ROTA"]
+        assert kpi.planlanan == 2
+        # Aynı gün yüklenip aynı gün planlandı.
+        assert kpi.ortalama_gun == 0
+        assert kpi.ayni_gun == 2

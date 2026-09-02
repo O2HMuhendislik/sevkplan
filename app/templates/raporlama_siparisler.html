@@ -1,0 +1,65 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'siparisler' %}
+{% block icerik %}
+<h1>Tüm Siparişler</h1>
+
+<div class="sekmeler">
+  <a href="/raporlama/siparisler" class="{{ 'aktif' if modul == '' }}">Tüm modüller</a>
+  {% for kod, ad in modul_adlari.items() %}
+    <a href="/raporlama/siparisler?modul={{ kod }}"
+       class="{{ 'aktif' if modul == kod }}">{{ ad }}</a>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/siparisler" style="margin-bottom:14px">
+    <input type="hidden" name="modul" value="{{ modul }}">
+    <div><label for="durum">Durum</label>
+      <select id="durum" name="durum">
+        <option value="">Tümü</option>
+        {% for d in durumlar %}
+          <option value="{{ d }}" {{ 'selected' if durum == d }}>{{ d }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Sipariş no, teslimat no, ürün, bayi, il" style="width:340px"></div>
+    <button type="submit">Filtrele</button>
+  </form>
+
+  {% if satirlar %}
+  <table>
+    <thead><tr>
+      <th>Modül</th><th>Teslimat</th><th>Sipariş</th><th>Ürün</th><th>Bayi / İl</th>
+      <th>Depo</th><th class="sag">Miktar</th><th>Sisteme giriş</th><th>Termin</th>
+      <th>Plan</th><th class="sag">Plana alınma</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in satirlar %}
+      <tr>
+        <td>{{ modul_adlari.get(satir.modul, satir.modul) }}</td>
+        <td><b>{{ satir.teslimat_no }}</b></td>
+        <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
+        <td>{{ satir.urun_kodu }}
+          <div class="soluk">{{ satir.gosterilecek_urun_adi }}</div></td>
+        <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
+        <td>{{ satir.depo_kodu }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
+        <td>{{ satir.olusturma_tarihi | tarih }}</td>
+        <td>{{ satir.termin_tarihi | tarih }}</td>
+        <td>{% if satir.plan %}
+              <a href="{{ '/rota/planlar/' if satir.plan.ic_piyasa_mi else '/ring/planlar/' }}{{ satir.plan.id }}">
+                {{ satir.plan.sefer_no }}</a>
+            {% else %}—{% endif %}</td>
+        <td class="sag">
+          {% set gun = satir.plana_alinma_gunu %}
+          {% if gun is not none %}{{ gun }} gün{% else %}—{% endif %}</td>
+        <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Sipariş bulunamadı.</div>{% endif %}
+</div>
+{% endblock %}

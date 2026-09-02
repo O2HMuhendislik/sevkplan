@@ -1033,6 +1033,73 @@ def rota_musteri_guncelle(
     )
 
 
+# --------------------------------------------------------------- Raporlama modülü
+@uygulama.get("/raporlama")
+def raporlama_ozet(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("RAPORLAMA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Modüller arası özet ve plana alınma süresi KPI'ı."""
+    return sayfa(
+        istek,
+        "raporlama_ozet.html",
+        kullanici,
+        modul_ozeti=rapor_servisi.modul_ozeti(db),
+        kpiler=rapor_servisi.planlama_kpi(db),
+    )
+
+
+@uygulama.get("/raporlama/siparisler")
+def raporlama_siparisler(
+    istek: Request,
+    modul: str = "",
+    durum: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RAPORLAMA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bütün modüllerin siparişleri; modül, durum ve serbest metinle filtrelenir."""
+    return sayfa(
+        istek,
+        "raporlama_siparisler.html",
+        kullanici,
+        satirlar=rapor_servisi.tum_siparisler(
+            db, modul or None, durum or None, arama or None
+        ),
+        modul=modul,
+        durum=durum,
+        arama=arama,
+        durumlar=[d.value for d in SiparisDurumu],
+        modul_adlari=rapor_servisi.MODUL_ADLARI,
+    )
+
+
+@uygulama.get("/raporlama/planlar")
+def raporlama_planlar(
+    istek: Request,
+    modul: str = "",
+    durum: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RAPORLAMA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    filtre = PlanFiltresi(
+        durum=durum or None, arama=arama or None, modul=modul or None
+    )
+    return sayfa(
+        istek,
+        "raporlama_planlar.html",
+        kullanici,
+        planlar=rapor_servisi.planlari_getir(db, filtre),
+        modul=modul,
+        durum=durum,
+        arama=arama,
+        durumlar=[d.value for d in PlanDurumu],
+        modul_adlari=rapor_servisi.MODUL_ADLARI,
+    )
+
+
 # ---------------------------------------------------------------------- master data
 @uygulama.get("/urunler")
 def urunler(
