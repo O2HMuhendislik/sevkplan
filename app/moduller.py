@@ -44,10 +44,12 @@ MODULLER: tuple[Modul, ...] = (
     Modul(
         kod="IHRACAT",
         ad="İhracat Planlama",
-        aciklama="Yurt dışı sevkiyatların konteyner ve araç planlaması.",
+        aciklama=(
+            "Yurt dışı sevkiyatların müşteri bazında araç planlaması. Tek noktaya "
+            "giden tır ve konteyner; kapasite desi ve ağırlıkla ölçülür."
+        ),
         yol="/ihracat",
         simge="🌍",
-        hazir=False,
     ),
     Modul(
         kod="ARAC_TALEP",

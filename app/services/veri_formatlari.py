@@ -228,6 +228,68 @@ MUSTERI_ALANLARI: tuple[Alan, ...] = (
 )
 
 
+IHRACAT_SIPARIS_ALANLARI: tuple[Alan, ...] = (
+    Alan("siparis_no", "SİPARİŞ NO", True, "Sipariş numarası.", 9002842146,
+         ("Sipariş No", "SIPARIS NO")),
+    Alan("teslimat_no", "TESLİMAT NO", True,
+         "Planlamanın bölünmez birimi.", 9106800933, ("Teslimat No", "TESLIMAT NO")),
+    Alan("urun_kodu", "ÜRÜN KODU", True, "SKU.", 916041211, ("Ürün Kodu", "StokKodu")),
+    Alan("urun_adi", "ÜRÜN TANIMI", False, "Yükleme formunda görünen ürün adı.",
+         "25 VAI S 22 600 0400 V0 A1", ("Ürün Tanımı", "StokAdi")),
+    Alan("miktar", "ADET", True, "Sipariş adedi.", 10, ("Adet", "Miktar")),
+    Alan("depo_kodu", "DEPO", True, "Yükleme deposu (34, 74 ...).", 34, ("Depo",)),
+    Alan("bayi_adi", "MÜŞTERİ ADI", True,
+         "İhracat müşterisi. Araç tek noktaya gittiği için planın müşterisi budur.",
+         "VAILLANT D.O.O.", ("Müşteri Adı", "MUSTERI ADI")),
+    Alan("sehir", "ÜLKE", False, "Varış ülkesi.", "HIRVATİSTAN", ("Ülke",)),
+    Alan("ulke_kodu", "ÜLKE KODU", False, "İki harfli ülke kodu.", "HR",
+         ("Ulke Kodu", "Ülke kodu")),
+    Alan("sevk_adresi", "SEVK ADRESİ", False, "Varış şehri / adresi.", "OSIJEK",
+         ("Sevk Adresi",)),
+    Alan("desi", "Desi", True,
+         "Satırın desisi. İhracatta araç kapasitesi desi ile ölçülür; ürün master "
+         "datasında ihracat SKU'ları bulunmadığı için doğrudan dosyadan alınır.",
+         93.2, ("DESİ", "Desi ")),
+    Alan("agirlik", "KG", False, "Satırın ağırlığı (kg). Ağırlık ikinci kapasite sınırıdır.",
+         138.8, ("Ağırlık", "AGIRLIK")),
+    Alan("teslim_sekli", "INCOTERMS", False, "DAP / CIF / EXW ...", "DAP",
+         ("Incoterms",)),
+    Alan("siparis_tarihi", "Tarih", False, "GG.AA.YYYY", None, ("Sipariş Tarihi",)),
+    Alan("termin_tarihi", "Termin Tarihi", False, "GG.AA.YYYY", None,
+         ("Teslim Tarihi", "Sevk Tarihi")),
+)
+
+
+IHRACAT_MUSTERI_ALANLARI: tuple[Alan, ...] = (
+    Alan("musteri_adi", "Müşteri Adı", True, "Eşleştirme anahtarı.",
+         "VAILLANT D.O.O.", ("MÜŞTERİ", "Musteri Adi")),
+    Alan("ulke", "Ülke", False, "Varış ülkesi.", "HIRVATİSTAN", ("ÜLKE",)),
+    Alan("ulke_kodu", "Ülke Kodu", False, "İki harfli kod.", "HR", ("ÜLKE KODU",)),
+    Alan("sevk_adresi", "Sevk Adresi", False, "Varış şehri.", "OSIJEK", ("SEVK ADRESİ",)),
+    Alan("arac_tipi", "Araç Tipi", False,
+         "TIR / KONTEYNER / PARSİYEL / KARGO. Taşıma modunu belirler: konteyner deniz, "
+         "diğerleri kara yoludur.", "TIR", ("ARAÇ TİPİ",)),
+    Alan("sefer_kodu", "Sefer Kodu", False,
+         "Sefer numarasının belge kodu: N (NSC) ya da E (Export). Boşsa E kabul edilir.",
+         "E", ("NSC&Core", "NSC&Export")),
+    Alan("yukleme_tipi", "Yükleme Tipi", False,
+         "STANDART / PALET YÜKSELTME / DÖKME / KÖŞEBENT ... forma yazılır.",
+         "PALET YÜKSELTME", ("YÜKLEME TİPİ",)),
+    Alan("azami_agirlik", "Azami Tonaj", False,
+         "kg. '22.000 KG' gibi metin de kabul edilir; boşsa araç tipinin varsayılanı "
+         "kullanılır.", "22.000 KG", ("MAKSİMUM TONAJ", "Maksimum Tonaj")),
+    Alan("aciklama", "Açıklama", False,
+         "Müşteriye özel yükleme notu: hava yastığı, silika jel, paletsiz dökme ...",
+         None, ("Not", "Notlar")),
+    Alan("incoterms", "Incoterms", False, "DAP / CIF / EXW ...", "DAP", ("INCOTERMS",)),
+    Alan("tedarikci", "Tedarikçi", False, "Araç tedarikçisi.", "OKTAY ALAGÖZ",
+         ("TEDARİKÇİ",)),
+    Alan("satis_destek", "Satış Destek", False, "Satış destek sorumlusu.",
+         "SEÇİL KARACA", ("SATIŞ DESTEK",)),
+    Alan("aktif", "Aktif", False, "E / H.", "E", ()),
+)
+
+
 def alias_haritasi(alanlar: tuple[Alan, ...]) -> dict[str, tuple[str, ...]]:
     return {alan.ad: alan.kabul_edilen_basliklar for alan in alanlar}
 
@@ -239,3 +301,5 @@ def zorunlu_alanlar(alanlar: tuple[Alan, ...]) -> tuple[str, ...]:
 URUN_ALIAS = alias_haritasi(URUN_ALANLARI)
 SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
 MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)
+IHRACAT_SIPARIS_ALIAS = alias_haritasi(IHRACAT_SIPARIS_ALANLARI)
+IHRACAT_MUSTERI_ALIAS = alias_haritasi(IHRACAT_MUSTERI_ALANLARI)

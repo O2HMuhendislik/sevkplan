@@ -88,6 +88,7 @@ def kitap(basliklar, satirlar) -> BytesIO:
         "/rota", "/rota/siparisler", "/rota/planlar", "/rota/musteriler",
         "/rota/raporlar",
         "/raporlama", "/raporlama/siparisler", "/raporlama/planlar",
+        "/ihracat", "/ihracat/siparisler", "/ihracat/planlar", "/ihracat/musteriler",
     ],
 )
 def test_ekranlar_acilir(istemci, yol):
@@ -463,3 +464,94 @@ def test_plana_alinma_kpisi_hesaplanir(istemci, fabrika):
         # Aynı gün yüklenip aynı gün planlandı.
         assert kpi.ortalama_gun == 0
         assert kpi.ayni_gun == 2
+
+
+def ihracat_verisi_yukle(istemci):
+    """İhracat müşteri master datası ve iki müşterili bir sipariş dosyası yükler."""
+    musteriler = kitap(
+        ["Müşteri Adı", "Ülke", "Ülke Kodu", "Araç Tipi", "Sefer Kodu", "Yükleme Tipi",
+         "Azami Tonaj", "Açıklama"],
+        [
+            ["VAILLANT D.O.O.", "HIRVATİSTAN", "HR", "TIR", "NSC", "STANDART",
+             "22.000 KG", ""],
+            ["ANSAL REFRIGERACION SA", "ARJANTİN", "AR", "KONTEYNER", "Export",
+             "PALET YÜKSELTME", "19.500 KG", "silika jel konulacak"],
+        ],
+    )
+    istemci.post("/ihracat/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
+
+    siparisler = kitap(
+        ["DEPO", "ÜLKE KODU", "SİPARİŞ NO", "ÜRÜN KODU", "ÜRÜN TANIMI", "ADET",
+         "MÜŞTERİ ADI", "SEVK ADRESİ", "TESLİMAT NO", "Desi", "KG", "ÜLKE"],
+        [
+            ["34", "HR", "9002842146", "916041211", "Panel 600", 100,
+             "VAILLANT D.O.O.", "OSIJEK", "9106800933", 20000, 15000, "HIRVATİSTAN"],
+            ["34", "AR", "9002842200", "916101211", "Panel 1000", 80,
+             "ANSAL REFRIGERACION SA", "BUENOS AIRES", "9106800940", 14000, 12000,
+             "ARJANTİN"],
+        ],
+    )
+    return istemci.post(
+        "/ihracat/siparisler/yukle", files={"dosya": ("ihracat.xlsx", siparisler)}
+    )
+
+
+def test_ihracat_plani_uretilir_ve_formu_indirilir(istemci, fabrika):
+    from app.models import SevkiyatPlani
+
+    cevap = ihracat_verisi_yukle(istemci)
+    assert "Sipariş aktarımı" in sorgu(cevap)
+
+    onizleme = istemci.get("/ihracat/siparisler")
+    assert "VAILLANT D.O.O." in onizleme.text
+    assert "DENİZ" in onizleme.text  # Arjantin konteyner ile gider
+
+    cevap = istemci.post("/ihracat/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+    assert "araç planlandı" in sorgu(cevap)
+
+    with fabrika() as db:
+        planlar = {
+            p.musteri_adi: p
+            for p in db.query(SevkiyatPlani).filter_by(modul="IHRACAT").all()
+        }
+        hirvat = planlar["VAILLANT D.O.O."]
+        arjantin = planlar["ANSAL REFRIGERACION SA"]
+        # Sefer belge kodu müşteriden gelir: NSC -> N, Export -> E.
+        assert hirvat.sefer_no[4] == "N"
+        assert arjantin.sefer_no[4] == "E"
+        # Araç tipi taşıma modunu belirler.
+        assert hirvat.tasima_modu == "KARA"
+        assert arjantin.tasima_modu == "DENİZ"
+        assert arjantin.musteri_aciklamasi == "silika jel konulacak"
+        plan_id = arjantin.id
+
+    detay = istemci.get(f"/ihracat/planlar/{plan_id}")
+    assert "silika jel konulacak" in detay.text
+    assert "DENİZ" in detay.text
+
+    istemci.post(f"/ihracat/planlar/{plan_id}/axata", data={"axata_no": "2735"})
+    istemci.post(
+        f"/ihracat/planlar/{plan_id}/arac",
+        data={"nakliyeci": "OMSAN", "plaka": "34 ABC 12",
+              "konteyner_no": "MSCU1234567", "muhur_no": "M-9", "surucu": "Ali"},
+    )
+    assert istemci.get(f"/ihracat/planlar/{plan_id}/form").status_code == 200
+    assert istemci.get("/ihracat/gunluk-form?tarih=2026-09-01").status_code == 200
+
+
+def test_uc_modul_ayri_havuz_kullanir(istemci, fabrika):
+    """Ring, iç piyasa ve ihracat siparişleri birbirinin ekranında görünmez."""
+    from app.models import SiparisSatiri
+
+    ic_piyasa_verisi_yukle(istemci)
+    ihracat_verisi_yukle(istemci)
+
+    assert "VAILLANT D.O.O." not in istemci.get("/rota/siparisler").text
+    assert "EGE ISITMA" not in istemci.get("/ihracat/siparisler").text
+    assert "EGE ISITMA" not in istemci.get("/ring/siparisler").text
+
+    hepsi = istemci.get("/raporlama/siparisler").text
+    assert "EGE ISITMA" in hepsi and "VAILLANT D.O.O." in hepsi
+
+    with fabrika() as db:
+        assert {s.modul for s in db.query(SiparisSatiri).all()} == {"ROTA", "IHRACAT"}

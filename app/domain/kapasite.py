@@ -19,6 +19,8 @@ from decimal import Decimal
 class Olcu(str, enum.Enum):
     PALET = "PALET"
     ANAHTAR = "ANAHTAR"
+    DESI = "DESI"
+    """İhracatta araç hacmi desi ile ölçülür; ağırlık ayrı bir sınır olarak durur."""
 
 
 class AracTipi(str, enum.Enum):
@@ -42,7 +44,9 @@ class KapasiteProfili:
 
     @property
     def olcu_adi(self) -> str:
-        return "palet" if self.olcu is Olcu.PALET else "anahtar değer"
+        return {Olcu.PALET: "palet", Olcu.ANAHTAR: "anahtar değer", Olcu.DESI: "desi"}[
+            self.olcu
+        ]
 
     def gecerli_dolu(self, birim: Decimal) -> bool:
         return self.alt_limit <= birim <= self.ust_limit
@@ -55,6 +59,8 @@ class KapasiteProfili:
     def bicimle(self, birim: Decimal) -> str:
         if self.olcu is Olcu.PALET:
             return f"{Decimal(birim).quantize(Decimal(1))} palet"
+        if self.olcu is Olcu.DESI:
+            return f"{Decimal(birim).quantize(Decimal(1)):,} desi".replace(",", ".")
         return f"{Decimal(birim).quantize(Decimal('0.001'))} anahtar"
 
 
@@ -134,9 +140,39 @@ IC_KARGO = KapasiteProfili(
 )
 """Kargoda araç kapasitesi yoktur; profil yalnızca belge kodu ve raporlama içindir."""
 
+# ------------------------------------------------------------------- ihracat
+#
+# İhracatta araç tek noktaya gider ve hacim **desi** ile ölçülür; ağırlık ayrı bir
+# sınırdır (bkz. app/domain/ihracat.py AGIRLIK_KAPASITELERI). Kapasiteler 2025
+# sevklerinin yüzdeliklerinden alındı: tır desi p90 ≈ 21.600, konteyner p90 ≈ 15.250.
+# Sefer belge kodu müşteriye göre N ya da E olduğu için profilde sabit tutulmaz.
+
+IHRACAT_TIR = KapasiteProfili(
+    kod="IHRACAT_TIR",
+    ad="İhracat — tır",
+    belge_kodu="E",
+    olcu=Olcu.DESI,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal(22000),
+    alt_limit=Decimal(17000),
+)
+
+IHRACAT_KONTEYNER = KapasiteProfili(
+    kod="IHRACAT_KONTEYNER",
+    ad="İhracat — konteyner (1x40)",
+    belge_kodu="E",
+    olcu=Olcu.DESI,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal(15500),
+    alt_limit=Decimal(12000),
+)
+
 PROFILLER = {
     profil.kod: profil
-    for profil in (RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO)
+    for profil in (
+        RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO,
+        IHRACAT_TIR, IHRACAT_KONTEYNER,
+    )
 }
 
 

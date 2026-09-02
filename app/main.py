@@ -5,6 +5,8 @@ Yapı:
   * `/`                                   — modül seçim ekranı
   * `/ring/...`                           — Ring Planlama modülü
   * `/rota/...`                           — İç Piyasa Sevkiyat Planlama modülü
+  * `/ihracat/...`                        — İhracat Planlama modülü
+  * `/raporlama/...`                      — Modüller arası raporlama ve KPI
   * `/urunler`                            — Master Data (modüllerin ortak verisi)
   * `/veri-yonetimi`, `/yonetim/...`      — sistem yönetimi
 
@@ -43,6 +45,7 @@ from app.guvenlik import PAROLA_KURALLARI, ParolaHatasi
 from app.domain.bolgeler import VARSAYILAN_BOLGELER
 from app.domain.ic_piyasa import SevkiyatTipi
 from app.models import (
+    IhracatMusterisi,
     Kullanici,
     Musteri,
     PlanDurumu,
@@ -57,6 +60,8 @@ from app.services import (
     ic_piyasa_servisi,
     ic_yukleme_formu,
     ice_aktarim,
+    ihracat_servisi,
+    ihracat_yukleme_formu,
     kullanici_servisi,
     plan_servisi,
     rapor_servisi,
@@ -1031,6 +1036,400 @@ def rota_musteri_guncelle(
     return yonlendir(
         "/rota/musteriler", mesaj=f"{musteri.bayi_adi} güncellendi."
     )
+
+
+# ------------------------------------------------------------- İhracat Planlama modülü
+def _ihracat_plan_getir(db: Session, plan_id: int) -> SevkiyatPlani:
+    plan = plan_getir(db, plan_id)
+    if not plan.ihracat_mi:
+        raise HTTPException(404, "Bu plan ihracat modülüne ait değil.")
+    return plan
+
+
+def _ihracat_bekleyen_satirlar(db: Session) -> list[SiparisSatiri]:
+    return list(
+        db.scalars(
+            select(SiparisSatiri).where(
+                SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
+                SiparisSatiri.plan_id.is_(None),
+                SiparisSatiri.modul == "IHRACAT",
+            )
+        ).all()
+    )
+
+
+@uygulama.get("/ihracat")
+def ihracat_gosterge(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "ihracat_gosterge.html",
+        kullanici,
+        ozet=rapor_servisi.gosterge_paneli(db, modul="IHRACAT"),
+        ulke_ozeti=rapor_servisi.ihracat_ulke_ozeti(db),
+        son_planlar=rapor_servisi.planlari_getir(
+            db, PlanFiltresi(modul="IHRACAT"), limit=10
+        ),
+        musteri_sayisi=db.scalar(select(func.count(IhracatMusterisi.id))) or 0,
+        bekleyen_satir=len(_ihracat_bekleyen_satirlar(db)),
+    )
+
+
+@uygulama.get("/ihracat/siparisler")
+def ihracat_siparisler(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Beklemedeki ihracat siparişlerinin müşteri bazında araç önizlemesi."""
+    satirlar = _ihracat_bekleyen_satirlar(db)
+    hatalilar = list(
+        db.scalars(
+            select(SiparisSatiri)
+            .where(
+                SiparisSatiri.durum == SiparisDurumu.HATALI,
+                SiparisSatiri.modul == "IHRACAT",
+            )
+            .limit(200)
+        ).all()
+    )
+    return sayfa(
+        istek,
+        "ihracat_siparisler.html",
+        kullanici,
+        musteriler=ihracat_servisi.musteri_onizlemesi(db, satirlar),
+        satir_sayisi=len(satirlar),
+        hatalilar=hatalilar,
+    )
+
+
+@uygulama.post("/ihracat/siparisler/yukle")
+async def ihracat_siparisleri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.ihracat_siparislerini_aktar(
+            db, dosya.file, dosya.filename or "ihracat.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/siparisler", hata=str(hata))
+    return yonlendir("/ihracat/siparisler", mesaj=f"Sipariş aktarımı: {sonuc.ozet()}")
+
+
+@uygulama.get("/ihracat/siparisler/sablon")
+def ihracat_siparis_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
+    hedef = sablonlar.ihracat_siparis_sablonu(CIKTI_DIZIN / "ihracat_siparis_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post("/ihracat/planlar/uret")
+def ihracat_planlari_uret(
+    plan_tarihi: str = Form(""),
+    kalanlari_zorla: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    tarih = (
+        datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
+    )
+    try:
+        sonuc = ihracat_servisi.plan_uret(
+            db,
+            plan_tarihi=tarih,
+            kullanici=kullanici.kullanici_adi,
+            kalanlari_zorla=kalanlari_zorla,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/planlar", hata=str(hata))
+    if not sonuc.planlar:
+        return yonlendir("/ihracat/planlar", hata=f"Plan üretilemedi. {sonuc.ozet()}")
+    return yonlendir("/ihracat/planlar", mesaj=sonuc.ozet())
+
+
+@uygulama.get("/ihracat/planlar")
+def ihracat_planlar(
+    istek: Request,
+    durum: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    filtre = PlanFiltresi(durum=durum or None, arama=arama or None, modul="IHRACAT")
+    return sayfa(
+        istek,
+        "ihracat_planlar.html",
+        kullanici,
+        planlar=rapor_servisi.planlari_getir(db, filtre),
+        durum=durum,
+        arama=arama,
+        durumlar=[d.value for d in PlanDurumu],
+    )
+
+
+@uygulama.get("/ihracat/planlar/{plan_id}")
+def ihracat_plan_detay(
+    istek: Request,
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek, "ihracat_plan_detay.html", kullanici, plan=_ihracat_plan_getir(db, plan_id)
+    )
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/axata")
+def ihracat_axata_kaydet(
+    plan_id: int,
+    axata_no: str = Form(...),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        plan_servisi.axata_no_gir(
+            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/ihracat/planlar/{plan_id}", mesaj=f"Axata numaraları: {plan.axata_ozeti}"
+    )
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/axata/{axata_id}/sil")
+def ihracat_axata_sil(
+    plan_id: int,
+    axata_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        plan_servisi.axata_no_sil(db, plan, axata_id, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/ihracat/planlar/{plan_id}", mesaj="Axata numarası silindi.")
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/arac")
+def ihracat_arac_kaydet(
+    plan_id: int,
+    nakliyeci: str = Form(""),
+    plaka: str = Form(""),
+    konteyner_no: str = Form(""),
+    muhur_no: str = Form(""),
+    surucu: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        ihracat_servisi.arac_bilgisi_kaydet(
+            db, plan, nakliyeci, plaka, konteyner_no, muhur_no, surucu,
+            kullanici.kullanici_adi,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/ihracat/planlar/{plan_id}", mesaj="Araç bilgisi kaydedildi.")
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/mail")
+def ihracat_mail_gonder(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        plan_servisi.mail_gonderildi_isaretle(db, plan, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/ihracat/planlar/{plan_id}",
+        mesaj="Yükleme formu hazırlandı ve plan 'gönderildi' olarak işaretlendi.",
+    )
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/tamamla")
+def ihracat_plani_tamamla(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        plan_servisi.plan_tamamla(db, plan, kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(f"/ihracat/planlar/{plan_id}", mesaj=f"{plan.sefer_no} tamamlandı.")
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/iptal")
+def ihracat_plani_iptal(
+    plan_id: int,
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        plan_servisi.plan_iptal(
+            db, plan, aciklama or "Açıklama girilmedi", kullanici.kullanici_adi
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
+    return yonlendir(
+        f"/ihracat/planlar/{plan_id}",
+        mesaj=f"{plan.sefer_no} iptal edildi, siparişler beklemeye alındı.",
+    )
+
+
+@uygulama.get("/ihracat/planlar/{plan_id}/form")
+def ihracat_form_indir(
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = ihracat_yukleme_formu.form_uret(_ihracat_plan_getir(db, plan_id))
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/ihracat/gunluk-form")
+def ihracat_gunluk_form(
+    tarih: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    gun = datetime.strptime(tarih, "%Y-%m-%d").date() if tarih else date.today()
+    planlar_listesi = rapor_servisi.planlari_getir(
+        db, PlanFiltresi(modul="IHRACAT", baslangic=gun, bitis=gun), limit=500
+    )
+    if not planlar_listesi:
+        return yonlendir(
+            "/ihracat/planlar", hata=f"{gun:%d.%m.%Y} için ihracat planı bulunamadı."
+        )
+    hedef = ihracat_yukleme_formu.gunluk_form(planlar_listesi)
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/ihracat/plan-excel")
+def ihracat_plan_excel(
+    durum: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    planlar_listesi = rapor_servisi.planlari_getir(
+        db,
+        PlanFiltresi(durum=durum or None, arama=arama or None, modul="IHRACAT"),
+        limit=5000,
+    )
+    hedef = ihracat_yukleme_formu.plan_listesi_disa_aktar(
+        planlar_listesi, CIKTI_DIZIN / "ihracat_planlari.xlsx"
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+# ---------------------------------------------------- ihracat müşteri master datası
+@uygulama.get("/ihracat/musteriler")
+def ihracat_musteriler(
+    istek: Request,
+    arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    sorgu = select(IhracatMusterisi).order_by(
+        IhracatMusterisi.ulke, IhracatMusterisi.musteri_adi
+    )
+    if arama:
+        desen = f"%{arama.strip()}%"
+        sorgu = sorgu.where(
+            IhracatMusterisi.musteri_adi.ilike(desen)
+            | IhracatMusterisi.ulke.ilike(desen)
+            | IhracatMusterisi.ulke_kodu.ilike(desen)
+        )
+    return sayfa(
+        istek,
+        "ihracat_musteriler.html",
+        kullanici,
+        musteriler=db.scalars(sorgu.limit(500)).all(),
+        arama=arama,
+        toplam=db.scalar(select(func.count(IhracatMusterisi.id))) or 0,
+    )
+
+
+@uygulama.post("/ihracat/musteriler/yukle")
+async def ihracat_musterileri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.ihracat_musterilerini_aktar(
+            db, dosya.file, dosya.filename or "musteriler.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/musteriler", hata=str(hata))
+    return yonlendir("/ihracat/musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
+
+
+@uygulama.get("/ihracat/musteriler/sablon")
+def ihracat_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
+    hedef = sablonlar.ihracat_musteri_sablonu(CIKTI_DIZIN / "ihracat_musteri_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post("/ihracat/musteriler/{musteri_id}")
+def ihracat_musteri_guncelle(
+    musteri_id: int,
+    arac_tipi: str = Form("TIR"),
+    sefer_kodu: str = Form("E"),
+    yukleme_tipi: str = Form(""),
+    azami_agirlik: str = Form(""),
+    aciklama: str = Form(""),
+    aktif: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.domain.ihracat import arac_tipi_coz
+
+    musteri = db.get(IhracatMusterisi, musteri_id)
+    if musteri is None:
+        raise HTTPException(404, "Müşteri bulunamadı")
+    musteri.arac_tipi = arac_tipi_coz(arac_tipi).value
+    musteri.sefer_kodu = "N" if sefer_kodu.upper().startswith("N") else "E"
+    musteri.yukleme_tipi = yukleme_tipi.strip() or None
+    rakamlar = "".join(k for k in azami_agirlik if k.isdigit())
+    musteri.azami_agirlik = Decimal(rakamlar) if rakamlar else None
+    musteri.aciklama = aciklama.strip() or None
+    musteri.aktif = aktif
+    db.commit()
+    return yonlendir("/ihracat/musteriler", mesaj=f"{musteri.musteri_adi} güncellendi.")
 
 
 # --------------------------------------------------------------- Raporlama modülü

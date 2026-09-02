@@ -1,0 +1,167 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'IHRACAT' %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>{{ plan.sefer_no }}
+  <span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span>
+  <span class="rozet PLANLANDI">{{ plan.arac_tipi }}</span>
+  <span class="rozet TASLAK">{{ plan.tasima_modu }}</span>
+  {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ALT LİMİT ESNETİLDİ</span>{% endif %}
+</h1>
+
+{% if plan.istisna_asim %}
+<div class="uyari hata">
+  Bu plan üst limit istisnasıdır: tek teslimat aracı aştığı için bölünemedi.
+</div>
+{% endif %}
+{% if plan.musteri_aciklamasi %}
+<div class="uyari hata">
+  <b>Yükleme notu:</b> {{ plan.musteri_aciklamasi }}
+</div>
+{% endif %}
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Müşteri</div>
+    <div class="deger" style="font-size:17px">{{ plan.musteri_adi }}</div>
+    <div class="soluk">{{ plan.ulke }}{% if plan.ulke_kodu %} · {{ plan.ulke_kodu }}{% endif %}</div></div>
+  <div class="metrik"><div class="etiket">Doluluk</div>
+    <div class="deger">%{{ plan.doluluk_yuzdesi }}</div>
+    <div class="soluk">{{ plan.kisitlayan_olcu or '' }} sınırı doldurdu</div></div>
+  <div class="metrik"><div class="etiket">Hacim</div>
+    <div class="deger" style="font-size:21px">{{ plan.toplam_desi | sayi }}</div>
+    <div class="soluk">desi · üst sınır {{ plan.profil.ust_limit | sayi }}</div></div>
+  <div class="metrik"><div class="etiket">Ağırlık</div>
+    <div class="deger" style="font-size:21px">{{ plan.toplam_agirlik | sayi }}</div>
+    <div class="soluk">kg · azami {{ plan.azami_agirlik | sayi }}</div></div>
+  <div class="metrik"><div class="etiket">Araç / taşıma</div>
+    <div class="deger" style="font-size:19px">{{ plan.arac_tipi }}</div>
+    <div class="soluk">{{ plan.tasima_modu }}
+      {% if plan.yukleme_tipi %}· {{ plan.yukleme_tipi }}{% endif %}</div></div>
+  <div class="metrik"><div class="etiket">Adet / teslimat</div>
+    <div class="deger" style="font-size:21px">{{ plan.toplam_adet | sayi }}</div>
+    <div class="soluk">{{ plan.teslimat_sayisi }} teslimat</div></div>
+  <div class="metrik"><div class="etiket">Marka payı (navlun)</div>
+    <div class="deger" style="font-size:17px">{{ plan.marka_ozeti or '—' }}</div></div>
+  <div class="metrik"><div class="etiket">Axata iş emri</div>
+    <div class="deger" style="font-size:19px">{{ plan.axata_ozeti or '—' }}</div></div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Axata iş emri numaraları</h2>
+    {% if plan.axata_numaralari %}
+    <table style="margin-bottom:12px">
+      <thead><tr><th>Numara</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr></thead>
+      <tbody>
+      {% for axata in plan.axata_numaralari %}
+        <tr>
+          <td><b>{{ axata.numara }}</b></td>
+          <td>{{ axata.aciklama or '—' }}</td>
+          <td class="soluk">{{ axata.kullanici }} · {{ axata.olusturma_tarihi | zaman }}</td>
+          <td><form method="post"
+                    action="/ihracat/planlar/{{ plan.id }}/axata/{{ axata.id }}/sil">
+            <button type="submit" class="ikincil"
+                    onclick="return confirm('{{ axata.numara }} silinecek. Onaylıyor musunuz?')">
+              Sil</button></form></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <form class="satir" method="post" action="/ihracat/planlar/{{ plan.id }}/axata">
+      <div><label for="axata_no">Axata No</label>
+        <input id="axata_no" name="axata_no" placeholder="2735 veya 2735, 2736" required></div>
+      <div><label for="aciklama">Açıklama (opsiyonel)</label>
+        <input id="aciklama" name="aciklama" style="width:180px"></div>
+      <button type="submit">Ekle</button>
+    </form>
+  </div>
+
+  <div class="kart">
+    <h2>Araç bilgileri</h2>
+    <p class="soluk">Yükleme formunun araç bloğuna yazılır.</p>
+    <form method="post" action="/ihracat/planlar/{{ plan.id }}/arac">
+      <div class="satir">
+        <div><label for="nakliyeci">Araç tedarik</label>
+          <input id="nakliyeci" name="nakliyeci" value="{{ plan.nakliyeci or '' }}"></div>
+        <div><label for="plaka">Çekicinin plakası</label>
+          <input id="plaka" name="plaka" value="{{ plan.plaka or '' }}" style="width:140px"></div>
+      </div>
+      <div class="satir">
+        <div><label for="konteyner_no">Dorse / konteyner no</label>
+          <input id="konteyner_no" name="konteyner_no" value="{{ plan.konteyner_no or '' }}"></div>
+        <div><label for="muhur_no">Mühür no</label>
+          <input id="muhur_no" name="muhur_no" value="{{ plan.muhur_no or '' }}" style="width:120px"></div>
+      </div>
+      <div class="satir">
+        <div><label for="surucu">Şoför</label>
+          <input id="surucu" name="surucu" value="{{ plan.surucu or '' }}"></div>
+        <button type="submit">Kaydet</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="kart">
+  <h2>İşlemler</h2>
+  <div class="satir">
+    <a class="dugme ikincil" href="/ihracat/planlar/{{ plan.id }}/form">Yükleme formunu indir</a>
+    <form method="post" action="/ihracat/planlar/{{ plan.id }}/mail">
+      <button type="submit">Depoya gönder</button></form>
+    <form method="post" action="/ihracat/planlar/{{ plan.id }}/tamamla">
+      <button type="submit" class="ikincil">Tamamlandı işaretle</button></form>
+  </div>
+  <form class="satir" method="post" action="/ihracat/planlar/{{ plan.id }}/iptal" style="margin-top:14px">
+    <div><label for="iptal_aciklamasi">İptal açıklaması</label>
+      <input id="iptal_aciklamasi" name="aciklama" style="width:260px"></div>
+    <button type="submit" class="tehlike"
+            onclick="return confirm('Plan iptal edilecek, siparişler beklemeye dönecek. Onaylıyor musunuz?')">
+      Planı iptal et</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>Plan içeriği</h2>
+  <table>
+    <thead><tr>
+      <th>Teslimat</th><th>Sipariş</th><th>Depo</th><th>Ülke</th><th>Ürün Kodu</th>
+      <th>Ürün Adı</th><th class="sag">Adet</th><th class="sag">Desi</th>
+      <th class="sag">KG</th><th>Sevk Adresi</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in plan.satirlar|sort(attribute='teslimat_no') %}
+      <tr>
+        <td><b>{{ satir.teslimat_no }}</b></td>
+        <td>{{ satir.siparis_no }}</td>
+        <td>{{ satir.depo_kodu }}</td>
+        <td>{{ satir.ulke_kodu or satir.sehir or '' }}</td>
+        <td>{{ satir.urun_kodu }}</td>
+        <td>{{ satir.gosterilecek_urun_adi }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
+        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.agirlik | sayi }}</td>
+        <td>{{ satir.sevk_adresi or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart">
+  <h2>Plan geçmişi</h2>
+  <table>
+    <thead><tr><th>Tarih</th><th>Önceki</th><th>Yeni</th><th>Açıklama</th><th>Kullanıcı</th></tr></thead>
+    <tbody>
+    {% for hareket in plan.hareketler|sort(attribute='id') %}
+      <tr>
+        <td>{{ hareket.tarih | zaman }}</td>
+        <td>{{ hareket.onceki_durum or '—' }}</td>
+        <td><span class="rozet {{ hareket.yeni_durum }}">{{ hareket.yeni_durum }}</span></td>
+        <td>{{ hareket.aciklama or '' }}</td>
+        <td>{{ hareket.kullanici }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

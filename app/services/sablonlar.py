@@ -12,6 +12,8 @@ from openpyxl.styles import Alignment, Font
 from app.services.excel import sayfa_yaz, yeni_kitap
 from app.services.veri_formatlari import (
     Alan,
+    IHRACAT_MUSTERI_ALANLARI,
+    IHRACAT_SIPARIS_ALANLARI,
     MUSTERI_ALANLARI,
     SIPARIS_ALANLARI,
     URUN_ALANLARI,
@@ -76,5 +78,25 @@ def musteri_sablonu(hedef: Path) -> Path:
         MUSTERI_ALANLARI,
         "Müşteriler",
         "İç Piyasa Müşteri Master Data Şablonu — her satır bir bayi/müşteridir.",
+        hedef,
+    )
+
+
+def ihracat_siparis_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        IHRACAT_SIPARIS_ALANLARI,
+        "İhracat Siparişleri",
+        "İhracat Sipariş Aktarım Şablonu — her satır bir sipariş kalemidir. "
+        "Desi ve KG satır bazında verilir; araç kapasitesi bunlarla ölçülür.",
+        hedef,
+    )
+
+
+def ihracat_musteri_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        IHRACAT_MUSTERI_ALANLARI,
+        "İhracat Müşterileri",
+        "İhracat Müşteri Master Data Şablonu — araç tipi taşıma modunu, sefer kodu "
+        "belge harfini (N/E) belirler.",
         hedef,
     )

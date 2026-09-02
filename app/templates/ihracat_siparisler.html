@@ -1,0 +1,94 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'IHRACAT' %}
+{% set aktif_menu = 'siparisler' %}
+{% block icerik %}
+<h1>İhracat Siparişleri</h1>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Sipariş dosyası yükle</h2>
+    <p class="soluk">
+      İhracat siparişleri kendi havuzuna girer; Ring ve iç piyasa ekranlarında
+      görünmez. <b>Desi ve KG satır bazında dosyadan okunur</b> — ihracat SKU'ları
+      ürün master datasında bulunmadığı için ölçü oradan alınamaz.
+    </p>
+    <form class="satir" method="post" action="/ihracat/siparisler/yukle"
+          enctype="multipart/form-data">
+      <input type="file" name="dosya" accept=".xlsx,.xlsm" required>
+      <button type="submit">Yükle</button>
+      <a class="dugme ikincil" href="/ihracat/siparisler/sablon">Şablonu indir</a>
+    </form>
+  </div>
+  <div class="kart">
+    <h2>Bu ekran ne gösteriyor</h2>
+    <p class="soluk">
+      Beklemedeki <b>{{ satir_sayisi }}</b> sipariş satırı müşteri bazında toplandı.
+      Her müşteri için araç tipi, taşıma modu, sefer belge kodu ve kaç araç
+      gerekeceği hesaplandı.
+    </p>
+    <p class="soluk">
+      <b>Kısıtlayan</b> sütunu aracı hangi sınırın doldurduğunu söyler: hacim (desi)
+      ya da ağırlık. Master datada bulunmayan müşteriler işaretlenir ve tır varsayılır —
+      araç tipini <a href="/ihracat/musteriler">Müşteriler</a> ekranından düzeltin.
+    </p>
+  </div>
+</div>
+
+<div class="kart">
+  {% if musteriler %}
+  <table>
+    <thead><tr>
+      <th>Müşteri</th><th>Ülke</th><th>Araç</th><th>Taşıma</th><th>Sefer</th>
+      <th>Yükleme tipi</th><th class="sag">Desi</th><th class="sag">Ağırlık</th>
+      <th class="sag">Adet</th><th class="sag">Araç</th><th>Doluluk</th>
+      <th>Kısıtlayan</th><th>Not</th>
+    </tr></thead>
+    <tbody>
+    {% for m in musteriler %}
+      <tr>
+        <td><b>{{ m.musteri_adi }}</b>
+          <div class="soluk">{{ m.teslimat_sayisi }} teslimat</div>
+          {% if m.master_datada_yok %}
+            <span class="rozet HATALI">MASTER DATADA YOK</span>{% endif %}</td>
+        <td>{{ m.ulke }}{% if m.ulke_kodu %} ({{ m.ulke_kodu }}){% endif %}</td>
+        <td>{{ m.arac_tipi.value }}</td>
+        <td>{{ m.tasima_modu }}</td>
+        <td><span class="rozet PLANLANDI">{{ m.sefer_kodu }}</span></td>
+        <td>{{ m.yukleme_tipi or '—' }}</td>
+        <td class="sag">{{ m.desi | sayi }}</td>
+        <td class="sag">{{ m.agirlik | sayi }}</td>
+        <td class="sag">{{ m.adet | sayi }}</td>
+        <td class="sag">{{ m.arac_sayisi }}</td>
+        <td class="sag">%{{ m.doluluk }}</td>
+        <td>{{ m.kisitlayan }}</td>
+        <td class="soluk">{{ m.aciklama or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">Beklemede ihracat siparişi yok. Yukarıdan bir dosya yükleyin.</div>
+  {% endif %}
+</div>
+
+{% if hatalilar %}
+<div class="kart">
+  <h2>Alınamayan satırlar <span class="soluk">({{ hatalilar|length }})</span></h2>
+  <table>
+    <thead><tr><th>Sipariş</th><th>Ürün</th><th>Müşteri</th>
+      <th class="sag">Adet</th><th>Sebep</th></tr></thead>
+    <tbody>
+    {% for satir in hatalilar %}
+      <tr>
+        <td>{{ satir.siparis_no }}</td>
+        <td>{{ satir.urun_kodu }}</td>
+        <td>{{ satir.bayi_adi or '—' }}</td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
+        <td class="soluk">{{ satir.hata_aciklamasi or '—' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -400,3 +400,191 @@ def musterileri_aktar(
     _aktarim_kaydet(db, dosya_adi, "MUSTERI", sonuc, kullanici)
     db.flush()
     return sonuc
+
+
+def _tonaj(deger: Any) -> Decimal | None:
+    """'22.000 KG' / '22 000 KG' / 22000 -> Decimal(22000). Anlaşılmazsa None."""
+    ham = excel.metin(deger) or ""
+    if not ham:
+        return None
+    rakamlar = "".join(k for k in ham if k.isdigit())
+    if not rakamlar:
+        return None
+    return Decimal(rakamlar)
+
+
+def ihracat_musterilerini_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """İhracat müşteri master datasını yükler.
+
+    Araç tipi burada belirlenir ve taşıma modunu da o belirler: konteyner yüklenen
+    müşteri deniz, tır yüklenen kara yoludur. Sefer numarasının belge kodu (N/E) da
+    müşteri bazındadır.
+    """
+    from app.domain.ihracat import arac_tipi_coz
+    from app.models import IhracatMusterisi
+    from app.services.veri_formatlari import (
+        IHRACAT_MUSTERI_ALANLARI,
+        IHRACAT_MUSTERI_ALIAS,
+    )
+
+    _kontrol_et(dosya, IHRACAT_MUSTERI_ALANLARI, IHRACAT_MUSTERI_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, IHRACAT_MUSTERI_ALIAS, zorunlu_alanlar(IHRACAT_MUSTERI_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    mevcutlar = {m.anahtar: m for m in db.scalars(select(IhracatMusterisi)).all()}
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        ad = excel.metin(kayit.get("musteri_adi"))
+        anahtar = yer_adi(ad)
+        if not anahtar:
+            sonuc.hatalar.append(SatirHatasi(satir_no, "-", "Müşteri adı boş olamaz"))
+            continue
+
+        musteri = mevcutlar.get(anahtar)
+        if musteri is None:
+            musteri = IhracatMusterisi(anahtar=anahtar, musteri_adi=ad)
+            db.add(musteri)
+            mevcutlar[anahtar] = musteri
+            sonuc.eklenen += 1
+        else:
+            sonuc.guncellenen += 1
+
+        musteri.musteri_adi = ad
+        musteri.ulke = excel.metin(kayit.get("ulke")) or None
+        musteri.ulke_kodu = (excel.metin(kayit.get("ulke_kodu")) or "").upper() or None
+        musteri.sevk_adresi = excel.metin(kayit.get("sevk_adresi")) or None
+        musteri.arac_tipi = arac_tipi_coz(excel.metin(kayit.get("arac_tipi"))).value
+        kod = (excel.metin(kayit.get("sefer_kodu")) or "").upper()
+        # NSC&Core sütunu doğrudan da verilebiliyor: 'NSC' -> N, 'Export' -> E.
+        musteri.sefer_kodu = "N" if kod.startswith("N") else "E"
+        musteri.yukleme_tipi = excel.metin(kayit.get("yukleme_tipi")) or None
+        musteri.azami_agirlik = _tonaj(kayit.get("azami_agirlik"))
+        musteri.aciklama = excel.metin(kayit.get("aciklama")) or None
+        musteri.incoterms = (excel.metin(kayit.get("incoterms")) or "").upper() or None
+        musteri.tedarikci = excel.metin(kayit.get("tedarikci")) or None
+        musteri.satis_destek = excel.metin(kayit.get("satis_destek")) or None
+        musteri.aktif = excel.evet_hayir(kayit.get("aktif"), True)
+
+    _aktarim_kaydet(db, dosya_adi, "IHRACAT_MUSTERI", sonuc, kullanici)
+    db.flush()
+    return sonuc
+
+
+def ihracat_siparislerini_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """İhracat siparişlerini yükler.
+
+    İç piyasa dosyasından farkı: desi ve kg satır bazında dosyada gelir (ürün master
+    datasında ihracat SKU'ları yok), müşteri adı `bayi_adi`, ülke `sehir` alanına
+    yazılır. Satırlar IHRACAT havuzuna girer; diğer modüllerde görünmez.
+    """
+    from app.services.veri_formatlari import (
+        IHRACAT_SIPARIS_ALANLARI,
+        IHRACAT_SIPARIS_ALIAS,
+    )
+
+    _kontrol_et(dosya, IHRACAT_SIPARIS_ALANLARI, IHRACAT_SIPARIS_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, IHRACAT_SIPARIS_ALIAS, zorunlu_alanlar(IHRACAT_SIPARIS_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+    aktarim = _aktarim_kaydet(db, dosya_adi, "SIPARIS/IHRACAT", sonuc, kullanici)
+    db.flush()
+
+    parti: dict[tuple[str, str, str], SiparisSatiri] = {}
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        siparis_no = excel.metin(kayit.get("siparis_no"))
+        urun_kodu = excel.metin(kayit.get("urun_kodu"))
+        siparis_satir_no = urun_kodu
+        anahtar = f"{siparis_no or '-'}/{urun_kodu or '-'}"
+        try:
+            if not siparis_no:
+                raise ExcelHatasi("Sipariş No boş olamaz")
+            if not urun_kodu:
+                raise ExcelHatasi("Ürün kodu boş olamaz")
+            teslimat_no = excel.metin(kayit.get("teslimat_no")) or siparis_no
+            musteri_adi = excel.metin(kayit.get("bayi_adi"))
+            if not musteri_adi:
+                raise ExcelHatasi("Müşteri adı boş olamaz")
+            miktar = excel.sayi(kayit.get("miktar"), "Adet")
+            if miktar <= 0:
+                raise ExcelHatasi("Adet sıfırdan büyük olmalı")
+            desi = excel.sayi(kayit.get("desi"), "Desi")
+            if desi <= 0:
+                raise ExcelHatasi(
+                    "Desi sıfırdan büyük olmalı; ihracatta araç kapasitesi desi ile ölçülür"
+                )
+            depo_kodu = excel.metin(kayit.get("depo_kodu"))
+            if not depo_kodu:
+                raise ExcelHatasi("Depo kodu boş olamaz")
+        except ExcelHatasi as hata:
+            sonuc.hatalar.append(SatirHatasi(satir_no, anahtar, str(hata)))
+            continue
+
+        satir_anahtari = (siparis_no, teslimat_no, siparis_satir_no)
+        if satir_anahtari in parti:
+            onceki = parti[satir_anahtari]
+            onceki.miktar = Decimal(onceki.miktar) + miktar
+            onceki.desi = Decimal(onceki.desi or 0) + desi
+            onceki.agirlik = Decimal(onceki.agirlik or 0) + (
+                excel.sayi_ya_da(kayit.get("agirlik")) or Decimal(0)
+            )
+            sonuc.birlestirilen += 1
+            continue
+
+        mevcut = db.scalar(
+            select(SiparisSatiri).where(
+                SiparisSatiri.siparis_no == siparis_no,
+                SiparisSatiri.teslimat_no == teslimat_no,
+                SiparisSatiri.siparis_satir_no == siparis_satir_no,
+            )
+        )
+        if mevcut is not None and mevcut.durum in {
+            SiparisDurumu.PLANLANDI,
+            SiparisDurumu.TAMAMLANDI,
+        }:
+            sonuc.atlanan += 1
+            continue
+        if mevcut is None:
+            mevcut = SiparisSatiri(
+                siparis_no=siparis_no,
+                teslimat_no=teslimat_no,
+                siparis_satir_no=siparis_satir_no,
+            )
+            db.add(mevcut)
+            sonuc.eklenen += 1
+        else:
+            sonuc.guncellenen += 1
+
+        mevcut.urun_kodu = urun_kodu
+        mevcut.urun_adi = excel.metin(kayit.get("urun_adi"))
+        mevcut.miktar = miktar
+        mevcut.depo_kodu = depo_kodu.strip().upper()
+        mevcut.bayi_adi = musteri_adi
+        mevcut.sehir = excel.metin(kayit.get("sehir"))
+        mevcut.ulke_kodu = (excel.metin(kayit.get("ulke_kodu")) or "").upper() or None
+        mevcut.sevk_adresi = excel.metin(kayit.get("sevk_adresi"))
+        mevcut.desi = desi
+        mevcut.agirlik = excel.sayi_ya_da(kayit.get("agirlik"))
+        mevcut.teslim_sekli = excel.metin(kayit.get("teslim_sekli"))
+        mevcut.incoterms = (mevcut.teslim_sekli or "").upper() or None
+        mevcut.siparis_tarihi = excel.tarih(kayit.get("siparis_tarihi"))
+        mevcut.termin_tarihi = excel.tarih(kayit.get("termin_tarihi"))
+        mevcut.durum = SiparisDurumu.BEKLEMEDE
+        mevcut.hata_aciklamasi = None
+        mevcut.modul = "IHRACAT"
+        mevcut.ice_aktarim_id = aktarim.id
+        parti[satir_anahtari] = mevcut
+
+    db.flush()
+    aktarim.basarili_satir = sonuc.basarili
+    aktarim.hatali_satir = sonuc.hatali
+    aktarim.hata_ozeti = _hata_ozeti(sonuc)
+    db.flush()
+    return sonuc

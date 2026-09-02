@@ -39,7 +39,7 @@
     {% for plan in planlar %}
       <tr>
         <td>{{ modul_adlari.get(plan.modul, plan.modul) }}</td>
-        <td><a href="{{ '/rota/planlar/' if plan.ic_piyasa_mi else '/ring/planlar/' }}{{ plan.id }}">
+        <td><a href="{{ plan.modul_yolu }}/{{ plan.id }}">
           <b>{{ plan.sefer_no }}</b></a></td>
         <td>{{ plan.plan_tarihi | tarih }}</td>
         <td>{{ plan.sevkiyat_tipi_adi }}</td>

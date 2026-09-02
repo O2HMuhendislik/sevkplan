@@ -30,6 +30,11 @@
       <a href="/rota/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
       <a href="/rota/musteriler" class="{{ 'aktif' if aktif_menu == 'musteriler' }}">Müşteriler</a>
       <a href="/rota/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
+    {% elif aktif_modul == 'IHRACAT' %}
+      <a href="/ihracat" class="{{ 'aktif' if aktif_menu == 'gosterge' }}">Gösterge Paneli</a>
+      <a href="/ihracat/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Siparişler</a>
+      <a href="/ihracat/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
+      <a href="/ihracat/musteriler" class="{{ 'aktif' if aktif_menu == 'musteriler' }}">Müşteriler</a>
     {% elif aktif_modul == 'RAPORLAMA' %}
       <a href="/raporlama" class="{{ 'aktif' if aktif_menu == 'ozet' }}">Özet ve KPI</a>
       <a href="/raporlama/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Tüm Siparişler</a>

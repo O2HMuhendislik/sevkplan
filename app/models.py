@@ -258,6 +258,60 @@ class Musteri(Temel):
         return bolge_adi(self.etkin_bolge_kodu)
 
 
+class IhracatMusterisi(Temel):
+    """İhracat müşteri master datası.
+
+    Araç tipi müşteriye bağlıdır ve taşıma modunu belirler: konteyner yüklenen müşteri
+    deniz, tır yüklenen kara yoludur. Sefer numarasının belge kodu da müşteriden gelir
+    (`N` = NSC, `E` = Export).
+    """
+
+    __tablename__ = "ihracat_musterileri"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anahtar: Mapped[str] = mapped_column(String(250), unique=True, index=True)
+    """Müşteri adının normalize hâli; eşleştirme bununla yapılır."""
+    musteri_adi: Mapped[str] = mapped_column(String(250), index=True)
+    ulke: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+    ulke_kodu: Mapped[str | None] = mapped_column(String(10), index=True, default=None)
+    sevk_adresi: Mapped[str | None] = mapped_column(String(300), default=None)
+    arac_tipi: Mapped[str] = mapped_column(String(20), default="TIR")
+    """TIR / KONTEYNER / PARSİYEL / KARGO."""
+    sefer_kodu: Mapped[str] = mapped_column(String(1), default="E")
+    yukleme_tipi: Mapped[str | None] = mapped_column(String(60), default=None)
+    """STANDART / PALET YÜKSELTME / DÖKME / KÖŞEBENT ... yükleme formuna yazılır."""
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    """Müşteriye özel yükleme notu: hava yastığı, silika jel, paletsiz dökme ..."""
+    azami_agirlik: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
+    """Azami tonaj (kg). Boşsa araç tipinin varsayılanı kullanılır."""
+    incoterms: Mapped[str | None] = mapped_column(String(10), default=None)
+    tedarikci: Mapped[str | None] = mapped_column(String(150), default=None)
+    satis_destek: Mapped[str | None] = mapped_column(String(150), default=None)
+    plan_sayisi: Mapped[int] = mapped_column(Integer, default=0)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    guncelleme_tarihi: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def tasima_modu(self) -> str:
+        from app.domain.ihracat import AracTipi
+
+        try:
+            return AracTipi(self.arac_tipi).tasima_modu
+        except ValueError:
+            return "KARA"
+
+    @property
+    def arac_tipi_adi(self) -> str:
+        from app.domain.ihracat import AracTipi
+
+        try:
+            return AracTipi(self.arac_tipi).ad
+        except ValueError:
+            return self.arac_tipi
+
+
 class SevkiyatPlani(Temel):
     __tablename__ = "sevkiyat_planlari"
 
@@ -304,6 +358,23 @@ class SevkiyatPlani(Temel):
     """Ortak yüklemede aracın yükleneceği depo; diğer depoların malı buraya getirilir."""
     nakliyeci: Mapped[str | None] = mapped_column(String(150), default=None)
     plaka: Mapped[str | None] = mapped_column(String(30), default=None)
+
+    # ------------------------------------------------------------------ ihracat
+    musteri_adi: Mapped[str | None] = mapped_column(String(250), index=True, default=None)
+    """İhracatta araç tek noktaya gider; planın müşterisi budur."""
+    ulke: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+    ulke_kodu: Mapped[str | None] = mapped_column(String(10), default=None)
+    arac_tipi: Mapped[str | None] = mapped_column(String(20), default=None)
+    tasima_modu: Mapped[str | None] = mapped_column(String(10), default=None)
+    """KARA / DENİZ."""
+    yukleme_tipi: Mapped[str | None] = mapped_column(String(60), default=None)
+    musteri_aciklamasi: Mapped[str | None] = mapped_column(Text, default=None)
+    """Yükleme formuna basılan müşteri notu: hava yastığı, silika jel ..."""
+    azami_agirlik: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
+    konteyner_no: Mapped[str | None] = mapped_column(String(40), default=None)
+    muhur_no: Mapped[str | None] = mapped_column(String(40), default=None)
+    kisitlayan_olcu: Mapped[str | None] = mapped_column(String(10), default=None)
+    """Aracı dolduran sınır: HACİM ya da AĞIRLIK."""
     surucu: Mapped[str | None] = mapped_column(String(150), default=None)
     surucu_telefon: Mapped[str | None] = mapped_column(String(40), default=None)
 
@@ -369,6 +440,18 @@ class SevkiyatPlani(Temel):
     @property
     def ic_piyasa_mi(self) -> bool:
         return self.modul == "ROTA"
+
+    @property
+    def ihracat_mi(self) -> bool:
+        return self.modul == "IHRACAT"
+
+    @property
+    def modul_yolu(self) -> str:
+        """Plan detay ekranının yolu — raporlama ekranı buradan bağlantı kurar."""
+        return {
+            "ROTA": "/rota/planlar",
+            "IHRACAT": "/ihracat/planlar",
+        }.get(self.modul, "/ring/planlar")
 
     @property
     def sevkiyat_tipi_adi(self) -> str:
@@ -468,6 +551,15 @@ class SiparisSatiri(Temel):
     """`Not` sütunundan ayrıştırılan teslim şekli: CIF / EXW ... EXW olanlar kargoya gider."""
     ilce: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
     """İlçe. Kaynak dosyada bazen `SevkAdresi`, bazen `Not` sütununun içinde gelir."""
+    ulke_kodu: Mapped[str | None] = mapped_column(String(10), index=True, default=None)
+    """İhracat siparişlerinde ülke kodu (HR, MD, TR ...). İç piyasada boştur.
+
+    İhracatta `bayi_adi` müşteri adını, `sehir` ülkeyi taşır.
+    """
+    desi: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), default=None)
+    agirlik: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), default=None)
+    """İhracat dosyalarında desi ve kg satır bazında geliyor; ürün master datasında
+    ihracat SKU'ları bulunmadığı için ölçü doğrudan dosyadan alınır."""
     siparis_tarihi: Mapped[date | None] = mapped_column(Date, default=None)
     termin_tarihi: Mapped[date | None] = mapped_column(Date, index=True, default=None)
     durum: Mapped[SiparisDurumu] = mapped_column(

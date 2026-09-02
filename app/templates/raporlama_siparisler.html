@@ -49,7 +49,7 @@
         <td>{{ satir.olusturma_tarihi | tarih }}</td>
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td>{% if satir.plan %}
-              <a href="{{ '/rota/planlar/' if satir.plan.ic_piyasa_mi else '/ring/planlar/' }}{{ satir.plan.id }}">
+              <a href="{{ satir.plan.modul_yolu }}/{{ satir.plan.id }}">
                 {{ satir.plan.sefer_no }}</a>
             {% else %}—{% endif %}</td>
         <td class="sag">

@@ -474,3 +474,34 @@ def tum_siparisler(
 ) -> list[SiparisSatiri]:
     """Raporlama ekranının sipariş listesi: bütün modüller, modüle göre filtrelenebilir."""
     return siparisleri_getir(db, durum, arama, limit=limit, modul=modul)
+
+
+def ihracat_ulke_ozeti(db: Session) -> list[dict]:
+    """Ülke bazında ihracat planı dağılımı ve taşıma modu."""
+    satirlar = db.execute(
+        select(
+            SevkiyatPlani.ulke,
+            SevkiyatPlani.tasima_modu,
+            func.count(SevkiyatPlani.id),
+            func.sum(SevkiyatPlani.toplam_desi),
+            func.avg(SevkiyatPlani.doluluk_yuzdesi),
+        )
+        .where(
+            SevkiyatPlani.modul == "IHRACAT",
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+        )
+        .group_by(SevkiyatPlani.ulke, SevkiyatPlani.tasima_modu)
+        .order_by(func.count(SevkiyatPlani.id).desc())
+    ).all()
+    return [
+        {
+            "ulke": ulke or "—",
+            "tasima_modu": modu or "",
+            "plan": adet,
+            "desi": Decimal(desi or 0).quantize(Decimal(1)),
+            "doluluk": (
+                Decimal(doluluk).quantize(Decimal("0.1")) if doluluk else Decimal(0)
+            ),
+        }
+        for ulke, modu, adet, desi, doluluk in satirlar
+    ]
