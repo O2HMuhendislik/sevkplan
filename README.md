@@ -176,7 +176,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Gösterge Paneli** (`/ihracat`) | Ülke ve taşıma modu dağılımı, planlamayı çalıştırma |
 | **Siparişler** | Sipariş yükleme; müşteri bazında araç tipi, taşıma modu, hesap sürümü, palet sayısı, kaç araç gerekeceği ve hangi sınırın (hacim/ağırlık) dolduracağı |
 | **Planlar** | Durum filtresi, günlük yükleme formu, Excel'e aktarma |
-| **Plan Detayı** | Hacim/ağırlık doluluğu, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
+| **Plan Detayı** | Doluluk, palet/desi/ağırlık, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
 | **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, hesap sürümü ve müşteriye özel yükleme notu |
 | **Ürünler** (`/ihracat/urunler`) | İhracat ürün master datası: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık; ölçüsü eksik ürünlerin listesi |
 
@@ -247,6 +247,24 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    bölünmezliği belirler.
 9. **Müşteriye özel yükleme notu** (hava yastığı, silika jel, paletsiz dökme) ve
    **yükleme tipi** (standart / palet yükseltme / dökme / köşebent) forma basılır.
+   Not, formun sağ alt köşesinde kendi kutusundadır. Plan üretildikten **sonra**
+   yazılan not da forma gelir: plandaki kopya boşsa müşteri master datasından okunur.
+10. **Formun desi toplamı kendi satırlarının toplamıdır.** Satırda desi varsa o
+    kullanılır; master datadaki birim desi yalnızca satırda değer yoksa devreye
+    girer. (2026'nın 8.463 satırında ikisi %54 oranında birebir aynı.)
+
+## Yükleme formları
+
+Üç modülün formu da aynı görsel kurallara uyar:
+
+* **Arka plandaki hücre kılavuz çizgileri kapalıdır** (`showGridLines`), ekranda ve
+  çıktıda yalnızca formun kendi çizgileri görünür.
+* **Her plan bloğu kalın bir çerçeve içindedir;** blok içindeki hücre çizgileri ince
+  kalır. Bir kitapta birden çok plan varsa her biri kendi çerçevesiyle ayrı sayfaya
+  basılır.
+* **Uzun metinler kendi kutusuna sarılır.** Kırmızı hasar/HİT uyarısı ile ihracat
+  formundaki müşteri notu birleştirilmiş, `wrap_text` verilmiş kutulardır; satır
+  yüksekliği metne göre ayarlanır, böylece yazı komşu hücrelerin altında kalmaz.
 
 ## Ring planlama kuralları (özet)
 

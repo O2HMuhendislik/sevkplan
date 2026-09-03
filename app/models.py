@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    select,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -550,6 +551,43 @@ class SevkiyatPlani(Temel):
         from app.domain.bolgeler import bolge_adi
 
         return bolge_adi(self.bolge_kodu) if self.bolge_kodu else ""
+
+    @property
+    def _ihracat_musterisi(self):
+        """Planın müşterisinin güncel master data kaydı (varsa)."""
+        from sqlalchemy.orm import object_session
+
+        from app.domain.iller import yer_adi
+
+        oturum = object_session(self)
+        if oturum is None or not self.musteri_adi:
+            return None
+        return oturum.scalar(
+            select(IhracatMusterisi).where(
+                IhracatMusterisi.anahtar == yer_adi(self.musteri_adi)
+            )
+        )
+
+    @property
+    def musteri_notu(self) -> str:
+        """Yükleme formuna basılacak müşteri notu.
+
+        Plan üretilirken master datadaki not plana kopyalanır. Not plandan **sonra**
+        yazıldıysa bu kopya boş kalır; o zaman müşteri master datasından okunur, aksi
+        hâlde kullanıcının yeni yazdığı açıklama forma hiç gelmez.
+        """
+        if self.musteri_aciklamasi:
+            return self.musteri_aciklamasi
+        musteri = self._ihracat_musterisi
+        return (musteri.aciklama or "") if musteri is not None else ""
+
+    @property
+    def yukleme_tipi_metni(self) -> str:
+        """Yükleme tipi; plandaki kopya boşsa müşteri master datasından okunur."""
+        if self.yukleme_tipi:
+            return self.yukleme_tipi
+        musteri = self._ihracat_musterisi
+        return (musteri.yukleme_tipi or "") if musteri is not None else ""
 
     @property
     def il_yeri_metni(self) -> str:

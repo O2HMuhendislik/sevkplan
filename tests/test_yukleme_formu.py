@@ -208,3 +208,27 @@ def test_marka_payi_depo_koduna_gore_bolunur():
         "PROTHERM": Decimal("0.2500"),
         "VAİLLANT": Decimal("0.2500"),
     }
+
+
+def test_form_cercevelenir_ve_kilavuz_cizgileri_kapalidir(db, tmp_path):
+    """Arka plandaki hücre kılavuz çizgileri formu kirletiyor; kapatılıp çerçeve çizilir."""
+    plan = _plan_hazirla(db)
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+
+    assert sayfa.sheet_view.showGridLines is False
+    assert sayfa.print_options.gridLines is False
+    # Sol üst köşe kalın çerçeveyle başlar, sağ sütun kalın çerçeveyle biter.
+    assert sayfa["A1"].border.top.style == "medium"
+    assert sayfa["A1"].border.left.style == "medium"
+    son = sayfa.cell(row=1, column=yukleme_formu.SUTUN_SAYISI)
+    assert son.border.right.style == "medium"
+
+
+def test_kirmizi_uyari_satiri_metni_sigacak_kadar_yuksek(db, tmp_path):
+    """Uyarı tek satıra sığmıyor; satır yükseltilmezse metin hücreler arasında kalır."""
+    plan = _plan_hazirla(db)
+    sayfa = load_workbook(yukleme_formu.form_uret(plan, tmp_path / "f.xlsx"))["D-RİNG"]
+
+    assert sayfa["G2"].value == yukleme_formu.UYARI_METNI
+    assert sayfa["G2"].alignment.wrap_text
+    assert sayfa.row_dimensions[2].height == yukleme_formu.UYARI_SATIR_YUKSEKLIGI

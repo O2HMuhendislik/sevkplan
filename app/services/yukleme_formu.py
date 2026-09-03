@@ -35,8 +35,12 @@ KOLON_GENISLIKLERI = {
     "A": 9.7, "B": 14.7, "C": 15.7, "D": 14.7, "E": 12.4, "F": 14.3,
     "G": 49.3, "H": 7.0, "I": 38.0, "J": 6.7, "K": 12.0, "L": 17.1,
 }
+SUTUN_SAYISI = len(BASLIKLAR)
 ASGARI_SATIR = 19
 """Form her zaman en az bu kadar satır gösterir; kalanlar numaralı boş satırdır."""
+
+UYARI_SATIR_YUKSEKLIGI = 30.0
+"""Kırmızı uyarı satırının yüksekliği; metin tek satıra sığmadığı için sarılır."""
 
 KALIN = Font(bold=True)
 KUCUK = Font(size=9)
@@ -45,6 +49,44 @@ KENAR = Border(left=INCE, right=INCE, top=INCE, bottom=INCE)
 ORTALI = Alignment(horizontal="center", vertical="center", wrap_text=True)
 SOLA = Alignment(horizontal="left", vertical="center", wrap_text=True)
 BASLIK_DOLGU = PatternFill("solid", fgColor="D9D9D9")
+
+KALIN_YAN = Side(style="medium")
+"""Formun dış çerçevesi; iç çizgiler ince kalır."""
+
+
+def kenar_ekle(hucre, **yanlar) -> None:
+    """Hücrenin mevcut kenarlığını bozmadan verilen yanları değiştirir.
+
+    Doğrudan `hucre.border = Border(...)` atamak tablo içindeki ince çizgileri
+    siler; çerçeve çizerken var olanın üzerine eklemek gerekir.
+    """
+    mevcut = hucre.border
+    hucre.border = Border(
+        left=yanlar.get("left", mevcut.left),
+        right=yanlar.get("right", mevcut.right),
+        top=yanlar.get("top", mevcut.top),
+        bottom=yanlar.get("bottom", mevcut.bottom),
+    )
+
+
+def cerceve_ciz(sayfa, ust: int, alt: int, sol: int = 1, sag: int = 12) -> None:
+    """Verilen dikdörtgenin dışına kalın çerçeve çizer.
+
+    Formun tamamı tek çerçeve içinde görünsün diye her plan bloğunun etrafına
+    uygulanır; blok içindeki hücrelerin ince kenarlıkları korunur.
+    """
+    for sutun in range(sol, sag + 1):
+        kenar_ekle(sayfa.cell(row=ust, column=sutun), top=KALIN_YAN)
+        kenar_ekle(sayfa.cell(row=alt, column=sutun), bottom=KALIN_YAN)
+    for satir in range(ust, alt + 1):
+        kenar_ekle(sayfa.cell(row=satir, column=sol), left=KALIN_YAN)
+        kenar_ekle(sayfa.cell(row=satir, column=sag), right=KALIN_YAN)
+
+
+def gridleri_gizle(sayfa) -> None:
+    """Arka plandaki hücre kılavuz çizgilerini kapatır; formun kendi çizgileri kalır."""
+    sayfa.sheet_view.showGridLines = False
+    sayfa.print_options.gridLines = False
 
 
 def depo_etiketi(depo_kodu: str) -> str | None:
@@ -95,6 +137,7 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     uyari.font = Font(bold=True, size=9, color="C00000")
     uyari.alignment = ORTALI
     sayfa.merge_cells(start_row=ust + 1, start_column=7, end_row=ust + 1, end_column=12)
+    sayfa.row_dimensions[ust + 1].height = UYARI_SATIR_YUKSEKLIGI
 
     etiket = sayfa.cell(row=ust + 2, column=2, value="SEFER NO")
     etiket.font = KALIN
@@ -227,10 +270,14 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     imza_basi = marka_satiri + 3
     for sira, etiket in enumerate(("Sevk Kontrol", "Adı Soyadı:", "İmzası:")):
         sayfa.cell(row=imza_basi + sira, column=2, value=etiket).font = KALIN
-    return imza_basi + 2
+    alt = imza_basi + 2
+    # Formun tamamı tek çerçeve içinde görünür.
+    cerceve_ciz(sayfa, ust, alt, 1, SUTUN_SAYISI)
+    return alt
 
 
 def _sayfayi_hazirla(sayfa) -> None:
+    gridleri_gizle(sayfa)
     sayfa.page_setup.orientation = "landscape"
     sayfa.page_setup.paperSize = 9  # A4
     sayfa.page_setup.fitToWidth = 1

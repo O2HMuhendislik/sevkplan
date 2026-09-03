@@ -35,7 +35,10 @@ from app.services.yukleme_formu import (
     ORTALI,
     SOLA,
     UYARI_METNI,
+    UYARI_SATIR_YUKSEKLIGI,
     _depo_satirlari,
+    cerceve_ciz,
+    gridleri_gizle,
 )
 
 SAYFA_ADLARI = {
@@ -108,6 +111,7 @@ def _ust_blok(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sayfa.merge_cells(
         start_row=ust + 1, start_column=7, end_row=ust + 1, end_column=SUTUN_SAYISI
     )
+    sayfa.row_dimensions[ust + 1].height = UYARI_SATIR_YUKSEKLIGI
 
     etiket = sayfa.cell(row=ust + 2, column=2, value="SEFER NO")
     etiket.font = KALIN
@@ -310,10 +314,14 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
 def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     baslik_satiri = _ust_blok(sayfa, plan, ust)
     veri_sonu = _satir_tablosu(sayfa, plan, baslik_satiri)
-    return _alt_blok(sayfa, plan, veri_sonu + 1)
+    alt = _alt_blok(sayfa, plan, veri_sonu + 1)
+    # Formun tamamı tek çerçeve içinde görünür.
+    cerceve_ciz(sayfa, ust, alt, 1, SUTUN_SAYISI)
+    return alt
 
 
 def _sayfayi_hazirla(sayfa) -> None:
+    gridleri_gizle(sayfa)
     sayfa.page_setup.orientation = "landscape"
     sayfa.page_setup.paperSize = 9  # A4
     sayfa.page_setup.fitToWidth = 1

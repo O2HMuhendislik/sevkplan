@@ -17,13 +17,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.pagebreak import Break
 
 from app.config import CIKTI_DIZIN
 from app.models import SevkiyatPlani
 from app.services.excel import sayfa_yaz, yeni_kitap
-from app.services.yukleme_formu import KALIN, KENAR, KUCUK, ORTALI, SOLA, BASLIK_DOLGU
+from app.services.yukleme_formu import (
+    BASLIK_DOLGU,
+    KALIN,
+    KENAR,
+    KUCUK,
+    ORTALI,
+    SOLA,
+    cerceve_ciz,
+    gridleri_gizle,
+)
 
 FORM_NO = "8101058098.02"
 """İhracat formunun doküman numarası (iç piyasa formundan farklı)."""
@@ -32,6 +41,9 @@ HASAR_UYARISI = (
     "İHRACAT YÜKLEMELERİNDE HASAR RİSKİNE KARŞI PALET YÜKSELTME VE SABİTLEME "
     "TALİMATLARINA UYULMASI GEREKMEKTEDİR"
 )
+
+ALT_BLOK_SATIR_YUKSEKLIGI = 20.0
+"""Alt bloğun satır yüksekliği; uyarı ve müşteri notu kutuları buna göre sarılır."""
 
 BASLIKLAR = [
     "NO", "DEPO", "AXATA", "ÜLKE", "SİPARİŞ NO", "ÜRÜN KODU", "ÜRÜN TANIMI",
@@ -124,33 +136,29 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
 
 
 def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
+    """Formun alt bloğu — sahadaki EXPORT sayfasının düzeniyle aynı.
+
+    Dört sütun yan yana durur: solda sevk bilgileri (etiket A:C birleşik, değer D),
+    ortada sipariş bilgileri (E / F), sağda hasar uyarısı (G:H) ve müşteri notu
+    (I:L). Uyarı ile not, bloğun tamamı boyunca uzanan birer kutudur; metin kutunun
+    içine sarılır, hücreler arasında kalmaz.
+    """
     y = ilk_satir + 1
     sayfa.cell(row=y, column=7, value="TOPLAM PARÇA ADEDİ :").font = KALIN
     sayfa.cell(row=y, column=8, value=float(plan.toplam_adet or 0)).font = KALIN
 
     y += 1
-    sol = sayfa.cell(row=y, column=1, value="SEVK BİLGİLERİ")
-    sol.font = KALIN
-    sag = sayfa.cell(row=y, column=5, value="SİPARİŞ BİLGİLERİ")
-    sag.font = KALIN
-    uyari = sayfa.cell(row=y, column=7, value=HASAR_UYARISI)
-    uyari.font = Font(bold=True, size=9, color="C00000")
-    uyari.alignment = ORTALI
-    sayfa.merge_cells(start_row=y, start_column=7, end_row=y, end_column=8)
-    if plan.musteri_aciklamasi:
-        # Müşteriye özel yükleme notu: hava yastığı, silika jel, paletsiz dökme ...
-        not_hucresi = sayfa.cell(row=y, column=9, value=plan.musteri_aciklamasi)
-        not_hucresi.font = Font(bold=True, size=9)
-        not_hucresi.alignment = SOLA
+    sayfa.cell(row=y, column=1, value="SEVK BİLGİLERİ").font = KALIN
+    sayfa.cell(row=y, column=5, value="SİPARİŞ BİLGİLERİ").font = KALIN
 
-    # Hesaplama dosyasının özet bloğuyla aynı sıra: palet, ağırlık, desi, doluluk.
+    # Hesaplama dosyasının özet bloğuyla aynı sıra: palet, desi, ağırlık, doluluk.
     sol_alanlar = [
         ("PALET SAYISI", round(float(plan.toplam_palet or 0), 2)),
         ("DESİ", float(plan.toplam_desi or 0)),
         ("AĞIRLIK (KG)", float(plan.toplam_agirlik or 0)),
         ("DOLULUK", f"%{plan.doluluk_yuzdesi or 0}"),
         ("ARAÇ TİPİ", plan.arac_tipi or ""),
-        ("YÜKLEME TİPİ", plan.yukleme_tipi or ""),
+        ("YÜKLEME TİPİ", plan.yukleme_tipi_metni),
         ("MAKSİMUM TONAJ", float(plan.azami_agirlik) if plan.azami_agirlik else ""),
         ("ARAÇ BİLGİLERİ", ""),
         ("ÇEKİCİNİN PLAKASI", plan.plaka or ""),
@@ -162,6 +170,7 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
         ("SATIŞ DESTEK", ""),
         ("ARAÇ TEDARİK", plan.nakliyeci or ""),
         ("PLANLAMA", plan.olusturan),
+        ("ŞOFÖR", plan.surucu or ""),
         ("DEPO BİLGİLERİ", ""),
         ("TOPLAYAN", ""),
         ("SEVK KONTROL", ""),
@@ -169,12 +178,13 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
     ]
     for sira, (etiket, deger) in enumerate(sol_alanlar):
         satir = y + 1 + sira
-        sayfa.cell(row=satir, column=1, value=etiket).font = KALIN
-        hucre = sayfa.cell(row=satir, column=3, value=deger)
+        baslik = sayfa.cell(row=satir, column=1, value=etiket)
+        baslik.font = KALIN
+        baslik.alignment = SOLA
+        sayfa.merge_cells(start_row=satir, start_column=1, end_row=satir, end_column=3)
+        hucre = sayfa.cell(row=satir, column=4, value=deger)
         hucre.border = KENAR
         hucre.alignment = SOLA
-        if etiket == "PLANLAMA TARİHİ":
-            hucre.number_format = "DD.MM.YYYY"
     for sira, (etiket, deger) in enumerate(sag_alanlar):
         satir = y + 1 + sira
         sayfa.cell(row=satir, column=5, value=etiket).font = KALIN
@@ -184,7 +194,24 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
         if etiket == "PLANLAMA TARİHİ":
             hucre.number_format = "DD.MM.YYYY"
 
-    alt = y + 1 + max(len(sol_alanlar), len(sag_alanlar))
+    kutu_basi = y + 1
+    kutu_sonu = y + max(len(sol_alanlar), len(sag_alanlar))
+    for satir in range(y, kutu_sonu + 1):
+        sayfa.row_dimensions[satir].height = ALT_BLOK_SATIR_YUKSEKLIGI
+
+    # Hasar uyarısı: G:H sütunlarında, bloğun tamamı boyunca uzanan tek kutu.
+    _metin_kutusu(
+        sayfa, HASAR_UYARISI, kutu_basi, kutu_sonu, 7, 8,
+        Font(bold=True, size=10, color="C00000"),
+    )
+    # Müşteriye özel yükleme notu: hava yastığı, silika jel, paletsiz dökme ...
+    _metin_kutusu(
+        sayfa, plan.musteri_notu, kutu_basi, kutu_sonu, 9, SUTUN_SAYISI,
+        Font(bold=True, size=11),
+        baslik="MÜŞTERİ NOTU",
+    )
+
+    alt = kutu_sonu + 1
     if plan.marka_paylari:
         sayfa.cell(row=alt, column=5, value="FATURA YÜZDESİ").font = KALIN
         for sira, (ad, oran) in enumerate(plan.marka_paylari.items()):
@@ -193,16 +220,42 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
             yuzde.number_format = "0%"
             yuzde.font = KALIN
         alt += len(plan.marka_paylari)
-    return alt + 2
+    return alt
+
+
+def _metin_kutusu(
+    sayfa, metin: str, ust: int, alt: int, sol: int, sag: int, yazi, baslik: str = ""
+) -> None:
+    """Uzun metni birleşik bir kutuya sarar.
+
+    Metin tek hücreye yazılırsa komşu hücreler onu keser; birleştirip `wrap_text`
+    vermek metnin kutunun içinde kalmasını sağlar.
+    """
+    # Not boş olsa da kutu başlığıyla birlikte durur: depo elle not yazabilsin.
+    if baslik:
+        metin = f"{baslik}\n{metin}" if metin else baslik
+    hucre = sayfa.cell(row=ust, column=sol, value=metin or None)
+    hucre.font = yazi
+    hucre.alignment = Alignment(
+        horizontal="center", vertical="center", wrap_text=True
+    )
+    sayfa.merge_cells(start_row=ust, start_column=sol, end_row=alt, end_column=sag)
+    for satir in range(ust, alt + 1):
+        for sutun in range(sol, sag + 1):
+            sayfa.cell(row=satir, column=sutun).border = KENAR
 
 
 def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     baslik_satiri = _ust_blok(sayfa, plan, ust) + 1
     veri_sonu = _satir_tablosu(sayfa, plan, baslik_satiri)
-    return _alt_blok(sayfa, plan, veri_sonu)
+    alt = _alt_blok(sayfa, plan, veri_sonu)
+    # Formun tamamı tek çerçeve içinde: üst blok, satır tablosu ve alt blok.
+    cerceve_ciz(sayfa, ust, alt, 1, SUTUN_SAYISI)
+    return alt
 
 
 def _sayfayi_hazirla(sayfa) -> None:
+    gridleri_gizle(sayfa)
     sayfa.page_setup.orientation = "landscape"
     sayfa.page_setup.paperSize = 9  # A4
     sayfa.page_setup.fitToWidth = 1

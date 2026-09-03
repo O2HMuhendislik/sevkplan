@@ -226,12 +226,25 @@ def hesapla(
 
 
 def _kalem_desisi(kalem: Kalem) -> Decimal:
+    """Kalemin desisi. **Sipariş satırındaki değer master datanın önüne geçer.**
+
+    Yükleme formu desi toplamını kendi satırlarının toplamı olarak yazar
+    (`=SUM(L5:L23)`); satırda dosyadan gelen desi görünürken toplamda master data
+    desisi kullanılırsa formun kendi içinde tutarsız olur. 2026'nın 8.463 satırında
+    ikisi %54 oranında birebir aynı; ayrıldıklarında dosyadaki değer gerçekleşen
+    sevkin ölçüsüdür. Master data yalnızca satırda desi yoksa kullanılır.
+    """
+    if kalem.desi:
+        return Decimal(kalem.desi)
     if kalem.olcu is not None and kalem.olcu.desi:
         return Decimal(kalem.olcu.desi) * Decimal(kalem.miktar)
-    return Decimal(kalem.desi or 0)
+    return Decimal(0)
 
 
 def _kalem_agirligi(kalem: Kalem) -> Decimal:
+    """Kalemin ağırlığı; desi gibi satırdaki değer önce gelir."""
+    if kalem.agirlik:
+        return Decimal(kalem.agirlik)
     if kalem.olcu is not None and kalem.olcu.agirlik:
         return Decimal(kalem.olcu.agirlik) * Decimal(kalem.miktar)
-    return Decimal(kalem.agirlik or 0)
+    return Decimal(0)

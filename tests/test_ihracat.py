@@ -293,14 +293,20 @@ def test_ihracat_formu_musteri_notunu_ve_arac_bloklarini_yazar(ihracat_veri, tmp
     hedef = ihracat_yukleme_formu.form_uret(plan, tmp_path / "form.xlsx")
     sayfa = load_workbook(hedef)["EXPORT"]
     metinler = [h.value for satir in sayfa.iter_rows() for h in satir if h.value]
+    tum_metin = "\n".join(str(m) for m in metinler)
 
     assert plan.sefer_no in metinler
-    assert "hava yastığı kullanılacak" in metinler
+    # Müşteri notu kendi kutusunda, başlığıyla birlikte.
+    assert "MÜŞTERİ NOTU" in tum_metin
+    assert "hava yastığı kullanılacak" in tum_metin
     assert "DORSE/KONTEYNER NO" in metinler
     assert "MSCU1234567" in metinler
     assert "MÜHÜR NO" in metinler
     assert "PALET YÜKSELTME" in metinler
     assert "34-DEPO AXATA" in metinler
+    # Arka plan kılavuz çizgileri kapalı, form kalın çerçeve içinde.
+    assert sayfa.sheet_view.showGridLines is False
+    assert sayfa["A2"].border.top.style == "medium"
 
 
 # ------------------------------------------------- Hesaplama.xlsx doluluk modeli
@@ -532,3 +538,58 @@ def test_gomulu_musteri_datasi_hesap_surumunu_tasir(db):
     # Master datada 60'tan fazla müşteri eski hesaplamayla yükleniyor.
     assert len(eskiler) > 60
     assert any(m.yukleme_kurali.palet_yukseltme for m in eskiler)
+
+
+def test_form_notu_plan_sonrasi_yazilan_aciklamayi_da_alir(ihracat_veri, tmp_path):
+    """Açıklama plandan sonra yazıldıysa da forma gelmeli.
+
+    Plan üretilirken master datadaki not plana kopyalanıyor; kopya boşsa form
+    müşterinin güncel kaydına bakar.
+    """
+    from openpyxl import load_workbook
+
+    from app.models import IhracatMusterisi
+    from app.services import ihracat_servisi, ihracat_yukleme_formu
+
+    db = ihracat_veri
+    musteri = db.query(IhracatMusterisi).filter_by(musteri_adi="VAILLANT D.O.O.").one()
+    musteri.aciklama = None
+    musteri.yukleme_tipi = None
+    db.flush()
+
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    plan = ihracat_servisi.plan_uret(db, plan_tarihi=date(2026, 9, 1)).planlar[0]
+    assert plan.musteri_aciklamasi is None
+
+    # Planlama bittikten sonra müşteri kartına not yazılıyor.
+    musteri.aciklama = "hava yastığı ve silika jel"
+    musteri.yukleme_tipi = "PALET YÜKSELTME"
+    db.flush()
+
+    hedef = ihracat_yukleme_formu.form_uret(plan, tmp_path / "form.xlsx")
+    sayfa = load_workbook(hedef)["EXPORT"]
+    tum_metin = "\n".join(
+        str(h.value) for satir in sayfa.iter_rows() for h in satir if h.value
+    )
+    assert "hava yastığı ve silika jel" in tum_metin
+    assert "PALET YÜKSELTME" in tum_metin
+
+
+def test_plan_toplam_desisi_satirlarin_toplamina_esittir(ihracat_veri, ihracat_urun):
+    """Formdaki desi toplamı kendi satırlarının toplamıdır.
+
+    Master datadaki birim desi ile sipariş satırındaki desi ayrılabiliyor; satırda
+    değer varsa o kullanılır, yoksa master dataya düşülür.
+    """
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    # U1'in master datadaki desisi 2,5/adet (3.000 adet için 7.500); dosya 21.000 diyor.
+    satir = _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 21000, 15000)
+    satir.miktar = Decimal(3000)
+    db.flush()
+
+    plan = ihracat_servisi.plan_uret(db, plan_tarihi=date(2026, 9, 1)).planlar[0]
+    assert plan.toplam_desi == Decimal(21000)
+    assert plan.toplam_desi == sum(Decimal(s.desi) for s in plan.satirlar)
+    assert plan.toplam_agirlik == sum(Decimal(s.agirlik) for s in plan.satirlar)

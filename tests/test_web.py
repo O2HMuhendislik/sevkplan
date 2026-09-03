@@ -347,6 +347,9 @@ def test_ic_piyasa_formu_sevkiyat_tipine_gore_sayfalanir(istemci, fabrika, tmp_p
     assert "Nak.Firma" in metinler
     assert "Yükleme yapacak depolar" in metinler
     assert any("depoya gönderilmelidir" in str(m) for m in metinler)
+    # Kılavuz çizgileri kapalı ve form kalın çerçeve içinde.
+    assert sayfa.sheet_view.showGridLines is False
+    assert sayfa["A1"].border.left.style == "medium"
 
 
 def test_musteri_ekranindan_tir_girisi_guncellenir(istemci, fabrika):
