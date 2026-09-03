@@ -413,6 +413,102 @@ def _tonaj(deger: Any) -> Decimal | None:
     return Decimal(rakamlar)
 
 
+def ihracat_urunlerini_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """İhracat ürün master datasını yükler (`Hesaplama.xlsx` → `Ürün` sayfası).
+
+    Şirketin hesaplama dosyası olduğu gibi verilebilir: kolon başlıkları dosyadaki
+    adlarla eşleşir. Yükleme adetleri iki sürüm hâlinde saklanır — temel sütunlar
+    yeni hesaplama, `-2` sütunları eski hesaplama. Hangisinin kullanılacağını
+    müşteri master datası söyler.
+
+    Boş ölçüler hata değildir: master datada 2.862 üründen bir kısmında tır ya da
+    konteyner adedi yok. Bunlar uyarı olarak listelenir, planlamada desiden
+    yaklaşık hesaplanır.
+    """
+    from app.models import IhracatUrunu
+    from app.services.veri_formatlari import (
+        IHRACAT_URUN_ALANLARI,
+        IHRACAT_URUN_ALIAS,
+    )
+
+    _kontrol_et(dosya, IHRACAT_URUN_ALANLARI, IHRACAT_URUN_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, IHRACAT_URUN_ALIAS, zorunlu_alanlar(IHRACAT_URUN_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    sayisal_alanlar = (
+        "palet_ici_adet", "tir_yukleme_adeti", "konteyner_yukleme_adeti",
+        "palet_ici_adet_eski", "tir_yukleme_adeti_eski",
+        "konteyner_yukleme_adeti_eski", "desi", "agirlik", "dokme_adeti",
+    )
+    tam_sayi_alanlari = ("en", "boy", "yukseklik")
+
+    # Aynı ürün kodu dosyada birden çok geçebiliyor ve tekrarların bir kısmı boş.
+    # Son satır kazanırsa dolu ölçüler silinir; bu yüzden tekrarlar birleştirilir:
+    # bir alan bir kez doldurulduysa sonraki boş satır onu ezmez.
+    birlesik: dict[str, dict] = {}
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        kod = excel.metin(kayit.get("urun_kodu"))
+        if not kod:
+            sonuc.hatalar.append(SatirHatasi(satir_no, "-", "Ürün kodu boş olamaz"))
+            continue
+
+        degerler = {
+            "_satir_no": satir_no,
+            "urun_adi": excel.metin(kayit.get("urun_adi")),
+            "urun_grubu": excel.metin(kayit.get("urun_grubu")),
+            "aktif": excel.evet_hayir(kayit.get("aktif"), True),
+        }
+        for alan in sayisal_alanlar:
+            degerler[alan] = excel.sayi_ya_da(kayit.get(alan))
+        for alan in tam_sayi_alanlari:
+            degerler[alan] = excel.tam_sayi_ya_da(kayit.get(alan))
+
+        onceki = birlesik.get(kod)
+        if onceki is None:
+            birlesik[kod] = degerler
+            continue
+        sonuc.birlestirilen += 1
+        for alan, deger in degerler.items():
+            if alan == "_satir_no" or deger is None:
+                continue
+            if onceki.get(alan) is None:
+                onceki[alan] = deger
+
+    mevcutlar = {u.urun_kodu: u for u in db.scalars(select(IhracatUrunu)).all()}
+    for kod, degerler in birlesik.items():
+        urun = mevcutlar.get(kod)
+        if urun is None:
+            urun = IhracatUrunu(urun_kodu=kod)
+            db.add(urun)
+            mevcutlar[kod] = urun
+            sonuc.eklenen += 1
+        else:
+            sonuc.guncellenen += 1
+
+        urun.urun_adi = degerler.get("urun_adi") or ""
+        urun.urun_grubu = degerler.get("urun_grubu")
+        for alan in sayisal_alanlar + tam_sayi_alanlari:
+            setattr(urun, alan, degerler.get(alan))
+        urun.aktif = bool(degerler.get("aktif", True))
+
+        if not urun.olculebilir_mi:
+            sonuc.uyarilar.append(
+                SatirHatasi(
+                    degerler["_satir_no"], kod,
+                    "Tır/konteyner yükleme adeti ve desi boş — doluluk hesaplanamaz",
+                )
+            )
+
+    _aktarim_kaydet(db, dosya_adi, "IHRACAT_URUN", sonuc, kullanici)
+    db.flush()
+    return sonuc
+
+
 def ihracat_musterilerini_aktar(
     db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
 ) -> IceAktarimSonucu:

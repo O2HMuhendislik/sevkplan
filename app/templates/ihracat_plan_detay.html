@@ -27,9 +27,9 @@
   <div class="metrik"><div class="etiket">Doluluk</div>
     <div class="deger">%{{ plan.doluluk_yuzdesi }}</div>
     <div class="soluk">{{ plan.kisitlayan_olcu or '' }} sınırı doldurdu</div></div>
-  <div class="metrik"><div class="etiket">Hacim</div>
-    <div class="deger" style="font-size:21px">{{ plan.toplam_desi | sayi }}</div>
-    <div class="soluk">desi · üst sınır {{ plan.profil.ust_limit | sayi }}</div></div>
+  <div class="metrik"><div class="etiket">Palet / desi</div>
+    <div class="deger" style="font-size:21px">{{ plan.toplam_palet | sayi }}</div>
+    <div class="soluk">palet · {{ plan.toplam_desi | sayi }} desi</div></div>
   <div class="metrik"><div class="etiket">Ağırlık</div>
     <div class="deger" style="font-size:21px">{{ plan.toplam_agirlik | sayi }}</div>
     <div class="soluk">kg · azami {{ plan.azami_agirlik | sayi }}</div></div>

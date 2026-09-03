@@ -27,9 +27,15 @@
       gerekeceği hesaplandı.
     </p>
     <p class="soluk">
-      <b>Kısıtlayan</b> sütunu aracı hangi sınırın doldurduğunu söyler: hacim (desi)
-      ya da ağırlık. Master datada bulunmayan müşteriler işaretlenir ve tır varsayılır —
+      <b>Kısıtlayan</b> sütunu aracı hangi sınırın doldurduğunu söyler: hacim ya da
+      ağırlık. Master datada bulunmayan müşteriler işaretlenir ve tır varsayılır —
       araç tipini <a href="/ihracat/musteriler">Müşteriler</a> ekranından düzeltin.
+    </p>
+    <p class="soluk">
+      Doluluk şirketin hesaplama dosyasındaki formülle bulunur:
+      <code>Σ(miktar / yükleme adeti)</code>. <b>Hesap</b> sütunu hangi sürümün
+      kullanıldığını gösterir; ölçüsü <a href="/ihracat/urunler">master datada
+      olmayan</a> ürünler ayrıca işaretlenir.
     </p>
   </div>
 </div>
@@ -39,7 +45,8 @@
   <table>
     <thead><tr>
       <th>Müşteri</th><th>Ülke</th><th>Araç</th><th>Taşıma</th><th>Sefer</th>
-      <th>Yükleme tipi</th><th class="sag">Desi</th><th class="sag">Ağırlık</th>
+      <th>Yükleme tipi</th><th>Hesap</th><th class="sag">Palet</th>
+      <th class="sag">Desi</th><th class="sag">Ağırlık</th>
       <th class="sag">Adet</th><th class="sag">Araç</th><th>Doluluk</th>
       <th>Kısıtlayan</th><th>Not</th>
     </tr></thead>
@@ -55,6 +62,11 @@
         <td>{{ m.tasima_modu }}</td>
         <td><span class="rozet PLANLANDI">{{ m.sefer_kodu }}</span></td>
         <td>{{ m.yukleme_tipi or '—' }}</td>
+        <td class="soluk">{{ m.hesaplama }}
+          {% if m.olcusuz_sayisi %}
+            <div><span class="rozet HATALI">{{ m.olcusuz_sayisi }} ÜRÜN ÖLÇÜSÜZ</span></div>
+          {% endif %}</td>
+        <td class="sag">{{ m.palet | sayi }}</td>
         <td class="sag">{{ m.desi | sayi }}</td>
         <td class="sag">{{ m.agirlik | sayi }}</td>
         <td class="sag">{{ m.adet | sayi }}</td>

@@ -1,7 +1,8 @@
 """İhracat plan üretimi: veritabanı ile ihracat planlama motoru arasındaki köprü.
 
-İç piyasadan farkı: araç tek noktaya gider, kapasite desi ve kg ile iki boyutlu
-ölçülür, sefer numarasının belge kodu müşteriye göre N ya da E olur.
+İç piyasadan farkı: araç tek noktaya gider, aracın doluluğu şirketin `Hesaplama.xlsx`
+formülüyle ölçülür (Σ miktar / yükleme adeti), ağırlık ikinci sınır olarak durur ve
+sefer numarasının belge kodu müşteriye göre N ya da E olur.
 """
 from __future__ import annotations
 
@@ -22,11 +23,13 @@ from app.domain.ihracat import (
     VARSAYILAN_KURALLAR,
     planla,
 )
+from app.domain.ihracat_hesap import Kalem, UrunOlcusu, hesapla, yukleme_kurali_coz
 from app.domain.iller import yer_adi
 from app.domain.marka import paylari_hesapla, paylari_metne_cevir
 from app.domain.planlama import Teslimat
 from app.models import (
     IhracatMusterisi,
+    IhracatUrunu,
     PlanDurumu,
     PlanHareketi,
     SevkiyatPlani,
@@ -60,17 +63,25 @@ class IhracatPlanSonucu:
         return metin
 
 
+def urun_olculeri(db: Session) -> dict[str, UrunOlcusu]:
+    """İhracat ürün master datasını kod -> ölçü sözlüğüne çevirir."""
+    return {u.urun_kodu: u.olcu for u in db.scalars(select(IhracatUrunu)).all()}
+
+
 def musteri_yuklerini_topla(
     db: Session, satirlar: list[SiparisSatiri]
 ) -> tuple[list[MusteriYuku], list[str]]:
-    """Sipariş satırlarını müşteri bazında toplar.
+    """Sipariş satırlarını müşteri bazında toplar ve doluluklarını hesaplar.
 
-    Ölçüler dosyadan gelir: ihracat SKU'ları ürün master datasında bulunmadığı için
-    desi ve kg satır bazında okunur.
+    Doluluk ürün master datasından gelir: her SKU'nun tırı ve konteyneri dolduran
+    adedi bellidir, aracın doluluğu bu payların toplamıdır. Müşterinin hesap sürümü
+    (yeni/eski) ve palet yükseltmesi master datadaki yükleme tipi ile notlardan
+    çözülür. Master datada olmayan SKU'lar için dosyadaki desi kullanılır.
     """
     kayitlar = {
         m.anahtar: m for m in db.scalars(select(IhracatMusterisi)).all()
     }
+    olculer = urun_olculeri(db)
 
     gruplar: dict[str, list[SiparisSatiri]] = {}
     for satir in satirlar:
@@ -85,14 +96,35 @@ def musteri_yuklerini_topla(
         if kayit is None:
             tanimsizlar.append(grup[0].bayi_adi or anahtar)
 
+        tip = (
+            AracTipi(kayit.arac_tipi) if kayit and kayit.arac_tipi else AracTipi.TIR
+        )
+        kural = (
+            kayit.yukleme_kurali
+            if kayit is not None
+            else yukleme_kurali_coz("", "")
+        )
+
         # Teslimat, planlamanın bölünmez birimidir; satırlar teslimata göre toplanır.
         teslimat_gruplari: dict[str, list[SiparisSatiri]] = {}
         for satir in grup:
             teslimat_gruplari.setdefault(satir.teslimat_no, []).append(satir)
 
         teslimatlar: list[Teslimat] = []
+        olcusuzler: list[str] = []
         for teslimat_no, satirlari in sorted(teslimat_gruplari.items()):
-            desi = sum((Decimal(s.desi or 0) for s in satirlari), Decimal(0))
+            kalemler = [
+                Kalem(
+                    urun_kodu=s.urun_kodu,
+                    miktar=Decimal(s.miktar),
+                    olcu=olculer.get(s.urun_kodu),
+                    desi=Decimal(s.desi or 0),
+                    agirlik=Decimal(s.agirlik or 0),
+                )
+                for s in satirlari
+            ]
+            olcu = hesapla(kalemler, tip.value, kural)
+            olcusuzler.extend(olcu.olcusuz_kodlar)
             teslimatlar.append(
                 Teslimat(
                     teslimat_no=teslimat_no,
@@ -101,21 +133,20 @@ def musteri_yuklerini_topla(
                     urun_kodu=satirlari[0].urun_kodu,
                     urun_adi=satirlari[0].urun_adi or "",
                     miktar=sum((Decimal(s.miktar) for s in satirlari), Decimal(0)),
-                    # İhracatta kapasite ölçüsü desidir; `birim` ve `anahtar` desiyi taşır.
-                    birim=desi or Decimal(1),
-                    anahtar=desi,
+                    # İhracatta kapasite ölçüsü doluluktur; `birim` ve `anahtar` onu taşır.
+                    birim=olcu.doluluk or Decimal("0.000001"),
+                    anahtar=olcu.doluluk,
                     oncelik_tarihi=min(s.oncelik_tarihi for s in satirlari),
                     satir_idleri=tuple(s.id for s in satirlari),
                     sku_kodlari=tuple(sorted({s.urun_kodu for s in satirlari})),
-                    depo_katkilari={satirlari[0].depo_kodu: desi},
-                    agirlik=sum((Decimal(s.agirlik or 0) for s in satirlari), Decimal(0)),
+                    depo_katkilari={satirlari[0].depo_kodu: olcu.doluluk},
+                    agirlik=olcu.agirlik,
+                    desi=olcu.desi,
+                    palet=olcu.palet,
                 )
             )
 
         ilk = grup[0]
-        tip = (
-            AracTipi(kayit.arac_tipi) if kayit and kayit.arac_tipi else AracTipi.TIR
-        )
         yukler.append(
             MusteriYuku(
                 anahtar=anahtar,
@@ -128,9 +159,13 @@ def musteri_yuklerini_topla(
                     ilk.sevk_adresi or (kayit.sevk_adresi if kayit else "")
                 ) or "",
                 teslimatlar=tuple(teslimatlar),
-                desi=sum((t.anahtar for t in teslimatlar), Decimal(0)),
+                doluluk=sum((t.anahtar for t in teslimatlar), Decimal(0)),
+                desi=sum((t.desi for t in teslimatlar), Decimal(0)),
                 agirlik=sum((t.agirlik for t in teslimatlar), Decimal(0)),
                 adet=sum((t.miktar for t in teslimatlar), Decimal(0)),
+                palet=sum((t.palet for t in teslimatlar), Decimal(0)),
+                kural=kural,
+                olcusuz_kodlar=tuple(dict.fromkeys(olcusuzler)),
                 arac_tipi=tip,
                 sefer_kodu=(kayit.sefer_kodu if kayit else "E") or "E",
                 yukleme_tipi=(kayit.yukleme_tipi if kayit else "") or "",
@@ -220,7 +255,8 @@ def _plani_kaydet(
         kisitlayan_olcu=taslak.kisitlayan,
         urun_kodlari=", ".join(urun_kodlari)[:500],
         olcu=profil.olcu.value,
-        toplam_birim=taslak.desi,
+        toplam_birim=taslak.hacim,
+        toplam_palet=taslak.palet,
         toplam_desi=taslak.desi,
         toplam_agirlik=taslak.agirlik,
         toplam_adet=taslak.adet,
@@ -249,10 +285,20 @@ def _plani_kaydet(
             satir.durum = SiparisDurumu.PLANLANDI
 
     notlar = [
-        f"{musteri.arac_tipi.ad} · {taslak.desi.quantize(Decimal(1))} desi · "
-        f"{taslak.agirlik.quantize(Decimal(1))} kg · "
-        f"%{taslak.doluluk_yuzdesi} ({taslak.kisitlayan} sınırı)"
+        f"{musteri.arac_tipi.ad} · %{taslak.doluluk_yuzdesi} "
+        f"({taslak.kisitlayan} sınırı) · "
+        f"{taslak.palet.quantize(Decimal('0.1'))} palet · "
+        f"{taslak.desi.quantize(Decimal(1))} desi · "
+        f"{taslak.agirlik.quantize(Decimal(1))} kg",
+        f"Hesap: {musteri.kural.ad}",
     ]
+    if musteri.olcusuz_kodlar:
+        # Bu SKU'ların yükleme adeti master datada yok; doluluk desiden yaklaşıldı.
+        ornek = ", ".join(musteri.olcusuz_kodlar[:5])
+        notlar.append(
+            f"{len(musteri.olcusuz_kodlar)} ürünün yükleme adeti master datada yok "
+            f"({ornek}); doluluk desiden yaklaşık hesaplandı"
+        )
     if len(depolar) > 1:
         notlar.append("Ortak yükleme: " + ", ".join(depolar))
     if musteri.yukleme_tipi:
@@ -281,7 +327,7 @@ def musteri_onizlemesi(db: Session, satirlar: list[SiparisSatiri]) -> list[dict]
     ozet = []
     for yuk in yukler:
         profil = yuk.profil
-        hacim = (yuk.desi / profil.ust_limit) if profil.ust_limit else Decimal(0)
+        hacim = (yuk.doluluk / profil.ust_limit) if profil.ust_limit else Decimal(0)
         agirlik = (
             (yuk.agirlik / yuk.agirlik_kapasitesi)
             if yuk.agirlik_kapasitesi
@@ -296,6 +342,8 @@ def musteri_onizlemesi(db: Session, satirlar: list[SiparisSatiri]) -> list[dict]
                 "tasima_modu": yuk.arac_tipi.tasima_modu,
                 "sefer_kodu": yuk.sefer_kodu,
                 "yukleme_tipi": yuk.yukleme_tipi,
+                "hesaplama": yuk.kural.ad,
+                "palet": yuk.palet.quantize(Decimal("0.1")),
                 "desi": yuk.desi.quantize(Decimal(1)),
                 "agirlik": yuk.agirlik.quantize(Decimal(1)),
                 "adet": yuk.adet,
@@ -306,10 +354,11 @@ def musteri_onizlemesi(db: Session, satirlar: list[SiparisSatiri]) -> list[dict]
                 ),
                 "kisitlayan": "AĞIRLIK" if agirlik > hacim else "HACİM",
                 "master_datada_yok": yer_adi(yuk.musteri_adi) in tanimsiz_kumesi,
+                "olcusuz_sayisi": len(yuk.olcusuz_kodlar),
                 "aciklama": yuk.aciklama,
             }
         )
-    ozet.sort(key=lambda o: (o["ulke"], -o["desi"]))
+    ozet.sort(key=lambda o: (o["ulke"], -o["doluluk"]))
     return ozet
 
 

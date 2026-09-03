@@ -46,6 +46,7 @@ from app.domain.bolgeler import VARSAYILAN_BOLGELER
 from app.domain.ic_piyasa import SevkiyatTipi
 from app.models import (
     IhracatMusterisi,
+    IhracatUrunu,
     Kullanici,
     Musteri,
     PlanDurumu,
@@ -57,6 +58,7 @@ from app.models import (
 )
 from app.moduller import MODULLER
 from app.services import (
+    gomulu_veri,
     ic_piyasa_servisi,
     ic_yukleme_formu,
     ice_aktarim,
@@ -90,7 +92,11 @@ async def yasam_dongusu(_uygulama: FastAPI) -> AsyncIterator[None]:
     semayi_olustur()
     with OturumFabrikasi() as db:
         parola = kullanici_servisi.varsayilan_yoneticiyi_olustur(db)
+        # Programla gelen master data yalnızca ilgili tablo boşsa yüklenir.
+        yuklenenler = gomulu_veri.eksikleri_yukle(db)
         db.commit()
+    for satir in yuklenenler:
+        print(f"Gömülü master data — {satir}")
     if parola:
         print(
             "\n" + "=" * 72,
@@ -1401,6 +1407,70 @@ async def ihracat_musterileri_yukle(
 @uygulama.get("/ihracat/musteriler/sablon")
 def ihracat_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
     hedef = sablonlar.ihracat_musteri_sablonu(CIKTI_DIZIN / "ihracat_musteri_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+# ---------------------------------------------------- ihracat ürün master datası
+@uygulama.get("/ihracat/urunler")
+def ihracat_urunler(
+    istek: Request,
+    arama: str = "",
+    eksik: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Şirketin hesaplama dosyasındaki ürün ölçüleri."""
+    limit = 300
+    sorgu = select(IhracatUrunu).order_by(IhracatUrunu.urun_kodu)
+    if arama:
+        desen = f"%{arama.strip()}%"
+        sorgu = sorgu.where(
+            IhracatUrunu.urun_kodu.ilike(desen)
+            | IhracatUrunu.urun_adi.ilike(desen)
+            | IhracatUrunu.urun_grubu.ilike(desen)
+        )
+    olcusuz = (
+        IhracatUrunu.tir_yukleme_adeti.is_(None)
+        & IhracatUrunu.konteyner_yukleme_adeti.is_(None)
+        & IhracatUrunu.desi.is_(None)
+    )
+    if eksik:
+        sorgu = sorgu.where(olcusuz)
+    return sayfa(
+        istek,
+        "ihracat_urunler.html",
+        kullanici,
+        urunler=db.scalars(sorgu.limit(limit)).all(),
+        arama=arama,
+        eksik=bool(eksik),
+        limit=limit,
+        toplam=db.scalar(select(func.count(IhracatUrunu.id))) or 0,
+        eksik_sayisi=db.scalar(
+            select(func.count(IhracatUrunu.id)).where(olcusuz)
+        ) or 0,
+    )
+
+
+@uygulama.post("/ihracat/urunler/yukle")
+async def ihracat_urunleri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.ihracat_urunlerini_aktar(
+            db, dosya.file, dosya.filename or "hesaplama.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/urunler", hata=str(hata))
+    return yonlendir("/ihracat/urunler", mesaj=f"Ürün aktarımı: {sonuc.ozet()}")
+
+
+@uygulama.get("/ihracat/urunler/sablon")
+def ihracat_urun_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
+    hedef = sablonlar.ihracat_urun_sablonu(CIKTI_DIZIN / "ihracat_urun_sablonu.xlsx")
     return FileResponse(hedef, filename=hedef.name)
 
 

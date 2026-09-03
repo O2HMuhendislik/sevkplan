@@ -58,6 +58,8 @@ class Teslimat:
     """Palete yuvarlanmamış anahtar değer; parsiyel (karışık istifli) araçlarda kullanılır."""
     agirlik: Decimal = Decimal(0)
     """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
+    desi: Decimal = Decimal(0)
+    """Raporlama için; ihracat formunda ve navlun dosyalarında desi de istenir."""
     bolunebilir_mi: bool = False
     """Araç kapasitesine göre miktarı kesilebilir mi? (bayi ortak deposu -1)"""
     satir_miktarlari: dict[int, tuple[str, Decimal]] = field(default_factory=dict)

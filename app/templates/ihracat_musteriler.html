@@ -22,7 +22,7 @@
     <h2>Alanlar ne işe yarıyor</h2>
     <p class="soluk">
       <b>Araç tipi</b> taşıma modunu belirler: konteyner deniz, tır kara yoludur.
-      Kapasite de buradan gelir — tır 22.000 desi, konteyner 15.500 desi.
+      Doluluk da buradan gelir — ürünün tır ya da konteyner yükleme adeti kullanılır.
       <b>Azami tonaj</b> ikinci sınırdır; boşsa araç tipinin varsayılanı kullanılır
       (tır 22.000 kg, konteyner 19.500 kg).
     </p>
@@ -30,6 +30,12 @@
       <b>Sefer kodu</b> sefer numarasının belge harfidir: <b>N</b> (NSC) ya da
       <b>E</b> (Export) — <code>2608E4001</code>. <b>Açıklama</b> yükleme formuna
       basılan müşteri notudur: hava yastığı, silika jel, paletsiz dökme …
+    </p>
+    <p class="soluk">
+      <b>Hesap</b> sütunu yükleme tipi ile açıklamadan otomatik çözülür:
+      notunda “ESKİ HESAPLAMA” geçen müşteri ürün master datasındaki
+      <code>-2</code> sütunlarıyla, “PALET YÜKSELTME” geçen müşterinin doluluğu
+      1,2’ye bölünerek hesaplanır.
     </p>
   </div>
 </div>
@@ -46,7 +52,8 @@
   <table>
     <thead><tr>
       <th>Müşteri</th><th>Ülke</th><th>Araç tipi</th><th>Taşıma</th><th>Sefer</th>
-      <th>Yükleme tipi</th><th>Azami tonaj</th><th>Açıklama</th><th>Aktif</th><th></th>
+      <th>Yükleme tipi</th><th>Hesap</th><th>Azami tonaj</th><th>Açıklama</th>
+      <th>Aktif</th><th></th>
     </tr></thead>
     <tbody>
     {% for m in musteriler %}
@@ -66,6 +73,7 @@
               <option value="N" {{ 'selected' if m.sefer_kodu == 'N' }}>N</option>
             </select></td>
         <td><input name="yukleme_tipi" value="{{ m.yukleme_tipi or '' }}" style="width:170px"></td>
+        <td class="soluk">{{ m.hesaplama_adi }}</td>
         <td><input name="azami_agirlik" value="{{ m.azami_agirlik | sayi }}" style="width:90px"></td>
         <td><input name="aciklama" value="{{ m.aciklama or '' }}" style="width:200px"
                    placeholder="hava yastığı, silika jel ..."></td>

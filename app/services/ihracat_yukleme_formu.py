@@ -7,8 +7,9 @@ karşılığıdır. İç piyasa formundan farkları:
   `N` ya da `E` belge koduyla üretilir (`2608E4001`).
 * Satır tablosu ihracat sütunlarıyla: ülke, sipariş, ürün, adet, müşteri, sevk adresi,
   teslimat, desi.
-* Alt blokta iki sütun: solda **sevk ve araç bilgileri** (desi, araç tipi, yükleme
-  tipi, azami tonaj, çekici plakası, dorse/konteyner, mühür), sağda **sipariş ve depo
+* Alt blokta iki sütun: solda **sevk ve araç bilgileri** (palet, desi, ağırlık,
+  doluluk, araç tipi, yükleme tipi, azami tonaj, çekici plakası, dorse/konteyner,
+  mühür — hesaplama dosyasının özet bloğuyla aynı sıra), sağda **sipariş ve depo
   bilgileri** (planlama tarihi, satış destek, araç tedarik, toplayan, sevk kontrol,
   vardiya amiri) ve müşteriye özel yükleme notu (hava yastığı, silika jel, dökme …).
 """
@@ -142,9 +143,12 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
         not_hucresi.font = Font(bold=True, size=9)
         not_hucresi.alignment = SOLA
 
+    # Hesaplama dosyasının özet bloğuyla aynı sıra: palet, ağırlık, desi, doluluk.
     sol_alanlar = [
+        ("PALET SAYISI", round(float(plan.toplam_palet or 0), 2)),
         ("DESİ", float(plan.toplam_desi or 0)),
         ("AĞIRLIK (KG)", float(plan.toplam_agirlik or 0)),
+        ("DOLULUK", f"%{plan.doluluk_yuzdesi or 0}"),
         ("ARAÇ TİPİ", plan.arac_tipi or ""),
         ("YÜKLEME TİPİ", plan.yukleme_tipi or ""),
         ("MAKSİMUM TONAJ", float(plan.azami_agirlik) if plan.azami_agirlik else ""),
@@ -247,7 +251,7 @@ def plan_listesi_disa_aktar(planlar: list[SevkiyatPlani], hedef: Path) -> Path:
     basliklar = [
         "Sefer No", "Plan Tarihi", "Müşteri", "Ülke", "Ülke Kodu", "Araç Tipi",
         "Taşıma Modu", "Yükleme Tipi", "Durum", "Axata No", "Depo",
-        "Desi", "Ağırlık (kg)", "Azami Tonaj", "Doluluk %", "Kısıtlayan",
+        "Palet", "Desi", "Ağırlık (kg)", "Azami Tonaj", "Doluluk %", "Kısıtlayan",
         "Adet", "Teslimat", "Plaka", "Konteyner No", "Mühür No", "Nakliyeci",
         "Marka Payı", "Oluşturan",
     ]
@@ -264,6 +268,7 @@ def plan_listesi_disa_aktar(planlar: list[SevkiyatPlani], hedef: Path) -> Path:
             plan.durum.value,
             plan.axata_ozeti or "",
             plan.depo_kodu,
+            round(float(plan.toplam_palet or 0), 2),
             float(plan.toplam_desi or 0),
             float(plan.toplam_agirlik or 0),
             float(plan.azami_agirlik or 0),

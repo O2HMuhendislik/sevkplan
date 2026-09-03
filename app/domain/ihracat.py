@@ -4,9 +4,17 @@
 
 * **Araç tek noktaya gider.** 2025 verisinde planların %98,3'ü tek müşterilidir; rota,
   durak sırası ve son uğrak kuralı yoktur. Plan = bir müşteri + bir araç.
-* **Kapasite iki boyutludur:** hacim (desi) ve ağırlık (kg). Hangisi önce dolarsa araç
+* **Kapasite iki boyutludur:** hacim ve ağırlık (kg). Hangisi önce dolarsa araç
   dolmuş sayılır. Ağırlık sınırı müşteriye göre değişir (marka kılavuzundaki "azami
   tonaj"); verilmemişse araç tipinin varsayılanı kullanılır.
+
+Hacim, şirketin `Hesaplama.xlsx` dosyasındaki formülle ölçülür::
+
+    DOLULUK = Σ ( miktar / yükleme adeti )      1,00 = araç %100 dolu
+
+Yükleme adeti araç tipine göre ayrıdır (tır / konteyner) ve müşterinin hesap sürümüne
+göre iki set hâlinde tutulur (yeni / eski). Palet yükseltmeli yüklemede sonuç 1,2'ye
+bölünür. Hesabın kendisi `app/domain/ihracat_hesap.py` içindedir.
 
 Taşıma modu müşteriden gelir: konteyner yüklenen müşteri **deniz**, tır yüklenen
 **kara** yoludur. Sefer numarasının belge kodu da müşteriye bağlıdır — `N` (NSC) ya da
@@ -19,6 +27,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
+from app.domain.ihracat_hesap import VARSAYILAN_KURAL, YuklemeKurali
 from app.domain.kapasite import IHRACAT_KONTEYNER, IHRACAT_TIR, KapasiteProfili
 from app.domain.planlama import Teslimat
 
@@ -63,7 +72,8 @@ AGIRLIK_KAPASITELERI: dict[AracTipi, Decimal] = {
 """Araç tipinin varsayılan ağırlık sınırı (kg).
 
 2025 sevklerinin yüzdeliklerinden: tır kg p90 ≈ 21.300, konteyner ≈ 19.250. Müşteri
-master datasında "azami tonaj" doluysa o değer bunun önüne geçer.
+master datasında "maksimum tonaj" doluysa o değer bunun önüne geçer — notu "TONAJ
+ÖNEMLİ" olan müşterilerde aracı dolduran sınır zaten ağırlıktır.
 """
 
 SEFER_KODLARI = ("N", "E")
@@ -113,9 +123,17 @@ class MusteriYuku:
     ulke_kodu: str
     sevk_adresi: str
     teslimatlar: tuple[Teslimat, ...]
+    doluluk: Decimal
+    """Planlamanın ölçüsü: Σ(miktar / yükleme adeti). 1,00 = bir araç dolusu."""
     desi: Decimal
     agirlik: Decimal
     adet: Decimal
+    palet: Decimal = Decimal(0)
+    """Σ(miktar / palet içi adet) — yükleme formunda gösterilir, kapasiteyi belirlemez."""
+    kural: YuklemeKurali = VARSAYILAN_KURAL
+    """Hangi hesap sürümü ve istif biçimi; doluluk buna göre hesaplandı."""
+    olcusuz_kodlar: tuple[str, ...] = ()
+    """Yükleme adeti master datada olmayan SKU'lar; desiden yaklaşık hesaplandı."""
     arac_tipi: AracTipi = AracTipi.TIR
     sefer_kodu: str = "E"
     yukleme_tipi: str = ""
@@ -158,8 +176,10 @@ class MusteriYuku:
         return replace(
             self,
             teslimatlar=tuple(teslimatlar),
+            doluluk=(self.doluluk * pay).quantize(Decimal("0.000001")),
             desi=(self.desi * pay).quantize(Decimal("0.001")),
             agirlik=(self.agirlik * pay).quantize(Decimal("0.001")),
+            palet=(self.palet * pay).quantize(Decimal("0.001")),
             adet=sum((t.miktar for t in teslimatlar), Decimal(0)),
         )
 
@@ -170,9 +190,12 @@ class IhracatPlani:
 
     musteri: MusteriYuku
     teslimatlar: list[Teslimat] = field(default_factory=list)
+    hacim: Decimal = Decimal(0)
+    """Aracın doluluk değeri: Σ(miktar / yükleme adeti)."""
     desi: Decimal = Decimal(0)
     agirlik: Decimal = Decimal(0)
     adet: Decimal = Decimal(0)
+    palet: Decimal = Decimal(0)
     alt_limit_esnetildi: bool = False
     istisna_asim: bool = False
 
@@ -187,7 +210,7 @@ class IhracatPlani:
     @property
     def hacim_doluluk(self) -> Decimal:
         ust = self.profil.ust_limit
-        return (self.desi / ust) if ust else Decimal(0)
+        return (self.hacim / ust) if ust else Decimal(0)
 
     @property
     def agirlik_doluluk(self) -> Decimal:
@@ -222,16 +245,18 @@ class IhracatPlani:
                 toplamlar[depo_kodu] += deger
         return dict(toplamlar)
 
-    def ekle(self, teslimat: Teslimat, desi: Decimal, agirlik: Decimal) -> None:
+    def ekle(self, teslimat: Teslimat) -> None:
         self.teslimatlar.append(teslimat)
-        self.desi += desi
-        self.agirlik += agirlik
+        self.hacim += teslimat.anahtar
+        self.desi += teslimat.desi
+        self.agirlik += teslimat.agirlik
+        self.palet += teslimat.palet
         self.adet += teslimat.miktar
 
-    def sigar_mi(self, desi: Decimal, agirlik: Decimal) -> bool:
+    def sigar_mi(self, teslimat: Teslimat) -> bool:
         return (
-            self.desi + desi <= self.profil.ust_limit
-            and self.agirlik + agirlik <= self.musteri.agirlik_kapasitesi
+            self.hacim + teslimat.anahtar <= self.profil.ust_limit
+            and self.agirlik + teslimat.agirlik <= self.musteri.agirlik_kapasitesi
         )
 
 
@@ -269,16 +294,17 @@ def planla(
     for musteri in sorted(musteriler, key=lambda m: (m.ulke, m.musteri_adi)):
         profil = musteri.profil
         yeterli = (
-            musteri.desi >= profil.alt_limit
-            or musteri.agirlik >= musteri.agirlik_kapasitesi * Decimal("0.75")
+            musteri.doluluk >= profil.alt_limit
+            or musteri.agirlik >= musteri.agirlik_kapasitesi * profil.alt_limit
         )
         if not yeterli and not kalanlari_zorla:
             sonuc.bekleyenler.append(
                 BekleyenYuk(
                     musteri=musteri,
                     sebep=(
-                        f"Yeterli hacim yok: müşteri toplamı {musteri.desi:.0f} desi, "
-                        f"alt limit {profil.alt_limit} desi"
+                        "Yeterli hacim yok: müşteri toplamı "
+                        f"%{musteri.doluluk * 100:.1f} araç, alt limit "
+                        f"%{profil.alt_limit * 100:.0f}"
                     ),
                 )
             )
@@ -290,31 +316,30 @@ def planla(
 
 
 def _musteriyi_paketle(musteri: MusteriYuku) -> list[IhracatPlani]:
-    """Müşterinin teslimatlarını araçlara yerleştirir (büyükten küçüğe)."""
-    toplam_anahtar = (
-        sum((t.anahtar for t in musteri.teslimatlar), Decimal(0)) or Decimal(1)
-    )
+    """Müşterinin teslimatlarını araçlara yerleştirir (büyükten küçüğe).
 
-    def olculer(teslimat: Teslimat) -> tuple[Decimal, Decimal]:
-        """Teslimatın desi ve ağırlık payı."""
-        pay = (teslimat.anahtar or Decimal(0)) / toplam_anahtar
-        return musteri.desi * pay, musteri.agirlik * pay
-
+    Teslimatın doluluk payı (`anahtar`), desisi ve ağırlığı satır bazında zaten
+    hesaplanmıştır; burada yalnızca araçlara dağıtılırlar.
+    """
+    ust_limit = PROFILLER[musteri.arac_tipi].ust_limit
     planlar: list[IhracatPlani] = []
-    sirali = sorted(
-        musteri.teslimatlar, key=lambda t: (-olculer(t)[0], t.teslimat_no)
-    )
+    sirali = sorted(musteri.teslimatlar, key=lambda t: (-t.anahtar, t.teslimat_no))
     for teslimat in sirali:
-        desi, agirlik = olculer(teslimat)
-        if desi > PROFILLER[musteri.arac_tipi].ust_limit or agirlik > musteri.agirlik_kapasitesi:
+        asiyor = (
+            teslimat.anahtar > ust_limit
+            or teslimat.agirlik > musteri.agirlik_kapasitesi
+        )
+        if asiyor:
             # Tek teslimat aracı aşıyor: bölünemez, istisna aracıyla gider.
             plan = IhracatPlani(musteri=musteri, istisna_asim=True)
-            plan.ekle(teslimat, desi, agirlik)
+            plan.ekle(teslimat)
             planlar.append(plan)
             continue
-        hedef = next((p for p in planlar if not p.istisna_asim and p.sigar_mi(desi, agirlik)), None)
+        hedef = next(
+            (p for p in planlar if not p.istisna_asim and p.sigar_mi(teslimat)), None
+        )
         if hedef is None:
             hedef = IhracatPlani(musteri=musteri)
             planlar.append(hedef)
-        hedef.ekle(teslimat, desi, agirlik)
+        hedef.ekle(teslimat)
     return planlar

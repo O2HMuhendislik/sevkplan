@@ -13,6 +13,7 @@ from app.services.excel import sayfa_yaz, yeni_kitap
 from app.services.veri_formatlari import (
     Alan,
     IHRACAT_MUSTERI_ALANLARI,
+    IHRACAT_URUN_ALANLARI,
     IHRACAT_SIPARIS_ALANLARI,
     MUSTERI_ALANLARI,
     SIPARIS_ALANLARI,
@@ -87,7 +88,19 @@ def ihracat_siparis_sablonu(hedef: Path) -> Path:
         IHRACAT_SIPARIS_ALANLARI,
         "İhracat Siparişleri",
         "İhracat Sipariş Aktarım Şablonu — her satır bir sipariş kalemidir. "
-        "Desi ve KG satır bazında verilir; araç kapasitesi bunlarla ölçülür.",
+        "Araç doluluğu ürün master datasındaki yükleme adetlerinden hesaplanır; "
+        "desi ve KG yalnızca master datada ölçüsü olmayan SKU'lar için kullanılır.",
+        hedef,
+    )
+
+
+def ihracat_urun_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        IHRACAT_URUN_ALANLARI,
+        "İhracat Ürünleri",
+        "İhracat Ürün Master Data Şablonu — kolon düzeni şirketin Hesaplama.xlsx "
+        "dosyasındaki 'Ürün' sayfasıyla aynıdır, o dosya olduğu gibi yüklenebilir. "
+        "Doluluk = Σ(miktar / yükleme adeti); '-2' sütunları eski hesaplamada kullanılır.",
         hedef,
     )
 

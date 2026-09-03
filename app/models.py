@@ -294,6 +294,17 @@ class IhracatMusterisi(Temel):
     )
 
     @property
+    def yukleme_kurali(self):
+        """Yükleme tipi + notlardan çözülen hesap kuralı (yeni/eski, palet yükseltme)."""
+        from app.domain.ihracat_hesap import yukleme_kurali_coz
+
+        return yukleme_kurali_coz(self.yukleme_tipi or "", self.aciklama or "")
+
+    @property
+    def hesaplama_adi(self) -> str:
+        return self.yukleme_kurali.ad
+
+    @property
     def tasima_modu(self) -> str:
         from app.domain.ihracat import AracTipi
 
@@ -310,6 +321,76 @@ class IhracatMusterisi(Temel):
             return AracTipi(self.arac_tipi).ad
         except ValueError:
             return self.arac_tipi
+
+
+class IhracatUrunu(Temel):
+    """İhracat ürün master datası — `Hesaplama.xlsx` dosyasının `Ürün` sayfası.
+
+    İç piyasa ürün master datasından ayrı durur: ihracat SKU'larının tır/konteyner
+    yükleme adetleri ve iki ayrı hesap sürümü (yeni / eski) burada tutulur.
+    Doluluk = Σ(miktar / yükleme adeti); ayrıntısı `app/domain/ihracat_hesap.py`.
+    """
+
+    __tablename__ = "ihracat_urunleri"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    urun_kodu: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    urun_adi: Mapped[str] = mapped_column(String(250), default="")
+    urun_grubu: Mapped[str | None] = mapped_column(String(50), index=True, default=None)
+
+    palet_ici_adet: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), default=None)
+    tir_yukleme_adeti: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), default=None)
+    konteyner_yukleme_adeti: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), default=None
+    )
+    """Yeni hesaplama sütunları: PALET İÇİ ADET / TIR / KONTEYNER."""
+
+    palet_ici_adet_eski: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), default=None
+    )
+    tir_yukleme_adeti_eski: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), default=None
+    )
+    konteyner_yukleme_adeti_eski: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 3), default=None
+    )
+    """Eski hesaplama sütunları: PALET İÇİ ADET-2 / TIR-2 / KONTEYNER-2."""
+
+    desi: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
+    agirlik: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), default=None)
+    en: Mapped[int | None] = mapped_column(Integer, default=None)
+    boy: Mapped[int | None] = mapped_column(Integer, default=None)
+    yukseklik: Mapped[int | None] = mapped_column(Integer, default=None)
+    dokme_adeti: Mapped[Decimal | None] = mapped_column(Numeric(12, 3), default=None)
+    """Paletsiz (dökme) yüklemede araca giren adet; master datada çok az üründe dolu."""
+
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    guncelleme_tarihi: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
+
+    @property
+    def olcu(self) -> "UrunOlcusu":
+        from app.domain.ihracat_hesap import UrunOlcusu
+
+        return UrunOlcusu(
+            urun_kodu=self.urun_kodu,
+            urun_adi=self.urun_adi or "",
+            urun_grubu=self.urun_grubu or "",
+            palet_ici_adet=self.palet_ici_adet,
+            tir_yukleme_adeti=self.tir_yukleme_adeti,
+            konteyner_yukleme_adeti=self.konteyner_yukleme_adeti,
+            palet_ici_adet_eski=self.palet_ici_adet_eski,
+            tir_yukleme_adeti_eski=self.tir_yukleme_adeti_eski,
+            konteyner_yukleme_adeti_eski=self.konteyner_yukleme_adeti_eski,
+            desi=self.desi,
+            agirlik=self.agirlik,
+            dokme_adeti=self.dokme_adeti,
+        )
+
+    @property
+    def olculebilir_mi(self) -> bool:
+        return self.olcu.olculebilir_mi
 
 
 class SevkiyatPlani(Temel):

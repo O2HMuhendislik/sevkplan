@@ -290,6 +290,40 @@ IHRACAT_MUSTERI_ALANLARI: tuple[Alan, ...] = (
 )
 
 
+IHRACAT_URUN_ALANLARI: tuple[Alan, ...] = (
+    Alan("urun_kodu", "ÜRÜN KODU", True, "SKU. Hesaplama dosyasındaki A sütunu.",
+         313041213, ("Ürün Kodu", "StokKodu", "Stok Kodu", "SKU")),
+    Alan("urun_adi", "ÜRÜN", False, "Ürün tanımı.",
+         "25 DD S 22 300 0400 V0 A1 G1", ("Ürün Adı", "Ürün Tanımı", "StokAdi")),
+    Alan("palet_ici_adet", "PALET İÇİ ADET", False,
+         "Bir palete sığan adet. PALET SAYISI = miktar / bu sayı.", 120,
+         ("Palet İçi Adet",)),
+    Alan("tir_yukleme_adeti", "TIR", False,
+         "Bir tırı dolduran adet. TIR DOLULUK = miktar / bu sayı.", 3000,
+         ("Tır", "Tır Yükleme Adeti")),
+    Alan("konteyner_yukleme_adeti", "KONTEYNER", False,
+         "Bir konteyneri dolduran adet. KONTEYNER DOLULUK = miktar / bu sayı.", 2640,
+         ("Konteyner", "Konteyner Yükleme Adeti")),
+    Alan("desi", "DESİ", False, "Birim desi. DESİ = bu sayı × miktar.", 2.5, ("Desi",)),
+    Alan("agirlik", "AĞIRLIK", False, "Birim ağırlık (kg).", 12, ("Ağırlık", "Kg")),
+    Alan("en", "EN", False, "Ürün eni (cm).", 60, ()),
+    Alan("boy", "BOY", False, "Ürün boyu (cm).", 120, ()),
+    Alan("yukseklik", "YÜKSEKLİK", False, "Ürün yüksekliği (cm).", 77, ()),
+    Alan("urun_grubu", "Ürün Grubu", False,
+         "Radiator / WHB / Towel Heater / GWH / Acc. ...", "Radiator", ("Grup",)),
+    Alan("tir_yukleme_adeti_eski", "TIR-2", False,
+         "Eski hesaplamada bir tırı dolduran adet.", 2800, ("Tır-2",)),
+    Alan("konteyner_yukleme_adeti_eski", "KONTEYNER-2", False,
+         "Eski hesaplamada bir konteyneri dolduran adet.", 2464, ("Konteyner-2",)),
+    Alan("palet_ici_adet_eski", "PALET İÇİ ADET-2", False,
+         "Eski hesaplamada palet içi adet.", 112, ("Palet İçi Adet-2",)),
+    Alan("dokme_adeti", "Dökme", False,
+         "Paletsiz (dökme) yüklemede araca giren adet.", None, ("Dokme",)),
+    Alan("aktif", "Aktif", False, "E / H.", "E", ()),
+)
+"""`Hesaplama.xlsx` → `Ürün` sayfasının kolon düzeni; dosya olduğu gibi yüklenebilir."""
+
+
 def alias_haritasi(alanlar: tuple[Alan, ...]) -> dict[str, tuple[str, ...]]:
     return {alan.ad: alan.kabul_edilen_basliklar for alan in alanlar}
 
@@ -303,3 +337,4 @@ SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
 MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)
 IHRACAT_SIPARIS_ALIAS = alias_haritasi(IHRACAT_SIPARIS_ALANLARI)
 IHRACAT_MUSTERI_ALIAS = alias_haritasi(IHRACAT_MUSTERI_ALANLARI)
+IHRACAT_URUN_ALIAS = alias_haritasi(IHRACAT_URUN_ALANLARI)

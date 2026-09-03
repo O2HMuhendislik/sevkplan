@@ -46,7 +46,8 @@ MODULLER: tuple[Modul, ...] = (
         ad="İhracat Planlama",
         aciklama=(
             "Yurt dışı sevkiyatların müşteri bazında araç planlaması. Tek noktaya "
-            "giden tır ve konteyner; kapasite desi ve ağırlıkla ölçülür."
+            "giden tır ve konteyner; doluluk şirketin hesaplama dosyasındaki yükleme "
+            "adetlerinden, ikinci sınır olarak ağırlıktan ölçülür."
         ),
         yol="/ihracat",
         simge="🌍",

@@ -29,6 +29,29 @@ uvicorn app.main:uygulama --reload
 Tarayıcıdan <http://127.0.0.1:8000> adresine gidin. Veritabanı ilk açılışta
 `veri/sevkplan.db` olarak otomatik oluşur.
 
+### Programla gelen master data
+
+Şirketin kendi verisi programa gömülüdür ve **ilgili tablo boşsa ilk açılışta
+otomatik yüklenir** — hiçbir dosya yüklemeden çalışmaya başlanabilir:
+
+| Dosya | İçerik |
+|---|---|
+| `veri/ornek/ihracat_urun_masterdata.xlsx` | 2.859 ihracat ürünü: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık, ölçüler |
+| `veri/ornek/ihracat_masterdata.xlsx` | 198 ihracat müşterisi: ülke, araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, notlar |
+| `veri/ornek/ic_piyasa_masterdata.xlsx` | 5.108 iç piyasa müşterisi: il, ilçe, bölge, tır girişi |
+
+Tablo doluysa hiçbir şey yapılmaz; ekrandan yüklenen güncel master data asla gömülü
+dosyayla ezilmez. Dosyalar şirketin `Hesaplama.xlsx` kitabından üretilir:
+
+```bash
+python -m scripts.ihracat_hesaplama_aktar Hesaplama.xlsx
+```
+
+`Ürün` sayfasını ürün master datasına çevirir, `Müşteriler` sayfasındaki yükleme
+tipi/tonaj/notları geçmiş sevk verisinden gelen müşteri kayıtlarıyla birleştirir.
+Aynı dosya ekrandan da yüklenebilir: **İhracat → Ürünler → Excel'den yükle**, sütun
+başlıkları olduğu gibi tanınır.
+
 ### Demo veriyle denemek
 
 ```bash
@@ -151,10 +174,11 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | Ekran | İşlev |
 |---|---|
 | **Gösterge Paneli** (`/ihracat`) | Ülke ve taşıma modu dağılımı, planlamayı çalıştırma |
-| **Siparişler** | Sipariş yükleme; müşteri bazında araç tipi, taşıma modu, kaç araç gerekeceği ve hangi sınırın (hacim/ağırlık) dolduracağı |
+| **Siparişler** | Sipariş yükleme; müşteri bazında araç tipi, taşıma modu, hesap sürümü, palet sayısı, kaç araç gerekeceği ve hangi sınırın (hacim/ağırlık) dolduracağı |
 | **Planlar** | Durum filtresi, günlük yükleme formu, Excel'e aktarma |
 | **Plan Detayı** | Hacim/ağırlık doluluğu, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
-| **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj ve müşteriye özel yükleme notu |
+| **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, hesap sürümü ve müşteriye özel yükleme notu |
+| **Ürünler** (`/ihracat/urunler`) | İhracat ürün master datası: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık; ölçüsü eksik ürünlerin listesi |
 
 ### Raporlama modülü (`/raporlama`)
 
@@ -195,20 +219,33 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 
 1. **Araç tek noktaya gider:** plan = bir müşteri + bir araç. 2025 verisinde planların
    %98,3'ü tek müşterili; rota, durak ve son uğrak kuralı yoktur.
-2. **Kapasite iki boyutludur:** hacim (desi) ve ağırlık (kg). Hangisi önce dolarsa araç
-   dolmuş sayılır; plan hangi sınırın doldurduğunu da kaydeder. Kapasiteler 2025
-   sevklerinin yüzdeliklerinden: **tır 22.000 desi / 22.000 kg**, **konteyner 15.500
-   desi / 19.500 kg**. Müşterinin azami tonajı varsayılanın önüne geçer.
-3. **Taşıma modu müşteriden çıkar:** konteyner yüklenen müşteri **deniz**, tır yüklenen
+2. **Doluluk şirketin `Hesaplama.xlsx` dosyasındaki formülle ölçülür:**
+   `DOLULUK = Σ(miktar / yükleme adeti)` — 1,00 araç %100 dolu demektir. Yükleme adeti
+   ürün master datasından gelir ve araç tipine göre ayrıdır (tır / konteyner).
+   Yanında `PALET = Σ(miktar / palet içi adet)`, `DESİ = Σ(birim desi × miktar)`,
+   `AĞIRLIK = Σ(birim ağırlık × miktar)` hesaplanır ve forma basılır.
+   *Doğrulama:* 2025'in 730 gerçek aracında bu formülün medyanı hem tırda hem
+   konteynerde **tam %100**.
+3. **İki hesap sürümü müşteriye göre seçilir.** Müşterinin notunda “ESKİ HESAPLAMA”
+   geçiyorsa ürün master datasındaki `TIR-2 / KONTEYNER-2 / PALET İÇİ ADET-2`
+   sütunları, geçmiyorsa temel sütunlar kullanılır. “PALET YÜKSELTME” geçen
+   müşteride doluluk **1,2'ye bölünür** — paletler üst üste istiflenince araca %20
+   daha fazla yük girer. Kural, yükleme tipi ve notlar metinlerinden otomatik çözülür
+   (`app/domain/ihracat_hesap.py`), müşteri ekranında **Hesap** sütununda görünür.
+4. **Ağırlık ikinci sınırdır:** hacim ya da ağırlık, hangisi önce dolarsa araç dolmuş
+   sayılır; plan hangi sınırın doldurduğunu kaydeder. Varsayılan **tır 22.000 kg**,
+   **konteyner 19.500 kg**; müşterinin azami tonajı bunun önüne geçer.
+5. **Taşıma modu müşteriden çıkar:** konteyner yüklenen müşteri **deniz**, tır yüklenen
    **kara** yoludur. Şili konteyner, Romanya tır.
-4. **Sefer belge kodu müşteri bazındadır:** `N` (NSC) ya da `E` (Export) —
+6. **Sefer belge kodu müşteri bazındadır:** `N` (NSC) ya da `E` (Export) —
    `2608E4001`. Geçmiş 9.708 satırda ikisi birebir bu alana göre ayrışıyor.
-5. **Desi ve kg satır bazında dosyadan okunur;** ihracat SKU'ları ürün master
-   datasında bulunmadığı için ölçü oradan alınamaz.
-6. **Alt limit araç başına değil müşteri toplamına** uygulanır: sorulan soru "bu
+7. **Ölçüsü olmayan SKU planlamayı durdurmaz.** Master datada 2.859 üründen 166'sında
+   tır/konteyner adedi ve desi boş; bu kalemler sipariş dosyasındaki desiden yaklaşık
+   hesaplanır ve plan notunda hangi kodların yaklaşıldığı yazar.
+8. **Alt limit araç başına değil müşteri toplamına** uygulanır: sorulan soru "bu
    müşteriye bugün araç kaldırmaya değer mi?" Cevap evetse araç sayısını teslimatların
    bölünmezliği belirler.
-7. **Müşteriye özel yükleme notu** (hava yastığı, silika jel, paletsiz dökme) ve
+9. **Müşteriye özel yükleme notu** (hava yastığı, silika jel, paletsiz dökme) ve
    **yükleme tipi** (standart / palet yükseltme / dökme / köşebent) forma basılır.
 
 ## Ring planlama kuralları (özet)

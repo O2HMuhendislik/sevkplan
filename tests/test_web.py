@@ -27,6 +27,9 @@ def ham_istemci(fabrika, monkeypatch):
     from app import main as ana
 
     monkeypatch.setattr(ana, "OturumFabrikasi", fabrika)
+    # Gömülü master data (2.800 ürün, 5.100 müşteri) her web testinde yüklenmesin;
+    # yüklendiğini tests/test_ihracat.py doğrudan doğruluyor.
+    monkeypatch.setattr(ana.gomulu_veri, "eksikleri_yukle", lambda db: [])
 
     def oturum_ver():
         db = fabrika()

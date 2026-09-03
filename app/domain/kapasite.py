@@ -147,24 +147,28 @@ IC_KARGO = KapasiteProfili(
 # sevklerinin yüzdeliklerinden alındı: tır desi p90 ≈ 21.600, konteyner p90 ≈ 15.250.
 # Sefer belge kodu müşteriye göre N ya da E olduğu için profilde sabit tutulmaz.
 
+# İhracat doluluğu şirketin kendi hesap dosyasındaki formülle ölçülür:
+# DOLULUK = Σ(miktar / yükleme adeti); 1,00 = araç %100 dolu. Ölçü Ring'deki anahtar
+# değerin aynısıdır, farkı palete yuvarlama yapılmaması ve tır ile konteynerin ayrı
+# yükleme adetlerinin bulunmasıdır. Ayrıntısı: app/domain/ihracat_hesap.py
 IHRACAT_TIR = KapasiteProfili(
     kod="IHRACAT_TIR",
     ad="İhracat — tır",
     belge_kodu="E",
-    olcu=Olcu.DESI,
+    olcu=Olcu.ANAHTAR,
     arac_tipi=AracTipi.TIR,
-    ust_limit=Decimal(22000),
-    alt_limit=Decimal(17000),
+    ust_limit=Decimal(1),
+    alt_limit=Decimal("0.75"),
 )
 
 IHRACAT_KONTEYNER = KapasiteProfili(
     kod="IHRACAT_KONTEYNER",
     ad="İhracat — konteyner (1x40)",
     belge_kodu="E",
-    olcu=Olcu.DESI,
+    olcu=Olcu.ANAHTAR,
     arac_tipi=AracTipi.TIR,
-    ust_limit=Decimal(15500),
-    alt_limit=Decimal(12000),
+    ust_limit=Decimal(1),
+    alt_limit=Decimal("0.75"),
 )
 
 PROFILLER = {
