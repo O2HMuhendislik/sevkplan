@@ -220,9 +220,14 @@ def sevk_durumu(db: Session, limit: int = 200) -> list[SevkiyatPlani]:
     return list(db.scalars(sorgu.limit(limit)).all())
 
 
-def bekleyen_ozeti(db: Session) -> list[dict]:
-    """Neden planlanamadığını gösteren bekleyen sipariş özeti (ürün bazında)."""
-    satirlar = db.execute(
+def bekleyen_ozeti(db: Session, modul: str | None = None) -> list[dict]:
+    """Planlanmayı bekleyen siparişlerin ürün bazında özeti.
+
+    **Modüle göre daraltılır.** Havuzlar ayrı olduğu için Ring ekranında iç piyasa
+    ya da ihracat siparişi göstermek yanıltıcıydı: kullanıcı "kalanları da planla"
+    dediğinde o satırlar yerinde kalıyor, çünkü onları planlayacak modül başka.
+    """
+    sorgu = (
         select(
             SiparisSatiri.urun_kodu,
             func.count(func.distinct(SiparisSatiri.teslimat_no)),
@@ -232,7 +237,9 @@ def bekleyen_ozeti(db: Session) -> list[dict]:
         .where(SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE)
         .group_by(SiparisSatiri.urun_kodu)
         .order_by(func.min(SiparisSatiri.termin_tarihi))
-    ).all()
+    )
+    if modul:
+        sorgu = sorgu.where(SiparisSatiri.modul == modul)
     return [
         {
             "urun_kodu": urun_kodu,
@@ -240,7 +247,38 @@ def bekleyen_ozeti(db: Session) -> list[dict]:
             "toplam_miktar": miktar or 0,
             "en_eski_termin": termin,
         }
-        for urun_kodu, teslimat, miktar, termin in satirlar
+        for urun_kodu, teslimat, miktar, termin in db.execute(sorgu).all()
+    ]
+
+
+def hatali_ozeti(db: Session, modul: str | None = None) -> list[dict]:
+    """Planlamaya hiç giremeyen (HATALI) siparişler ve gerekçeleri.
+
+    Bunlar hacim bekleyen satırlar değildir: master datası eksik olduğu için
+    planlanamazlar ve "kalanları da planla" da onları kurtarmaz. Ekranda ayrı
+    gösterilmezse kullanıcı planlamanın çalışmadığını sanıyor.
+    """
+    sorgu = (
+        select(
+            SiparisSatiri.urun_kodu,
+            SiparisSatiri.hata_aciklamasi,
+            func.count(func.distinct(SiparisSatiri.teslimat_no)),
+            func.sum(SiparisSatiri.miktar),
+        )
+        .where(SiparisSatiri.durum == SiparisDurumu.HATALI)
+        .group_by(SiparisSatiri.urun_kodu, SiparisSatiri.hata_aciklamasi)
+        .order_by(func.sum(SiparisSatiri.miktar).desc())
+    )
+    if modul:
+        sorgu = sorgu.where(SiparisSatiri.modul == modul)
+    return [
+        {
+            "urun_kodu": urun_kodu,
+            "sebep": sebep or "Sebep kaydedilmemiş",
+            "teslimat_sayisi": teslimat,
+            "toplam_miktar": miktar or 0,
+        }
+        for urun_kodu, sebep, teslimat, miktar in db.execute(sorgu).all()
     ]
 
 

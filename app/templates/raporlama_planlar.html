@@ -26,18 +26,21 @@
       <input id="arama" name="arama" value="{{ arama }}"
              placeholder="Sefer no, axata no, il, teslimat no" style="width:340px"></div>
     <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/rapor/plan-raporu?modul={{ modul }}&durum={{ durum }}&arama={{ arama }}"
+       title="Özet, ürün grubu, plan listesi ve sevk durumu tek kitapta">Plan raporu</a>
   </form>
 
   {% if planlar %}
   <table>
     <thead><tr>
-      <th>Modül</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Depo / Bölge</th>
+      <th class="sag">#</th><th>Modül</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Depo / Bölge</th>
       <th class="sag">Teslimat</th><th class="sag">Büyüklük</th><th>Doluluk</th>
       <th>Axata No</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for plan in planlar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td>{{ modul_adlari.get(plan.modul, plan.modul) }}</td>
         <td><a href="{{ plan.modul_yolu }}/{{ plan.id }}">
           <b>{{ plan.sefer_no }}</b></a></td>
@@ -56,6 +59,9 @@
     {% endfor %}
     </tbody>
   </table>
+  <p class="soluk" style="margin:10px 0 0">
+    Listenin sonu — <b>{{ planlar | length }}</b> plan gösterildi.
+  </p>
   {% else %}<div class="bos">Plan bulunamadı.</div>{% endif %}
 </div>
 {% endblock %}

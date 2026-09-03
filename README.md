@@ -153,7 +153,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
 | **Plan Detayı** | Plan içeriği, Axata no girişi, yükleme formu, statü işlemleri, plan geçmişi |
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
-| **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi |
+| **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
 | **Veri Yönetimi** | Seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
@@ -187,6 +187,22 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Özet ve KPI** | Modül bazında sipariş/plan sayıları; siparişin plana alınma süresi dağılımı ve termin gecikme oranı |
 | **Tüm Siparişler** | Bütün modüllerin sipariş satırları, modül sekmeleriyle filtrelenir; her satırın plana alınma süresi |
 | **Tüm Planlar** | Bütün modüllerin planları, modüle göre filtrelenir |
+
+### Plan raporu (`/rapor/plan-raporu`)
+
+Üç modülün de plan ekranındaki **“Plan raporu”** düğmesi aynı kitabı üretir; ekrandaki
+durum/arama filtresi rapora da uygulanır. `modul` verilmezse kullanıcının yetkili
+olduğu bütün modüller tek kitapta gelir.
+
+| Sayfa | İçerik |
+|---|---|
+| **Özet** | Modül × durum kırılımı: plan, teslimat, adet, palet, ağırlık, ortalama doluluk; son satır genel toplam. İptal planlar özete girmez. |
+| **Ürün Grubu** | Planlanan ürünlerin grup bazında toplam adedi — “bu dönem hangi gruptan kaç adet plana girdi”. Grubu tanımsız ürünler `GRUPSUZ` altında toplanır, böylece toplam plan adediyle eşleşir. |
+| **Planlar** | Her planın künyesi: sefer, tarih, durum, araç/tip, depo, müşteri, il/ülke, durak, doluluk, kısıtlayan ölçü, marka payı. |
+| **Sevk Durumu** | Operasyon takibi: Axata, nakliyeci, plaka, konteyner/mühür, şoför, mail tarihi, planın açılmasından bu yana geçen gün. |
+
+Aynı kırılım ekranda da var: plan detayında **“Ürün grubu özeti”** kartı o araca hangi
+gruptan kaç adet girdiğini gösterir.
 
 ## İç piyasa planlama kuralları (özet)
 
@@ -289,8 +305,18 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 6. Üst limiti tek başına aşan teslimat, **istisna planı** olarak tek başına planlanır.
 7. Alt limiti dolduramayan teslimatlar `BEKLEMEDE` kalır. Planlama ekranındaki
    **"Kalanları da planla"** kutusu işaretlenirse alt limit aranmaz; bu planlar
-   **ESNETİLDİ** rozetiyle işaretlenir.
-8. **Termin tarihi planlamayı etkilemez.**
+   **ESNETİLDİ** rozetiyle işaretlenir ve beklemede satır kalmaz.
+   Buna rağmen yerinde duran satırlar `BEKLEMEDE` değil **`HATALI`** olanlardır:
+   master datası eksik oldukları için planlamaya hiç girmezler ve esnetme onları
+   kurtarmaz. Raporlar ekranındaki *"Planlanamayan siparişler"* tablosu bunları
+   gerekçesiyle listeler. Bir teslimattaki tek bir ürünün eksiği bütün teslimatı
+   dışarıda bırakır.
+8. **Ring yalnızca Eskişehir içi dağıtımdır.** Sipariş dosyasında `SehirAdi` alanı
+   Eskişehir dışında bir il gösteren satırlar bu havuza **alınmaz**; yükleme
+   sonucunda kaç satırın neden alınmadığı yazar. Şehir alanı boş olan satırlar
+   reddedilmez (bir kısım kaynak dosyada bu sütun hiç doldurulmuyor, depo kodu zaten
+   Eskişehir'i gösteriyor).
+9. **Termin tarihi planlamayı etkilemez.**
 
 **Depolar:** 64, 64-V, 64-P, 74, 74-V, 3, 03, 34, 36, 44 — hepsi anahtar ölçüsüyle.
 Yükleme formundaki `64-D DEPO` satırı ayrı bir depo değil, depo 64'ün form üzerindeki

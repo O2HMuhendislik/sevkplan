@@ -55,19 +55,22 @@
              placeholder="Sefer no, axata no, il, teslimat no, sipariş no" style="width:360px"></div>
     <button type="submit">Filtrele</button>
     <a class="dugme ikincil" href="/rota/raporlar/plan-excel?durum={{ durum }}&tip={{ tip }}&arama={{ arama }}">Excel'e aktar</a>
+    <a class="dugme ikincil" href="/rapor/plan-raporu?modul=ROTA&durum={{ durum }}&arama={{ arama }}"
+       title="Özet, ürün grubu, plan listesi ve sevk durumu tek kitapta">Plan raporu</a>
     <a class="dugme ikincil" href="/rota/gunluk-form?tarih={{ bugun }}">Günlük yükleme formu</a>
   </form>
 
   {% if planlar %}
   <table>
     <thead><tr>
-      <th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Bölge / İller</th>
+      <th class="sag">#</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Bölge / İller</th>
       <th class="sag">Durak</th><th class="sag">Büyüklük</th><th>Doluluk</th>
       <th>Son uğrak</th><th>Depo</th><th>Axata No</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for plan in planlar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td><a href="/rota/planlar/{{ plan.id }}"><b>{{ plan.sefer_no }}</b></a>
           {% if plan.istisna_asim %}<span class="rozet HATALI">İSTİSNA</span>{% endif %}
           {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ESNETİLDİ</span>{% endif %}</td>
@@ -92,6 +95,9 @@
     {% endfor %}
     </tbody>
   </table>
+  <p class="soluk" style="margin:10px 0 0">
+    Listenin sonu — <b>{{ planlar | length }}</b> plan gösterildi.
+  </p>
   {% else %}<div class="bos">Plan bulunamadı.</div>{% endif %}
 </div>
 {% endblock %}

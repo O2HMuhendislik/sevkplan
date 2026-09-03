@@ -164,4 +164,25 @@
     </tbody>
   </table>
 </div>
+
+<div class="kart">
+  <h2>Ürün grubu özeti</h2>
+  <p class="soluk">Bu araca hangi gruptan kaç adet giriyor.</p>
+  <table>
+    <thead><tr><th class="sag">#</th><th>Ürün Grubu</th>
+      <th class="sag">Teslimat</th><th class="sag">Satır</th><th class="sag">Adet</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in plan.urun_grubu_ozeti %}
+      <tr><td class="sag soluk">{{ loop.index }}</td><td><b>{{ satir.grup }}</b></td>
+          <td class="sag">{{ satir.teslimat }}</td>
+          <td class="sag">{{ satir.satir }}</td>
+          <td class="sag">{{ satir.adet | sayi }}</td></tr>
+    {% endfor %}
+      <tr><td></td><td><b>TOPLAM</b></td><td></td><td></td>
+          <td class="sag"><b>{{ plan.toplam_adet | sayi }}</b></td></tr>
+    </tbody>
+  </table>
+</div>
+
 {% endblock %}

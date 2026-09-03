@@ -115,7 +115,7 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
             satir.urun_kodu,
             satir.gosterilecek_urun_adi,
             float(satir.miktar),
-            satir.bayi_adi,
+            satir.bayi_gosterimi,
             satir.sevk_adresi,
             satir.teslimat_no,
             float(satir.desi or 0),

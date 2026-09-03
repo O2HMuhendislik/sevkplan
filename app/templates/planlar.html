@@ -72,18 +72,21 @@
              placeholder="Sefer no, axata no, teslimat no, sipariş no, ürün" style="width:360px"></div>
     <button type="submit">Filtrele</button>
     <a class="dugme ikincil" href="/ring/raporlar/plan-excel?durum={{ durum }}&arama={{ arama }}">Excel'e aktar</a>
+    <a class="dugme ikincil" href="/rapor/plan-raporu?modul=RING&durum={{ durum }}&arama={{ arama }}"
+       title="Özet, ürün grubu, plan listesi ve sevk durumu tek kitapta">Plan raporu</a>
   </form>
 
   {% if planlar %}
   <table>
     <thead><tr>
-      <th>Sefer No</th><th>Tarih</th><th>Depo</th><th>Ürün(ler)</th>
+      <th class="sag">#</th><th>Sefer No</th><th>Tarih</th><th>Depo</th><th>Ürün(ler)</th>
       <th class="sag">Teslimat</th><th class="sag">Büyüklük</th><th>Doluluk</th>
       <th class="sag">Palet</th><th>Axata No</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for plan in planlar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td><a href="/ring/planlar/{{ plan.id }}"><b>{{ plan.sefer_no }}</b></a>
           {% if plan.mix_mi %}<span class="rozet PLANLANDI">MIX</span>{% endif %}
           {% if plan.istisna_asim %}<span class="rozet HATALI">İSTİSNA</span>{% endif %}
@@ -108,6 +111,9 @@
     {% endfor %}
     </tbody>
   </table>
+  <p class="soluk" style="margin:10px 0 0">
+    Listenin sonu — <b>{{ planlar | length }}</b> plan gösterildi.
+  </p>
   {% else %}<div class="bos">Plan bulunamadı.</div>{% endif %}
 </div>
 {% endblock %}

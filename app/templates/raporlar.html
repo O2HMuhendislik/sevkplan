@@ -79,8 +79,12 @@
 <div class="kart">
   <h2>Bekleyen siparişler — neden planlanamıyor?</h2>
   <p class="soluk">
-    Bu ürünlerdeki teslimatlar 18 palet alt limitini dolduramadığı için beklemede.
-    Hacim biriktikçe bir sonraki planlama çalıştırmasında otomatik olarak plana girerler.
+    Bu ürünlerdeki teslimatlar
+    {% if profil %}{{ profil.alt_limit }} {{ profil.olcu_adi }}{% else %}alt{% endif %}
+    limitini dolduramadığı için beklemede — <b>yalnızca Ring havuzu</b> sayılır.
+    Hacim biriktikçe bir sonraki planlama çalıştırmasında otomatik olarak plana girerler;
+    beklemeden hepsini plana almak için planlama ekranındaki
+    <b>“Kalanları da planla”</b> seçeneğini kullanın.
   </p>
   {% if bekleyenler %}
   <table>
@@ -95,4 +99,31 @@
   </table>
   {% else %}<div class="bos">Bekleyen sipariş yok.</div>{% endif %}
 </div>
+<div class="kart">
+  <h2>Planlanamayan siparişler — master data eksik</h2>
+  <p class="soluk">
+    Bu satırlar hacim beklemiyor: ürün master datası eksik olduğu için planlamaya hiç
+    giremiyorlar. <b>“Kalanları da planla” bunları da kurtarmaz</b> — eksik alan
+    <a href="/urunler">Master Data</a> ekranından tamamlanmalı, sonra sipariş dosyası
+    yeniden yüklenmeli. Bir teslimattaki tek bir ürünün eksiği bütün teslimatı
+    planlama dışında bırakır.
+  </p>
+  {% if hatalilar %}
+  <table>
+    <thead><tr><th>#</th><th>Ürün Kodu</th><th>Sebep</th>
+      <th class="sag">Teslimat</th><th class="sag">Toplam Miktar</th></tr></thead>
+    <tbody>
+    {% for satir in hatalilar %}
+      <tr><td class="soluk">{{ loop.index }}</td><td>{{ satir.urun_kodu }}</td>
+          <td>{{ satir.sebep }}</td>
+          <td class="sag">{{ satir.teslimat_sayisi }}</td>
+          <td class="sag">{{ satir.toplam_miktar | sayi }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">Master datası eksik olan sipariş yok.</div>
+  {% endif %}
+</div>
+
 {% endblock %}

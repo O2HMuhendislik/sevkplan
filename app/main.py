@@ -39,6 +39,7 @@ from app.config import (
     OTURUM_SURESI_DAKIKA,
     RING_DEPO_KODU,
     TUM_DEPOLAR,
+    depo_profili,
     oturum_anahtari,
 )
 from app.db import OturumFabrikasi, oturum_bagimliligi, semayi_olustur
@@ -66,6 +67,7 @@ from app.services import (
     ihracat_servisi,
     ihracat_yukleme_formu,
     kullanici_servisi,
+    plan_raporu,
     plan_servisi,
     rapor_servisi,
     sablonlar,
@@ -306,7 +308,8 @@ def ring_gosterge(
         son_planlar=rapor_servisi.planlari_getir(
             db, PlanFiltresi(modul="RING"), limit=10
         ),
-        bekleyenler=rapor_servisi.bekleyen_ozeti(db)[:10],
+        bekleyenler=rapor_servisi.bekleyen_ozeti(db, modul="RING")[:10],
+        hatalilar=rapor_servisi.hatali_ozeti(db, modul="RING")[:5],
     )
 
 
@@ -541,6 +544,47 @@ def yukleme_formu_indir(
     return FileResponse(hedef, filename=hedef.name)
 
 
+@uygulama.get("/rapor/plan-raporu")
+def plan_raporu_indir(
+    modul: str = "",
+    durum: str = "",
+    baslangic: str = "",
+    bitis: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(oturumdaki_kullanici),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Özet + ürün grubu + plan listesi + sevk durumu raporu (bütün modüller için aynı).
+
+    `modul` verilmezse kullanıcının yetkili olduğu bütün modüller tek kitapta gelir.
+    """
+    izinliler = [
+        kod for kod in plan_raporu.MODUL_ADLARI if kullanici.gorebilir_mi(kod)
+    ]
+    if modul and modul not in izinliler:
+        raise HTTPException(403, "Bu modülün raporunu görme yetkiniz yok")
+
+    def gune_cevir(deger: str):
+        return datetime.strptime(deger, "%Y-%m-%d").date() if deger else None
+
+    filtre = PlanFiltresi(
+        durum=durum or None,
+        baslangic=gune_cevir(baslangic),
+        bitis=gune_cevir(bitis),
+        arama=arama or None,
+        modul=modul or None,
+    )
+    planlar_listesi = rapor_servisi.planlari_getir(db, filtre, limit=5000)
+    if not modul:
+        planlar_listesi = [p for p in planlar_listesi if p.modul in izinliler]
+    hedef = plan_raporu.rapor_uret(
+        planlar_listesi,
+        CIKTI_DIZIN / f"plan_raporu_{modul.lower() or 'tum'}.xlsx",
+        modul=modul or None,
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
 @uygulama.get("/ring/raporlar")
 def raporlar(
     istek: Request,
@@ -554,7 +598,9 @@ def raporlar(
         ozet=rapor_servisi.gosterge_paneli(db),
         aylik=rapor_servisi.aylik_ozet(db),
         urun_bazli=rapor_servisi.urun_bazli_ozet(db),
-        bekleyenler=rapor_servisi.bekleyen_ozeti(db),
+        bekleyenler=rapor_servisi.bekleyen_ozeti(db, modul="RING"),
+        hatalilar=rapor_servisi.hatali_ozeti(db, modul="RING"),
+        profil=depo_profili(RING_DEPO_KODU),
         sevk_durumu=rapor_servisi.sevk_durumu(db),
     )
 

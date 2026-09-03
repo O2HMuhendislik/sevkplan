@@ -26,6 +26,32 @@ from app.services.veri_formatlari import (
 )
 
 
+RING_ILI = "ESKISEHIR"
+"""Ring, Eskişehir içi dağıtımdır; başka ile giden sipariş bu havuza alınmaz."""
+
+
+def ring_ili_mi(sehir: object) -> bool:
+    """Şehir alanı Ring kapsamında mı?
+
+    Türkçe karakter ve yazım farkları sadeleştirilerek karşılaştırılır. **Boş şehir
+    reddedilmez:** bir kısım kaynak dosyada bu sütun hiç doldurulmuyor, depo kodu
+    zaten Eskişehir'i gösteriyor. Yalnızca açıkça başka bir il yazılmışsa satır
+    alınmaz.
+    """
+    ad = yer_adi(sehir)
+    return not ad or ad == RING_ILI
+
+
+class RingKapsamDisi(ExcelHatasi):
+    """Ring havuzuna Eskişehir dışı bir il ile sipariş yüklenmeye çalışıldı."""
+
+    def __init__(self, sehir: str) -> None:
+        super().__init__(
+            f"Ring yalnızca Eskişehir içi dağıtımdır; '{sehir}' ili alınmadı. "
+            "Bu siparişi İç Piyasa modülünden yükleyin."
+        )
+
+
 @dataclass
 class SatirHatasi:
     satir_no: int
@@ -44,6 +70,8 @@ class IceAktarimSonucu:
     hatalar: list[SatirHatasi] = field(default_factory=list)
     uyarilar: list[SatirHatasi] = field(default_factory=list)
     """Kayıt alındı ama eksik veri var; kullanıcının görmesi gereken durumlar."""
+    reddedilen: int = 0
+    """Modülün kapsamı dışında olduğu için hiç alınmayan satır sayısı."""
 
     @property
     def basarili(self) -> int:
@@ -59,6 +87,8 @@ class IceAktarimSonucu:
             f"{self.guncellenen} güncellendi · {self.atlanan} atlandı · "
             f"{self.hatali} hatalı"
         )
+        if self.reddedilen:
+            metin += f" · {self.reddedilen} satır modül kapsamı dışında, alınmadı"
         if self.birlestirilen:
             metin += f" · {self.birlestirilen} satır birleştirildi"
         if self.uyarilar:
@@ -191,11 +221,20 @@ def siparisleri_aktar(
                 raise ExcelHatasi(
                     f"Depo kodu atanmamış ({depo_kodu or 'boş'}); bu satır planlanamaz"
                 )
+            sehir = excel.metin(kayit.get("sehir"))
+            if modul == "RING" and not ring_ili_mi(sehir):
+                # Ring, Eskişehir içi dağıtımdır. Şehir dışı sipariş buraya yüklenirse
+                # planlamaya girer ve sahada yanlış araca binerdi; alınmaz.
+                raise RingKapsamDisi(sehir or "boş")
             miktar = excel.sayi(kayit.get("miktar"), "Miktar")
             if miktar <= 0:
                 raise ExcelHatasi("Miktar sıfırdan büyük olmalı")
             siparis_tarihi = excel.tarih(kayit.get("siparis_tarihi"))
             termin_tarihi = excel.tarih(kayit.get("termin_tarihi"))
+        except RingKapsamDisi as hata:
+            sonuc.reddedilen += 1
+            sonuc.hatalar.append(SatirHatasi(satir_no, anahtar, str(hata)))
+            continue
         except ExcelHatasi as hata:
             sonuc.hatalar.append(SatirHatasi(satir_no, anahtar, str(hata)))
             continue
@@ -239,7 +278,7 @@ def siparisleri_aktar(
         mevcut.urun_adi = excel.metin(kayit.get("urun_adi"))
         mevcut.miktar = miktar
         mevcut.depo_kodu = depo_kodu.strip().upper()
-        mevcut.sehir = excel.metin(kayit.get("sehir"))
+        mevcut.sehir = sehir
         mevcut.bayi_adi = excel.metin(kayit.get("bayi_adi"))
         mevcut.teslim_sekli = excel.metin(kayit.get("teslim_sekli"))
         # Alıcı firma / adres / ilçe sütunlarının anlamı satır tipine göre kayıyor;

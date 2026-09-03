@@ -96,6 +96,14 @@
       </tbody>
     </table>
     {% else %}<div class="bos">Bekleyen sipariş yok.</div>{% endif %}
+    {% if hatalilar %}
+    <p class="soluk" style="margin-top:12px">
+      <b>{{ hatalilar | length }} ürün master datası eksik olduğu için hiç
+      planlanamıyor</b> — “Kalanları da planla” bunları kurtarmaz.
+      {% for satir in hatalilar %}<br>{{ satir.urun_kodu }}: {{ satir.sebep }}{% endfor %}
+      <br><a href="/ring/raporlar">Tam listeyi raporlarda görün</a>
+    </p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

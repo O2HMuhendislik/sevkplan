@@ -175,7 +175,7 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
         return (
             uzaklik if uzaklik is not None else 9999,
             satir.sehir or "",
-            satir.bayi_adi or "",
+            satir.bayi_gosterimi,
             satir.teslimat_no,
             satir.urun_kodu,
         )
@@ -193,9 +193,9 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
             satir.urun_kodu,
             satir.gosterilecek_urun_adi,
             float(satir.miktar),
-            satir.bayi_adi,
-            satir.alici_firma,
-            satir.sevk_adresi,
+            satir.bayi_gosterimi,
+            satir.alici_gosterimi,
+            satir.adres_metni,
             satir.ilce,
             satir.teslimat_no,
             plan.axata_ozeti or "",

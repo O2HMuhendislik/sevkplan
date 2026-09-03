@@ -604,3 +604,61 @@ def test_her_seyi_sil_master_datayi_da_temizler(istemci, fabrika):
         assert db.query(SiparisSatiri).count() == 0
         assert db.query(IhracatMusterisi).count() == 0
         assert db.query(IhracatUrunu).count() == 0
+
+
+def test_ring_eskisehir_disi_siparisi_almaz(istemci, fabrika):
+    """Ring Eskişehir içi dağıtımdır; başka il yüklenirse alınmaz ve kullanıcı uyarılır."""
+    from app.models import SiparisSatiri
+
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Palet içi adet", "Tır yükleme adeti"],
+        [["U1", "Kombi A", 10, 100]],
+    )
+    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+
+    dosya = kitap(
+        ["SehirAdi", "Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu"],
+        [
+            ["ESKİŞEHİR", "S1", "T1", "U1", 100, "64"],
+            ["İZMİR", "S2", "T2", "U1", 100, "64"],
+            ["", "S3", "T3", "U1", 100, "64"],
+        ],
+    )
+    cevap = istemci.post("/ring/siparisler/yukle", files={"dosya": ("s.xlsx", dosya)})
+    assert "modül kapsamı dışında" in sorgu(cevap)
+
+    with fabrika() as db:
+        siparisler = {s.siparis_no for s in db.query(SiparisSatiri).all()}
+    # Eskişehir ve şehri boş satır alınır; İzmir alınmaz.
+    assert siparisler == {"S1", "S3"}
+
+
+def test_ring_raporu_baska_modulun_bekleyenini_gostermez(istemci, fabrika):
+    """Bekleyen listesi modüle göre daralır; yoksa 'esneme çalışmıyor' sanılıyor."""
+    ihracat_verisi_yukle(istemci)
+
+    cevap = istemci.get("/ring/raporlar")
+    assert cevap.status_code == 200
+    # İhracat havuzundaki bekleyen ürün Ring raporunda görünmemeli.
+    assert "916041211" not in cevap.text
+
+
+def test_plan_raporu_ozet_urun_grubu_ve_sevk_durumu_uretir(istemci, fabrika, tmp_path):
+    from openpyxl import load_workbook
+
+    ihracat_verisi_yukle(istemci)
+    istemci.post("/ihracat/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+
+    cevap = istemci.get("/rapor/plan-raporu?modul=IHRACAT")
+    assert cevap.status_code == 200
+    hedef = tmp_path / "rapor.xlsx"
+    hedef.write_bytes(cevap.content)
+
+    kitap_ = load_workbook(hedef)
+    assert kitap_.sheetnames == ["Özet", "Ürün Grubu", "Planlar", "Sevk Durumu"]
+    ozet = [h.value for satir in kitap_["Özet"].iter_rows() for h in satir if h.value]
+    assert "İhracat" in ozet and "TOPLAM" in ozet
+    assert kitap_["Ürün Grubu"].max_row > 1
+    planlar = kitap_["Planlar"]
+    assert planlar["A1"].value == "#" and planlar["A2"].value == 1
+    assert "Konteyner No" in [h.value for h in kitap_["Sevk Durumu"][1]]

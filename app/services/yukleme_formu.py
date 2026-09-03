@@ -29,8 +29,12 @@ DEPO_SATIRLARI = ("34-DEPO", "44-DEPO", "64-D DEPO", "64-V DEPO", "74-DEPO")
 
 BASLIKLAR = [
     "No", "İl Adi", "Sipariş No", "Belge No", "Depo ", "Ürün Kodu", "Ürün Adi",
-    "Adet", "Bayii Adı", None, None, "Teslimat",
+    "Adet", "Bayii Adı", "Alıcı Firma", "Sevk Adresi", "Teslimat",
 ]
+"""Kaynak Ring dosyasının sütun düzeni (BayiAdi / AliciFirma / SevkAdresi).
+
+Son iki başlık önce boştu; depo formda hangi sütunun ne olduğunu göremiyordu.
+"""
 KOLON_GENISLIKLERI = {
     "A": 9.7, "B": 14.7, "C": 15.7, "D": 14.7, "E": 12.4, "F": 14.3,
     "G": 49.3, "H": 7.0, "I": 38.0, "J": 6.7, "K": 12.0, "L": 17.1,
@@ -201,9 +205,9 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
             satir.urun_kodu,
             satir.gosterilecek_urun_adi,
             float(satir.miktar),
-            satir.bayi_adi,
-            satir.alici_firma,
-            satir.sevk_adresi,
+            satir.bayi_gosterimi,
+            satir.alici_gosterimi,
+            satir.adres_metni,
             satir.teslimat_no,
         ]
         for sutun, deger in enumerate(degerler, start=1):

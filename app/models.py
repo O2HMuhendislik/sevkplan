@@ -590,6 +590,27 @@ class SevkiyatPlani(Temel):
         return (musteri.yukleme_tipi or "") if musteri is not None else ""
 
     @property
+    def urun_grubu_ozeti(self) -> list[dict]:
+        """Plandaki ürünlerin grup bazında adedi.
+
+        Depo "bu araca hangi gruptan kaç adet giriyor" diye baktığı için plan
+        detayında ve raporlarda bu kırılım gösterilir. Grubu tanımsız ürünler
+        "GRUPSUZ" altında toplanır ki toplam her zaman plan adediyle eşleşsin.
+        """
+        toplamlar: dict[str, dict] = {}
+        for satir in self.satirlar:
+            ad = (satir.urun_grubu or "GRUPSUZ").upper()
+            kayit = toplamlar.setdefault(
+                ad, {"grup": ad, "adet": Decimal(0), "satir": 0, "teslimatlar": set()}
+            )
+            kayit["adet"] += Decimal(satir.miktar or 0)
+            kayit["satir"] += 1
+            kayit["teslimatlar"].add(satir.teslimat_no)
+        for kayit in toplamlar.values():
+            kayit["teslimat"] = len(kayit.pop("teslimatlar"))
+        return sorted(toplamlar.values(), key=lambda k: -k["adet"])
+
+    @property
     def il_yeri_metni(self) -> str:
         """Yükleme formunun 'İl' satırı.
 
@@ -716,6 +737,34 @@ class SiparisSatiri(Temel):
     @property
     def urun_grubu(self) -> str | None:
         return self.urun.urun_grubu if self.urun else None
+
+    @property
+    def bayi_gosterimi(self) -> str:
+        """Yükleme formunun 'Bayii Adı' sütunu.
+
+        Kaynak dosyalarda bayi adı sütunu bazen boş geliyor; o zaman alıcı firma
+        yazılır. Sütunun boş kalması depo için formu okunmaz hâle getiriyor.
+        """
+        return (self.bayi_adi or self.alici_firma or "—").strip() or "—"
+
+    @property
+    def alici_gosterimi(self) -> str:
+        """Alıcı firma; bayi adının aynısıysa tekrar yazılmaz."""
+        alici = (self.alici_firma or "").strip()
+        return "" if not alici or alici == (self.bayi_adi or "").strip() else alici
+
+    @property
+    def adres_metni(self) -> str:
+        """Açık adres ve ilçe tek metinde; ikisi de forma sığsın diye birleştirilir."""
+        parcalar = [
+            parca.strip()
+            for parca in (self.sevk_adresi, self.ilce)
+            if parca and parca.strip()
+        ]
+        # Adres zaten ilçeyi içeriyorsa iki kez yazılmaz.
+        if len(parcalar) == 2 and parcalar[1].upper() in parcalar[0].upper():
+            return parcalar[0]
+        return " - ".join(parcalar)
 
     @property
     def oncelik_tarihi(self) -> date:
