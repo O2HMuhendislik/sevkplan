@@ -666,6 +666,7 @@ def rota_gosterge(
         kullanici,
         ozet=rapor_servisi.gosterge_paneli(db, modul="ROTA"),
         tip_ozeti=rapor_servisi.ic_piyasa_ozeti(db),
+        arac_ozeti=rapor_servisi.ic_arac_ozeti(db),
         bolge_ozeti=rapor_servisi.bolge_ozeti(db)[:12],
         son_planlar=rapor_servisi.planlari_getir(
             db, PlanFiltresi(modul="ROTA"), limit=10
@@ -787,6 +788,7 @@ def rota_planlar(
     durum: str = "",
     tip: str = "",
     bolge: str = "",
+    arac: str = "",
     arama: str = "",
     kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
     db: Session = Depends(oturum_bagimliligi),
@@ -797,6 +799,7 @@ def rota_planlar(
         modul="ROTA",
         sevkiyat_tipi=tip or None,
         bolge_kodu=bolge or None,
+        arac_tipi=arac or None,
     )
     return sayfa(
         istek,
@@ -806,6 +809,7 @@ def rota_planlar(
         durum=durum,
         tip=tip,
         bolge=bolge,
+        arac=arac,
         arama=arama,
         durumlar=[d.value for d in PlanDurumu],
     )
@@ -990,6 +994,7 @@ def rota_raporlar(
         kullanici,
         ozet=rapor_servisi.gosterge_paneli(db, modul="ROTA"),
         tip_ozeti=rapor_servisi.ic_piyasa_ozeti(db),
+        arac_ozeti=rapor_servisi.ic_arac_ozeti(db),
         bolge_ozeti=rapor_servisi.bolge_ozeti(db),
     )
 

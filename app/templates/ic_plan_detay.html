@@ -24,6 +24,10 @@
 {% set tir_giremeyenler = duraklar | selectattr('tir_girisi', 'equalto', 'H') | list %}
 
 <div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Araç</div>
+    <div class="deger" style="font-size:21px">
+      {{ plan.ic_arac_adi or plan.sevkiyat_tipi_adi }}</div>
+    <div class="soluk">{{ plan.sevkiyat_tipi_adi }}</div></div>
   <div class="metrik"><div class="etiket">Plan büyüklüğü</div>
     <div class="deger" style="font-size:21px">{{ plan.birim_metni }}</div>
     <div class="soluk">hedef {{ plan.profil.alt_limit }}–{{ plan.profil.ust_limit }}

@@ -535,12 +535,32 @@ class SevkiyatPlani(Temel):
             "IHRACAT": "/ihracat/planlar",
         }.get(self.modul, "/ring/planlar")
 
+    IC_ARAC_ADLARI = {"KAMYON": "Kamyon", "TIR": "Tır"}
+    """İç piyasa planında aracın adı; kamyon ile tır ayrı kapasitedir."""
+
+    @property
+    def ic_arac_adi(self) -> str:
+        """İç piyasa planının aracı: Kamyon ya da Tır. Kargoda araç yoktur."""
+        if self.modul != "ROTA" or self.sevkiyat_tipi == "KARGO":
+            return ""
+        return self.IC_ARAC_ADLARI.get((self.arac_tipi or "").upper(), "")
+
     @property
     def sevkiyat_tipi_adi(self) -> str:
+        """Plan listelerinde görünen tip adı.
+
+        İç piyasada "FTL" tek başına yeterli değil: sahada aracın kamyon mu tır mı
+        olduğu bilinmeli. Araç tipi biliniyorsa FTL yerine doğrudan aracın adı yazılır.
+        """
         from app.domain.ic_piyasa import SevkiyatTipi
 
         if not self.sevkiyat_tipi:
             return "Ring"
+        arac = self.ic_arac_adi
+        if arac and self.sevkiyat_tipi == "FTL":
+            return f"{arac} (tam araç)"
+        if arac and self.sevkiyat_tipi == "RUTIN":
+            return f"Rutin / parsiyel ({arac.lower()})"
         try:
             return SevkiyatTipi(self.sevkiyat_tipi).ad
         except ValueError:

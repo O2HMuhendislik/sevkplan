@@ -27,7 +27,14 @@ from app.domain.ic_piyasa import (
     yukleme_deposu,
 )
 from app.domain.iller import yer_adi
-from app.domain.kapasite import IC_FTL, IC_KARGO, IC_RUTIN, KapasiteProfili
+from app.domain.kapasite import (
+    IC_FTL,
+    IC_FTL_KAMYON,
+    IC_KARGO,
+    IC_RUTIN,
+    IC_RUTIN_KAMYON,
+    KapasiteProfili,
+)
 from app.domain.marka import paylari_hesapla, paylari_metne_cevir
 from app.models import (
     Musteri,
@@ -54,9 +61,19 @@ TIP_PROFILLERI: dict[SevkiyatTipi, KapasiteProfili] = {
     SevkiyatTipi.KARGO: IC_KARGO,
 }
 
+KAMYON_PROFILLERI: dict[SevkiyatTipi, KapasiteProfili] = {
+    SevkiyatTipi.FTL: IC_FTL_KAMYON,
+    SevkiyatTipi.RUTIN: IC_RUTIN_KAMYON,
+}
+"""Aynı tipin kamyon karşılığı. Kargoda araç yoktur, o yüzden listede değildir."""
+
 
 def profil(tip: SevkiyatTipi) -> KapasiteProfili:
     return TIP_PROFILLERI[tip]
+
+
+def kamyon_profili(tip: SevkiyatTipi) -> KapasiteProfili | None:
+    return KAMYON_PROFILLERI.get(tip)
 
 
 @dataclass
@@ -180,6 +197,13 @@ def musterileri_topla(
                 palet=sum((t.palet for t in grup), Decimal(0)),
                 birim=sum((t.birim for t in grup), Decimal(0)),
                 ham_birim=sum((t.ham_anahtar for t in grup), Decimal(0)),
+                # Araç tipi yükleme bittikten sonra seçildiği için kamyon ölçüsü de
+                # baştan taşınır; bir SKU'nun kamyon adedi yoksa kamyon elenir.
+                kamyon_birim=sum((t.kamyon_anahtar for t in grup), Decimal(0)),
+                kamyon_ham_birim=sum(
+                    (t.kamyon_ham_anahtar for t in grup), Decimal(0)
+                ),
+                kamyon_uygun=all(t.kamyon_olculebilir for t in grup),
                 desi=desi.quantize(Decimal("0.001")),
                 adet=sum((t.miktar for t in grup), Decimal(0)),
                 agirlik=sum((t.agirlik for t in grup), Decimal(0)),
@@ -279,6 +303,8 @@ def plan_uret(
     }
     palet_haritasi_ = palet_haritasi(urunler)
     yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL.arac_tipi)
+    # Tır giremeyen müşterinin yükü kamyon kapasitesine göre bölünür.
+    kamyon_yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL_KAMYON.arac_tipi)
 
     satir_haritasi = {satir.id: satir for satir in satirlar}
     for tip in tipler:
@@ -295,11 +321,14 @@ def plan_uret(
             kalanlari_zorla=kalanlari_zorla,
             palet_ici=palet_haritasi_,
             yukleme_adeti=yukleme_haritasi_,
+            kamyon_profili=kamyon_profili(tip),
+            kamyon_yukleme_adeti=kamyon_yukleme_haritasi_,
         )
         for taslak in planlama.planlar:
             sonuc.planlar.append(
                 _plani_kaydet(
-                    db, taslak, satir_haritasi, plan_tarihi, tip_profili, kullanici
+                    db, taslak, satir_haritasi, plan_tarihi,
+                    taslak.secili_profil, kullanici,
                 )
             )
         sonuc.bekleyenler.extend(planlama.bekleyenler)
@@ -346,9 +375,11 @@ def _plani_kaydet(
         bolge_kodu=taslak.bolge_kodu,
         urun_kodlari=", ".join(urun_kodlari)[:500],
         olcu=kapasite.olcu.value,
-        toplam_birim=taslak.toplam_birim,
+        # Araç tipi yükleme bittikten sonra seçilir: yarım kalan tır, dolu kamyondur.
+        arac_tipi=taslak.arac_tipi.value,
+        toplam_birim=taslak.secili_birim,
         toplam_palet=taslak.toplam_palet,
-        toplam_anahtar=taslak.toplam_birim,
+        toplam_anahtar=taslak.secili_birim,
         toplam_adet=taslak.toplam_adet,
         toplam_agirlik=taslak.toplam_agirlik,
         toplam_desi=taslak.toplam_desi,

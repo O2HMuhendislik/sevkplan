@@ -28,7 +28,7 @@ from decimal import Decimal
 
 from app.domain.bolgeler import il_bolgesi
 from app.domain.iller import BOLUNEBILIR_DEPOLAR, ana_depo, mesafe, yer_adi
-from app.domain.kapasite import KapasiteProfili
+from app.domain.kapasite import AracTipi, KapasiteProfili
 from app.domain.planlama import Teslimat, palet_hesapla
 
 
@@ -93,6 +93,11 @@ class MusteriSiparisi:
     agirlik: Decimal
     ham_birim: Decimal = Decimal(0)
     """Yuvarlamasız anahtar değer: parsiyel araçta paletler karışık istiflenir (rutin/kargo)."""
+    kamyon_birim: Decimal = Decimal(0)
+    """Aynı siparişin kamyon anahtar değeri (tam palet ölçüsüyle)."""
+    kamyon_ham_birim: Decimal = Decimal(0)
+    kamyon_uygun: bool = False
+    """Bütün SKU'ların kamyon yükleme adeti tanımlı mı? Değilse kamyona yüklenemez."""
     incoterms: str = ""
     tir_girisi: str = "?"
     """E = tır girer, H = giremez, ? = geçmişten karar verilemedi."""
@@ -108,6 +113,12 @@ class MusteriSiparisi:
         if tip is SevkiyatTipi.FTL:
             return self.birim
         return self.ham_birim or self.birim
+
+    def kamyon_olcusu(self, tip: "SevkiyatTipi") -> Decimal:
+        """Aynı siparişin kamyondaki ölçüsü; kural `olcu` ile aynıdır."""
+        if tip is SevkiyatTipi.FTL:
+            return self.kamyon_birim
+        return self.kamyon_ham_birim or self.kamyon_birim
 
     @property
     def bolge_kodu(self) -> str:
@@ -149,13 +160,26 @@ class MusteriSiparisi:
             palet=sum((t.palet for t in teslimatlar), Decimal(0)),
             birim=sum((t.birim for t in teslimatlar), Decimal(0)),
             ham_birim=sum((t.ham_anahtar for t in teslimatlar), Decimal(0)),
+            kamyon_birim=sum((t.kamyon_anahtar for t in teslimatlar), Decimal(0)),
+            kamyon_ham_birim=sum(
+                (t.kamyon_ham_anahtar for t in teslimatlar), Decimal(0)
+            ),
+            kamyon_uygun=all(t.kamyon_olculebilir for t in teslimatlar),
             adet=sum((t.miktar for t in teslimatlar), Decimal(0)),
             agirlik=sum((t.agirlik for t in teslimatlar), Decimal(0)),
             desi=(self.desi * pay).quantize(Decimal("0.001")),
         )
 
 
-def _teslimat_olcusu(teslimat: Teslimat, tip: SevkiyatTipi) -> Decimal:
+def _teslimat_olcusu(
+    teslimat: Teslimat, tip: SevkiyatTipi, kamyon: bool = False
+) -> Decimal:
+    if kamyon:
+        return (
+            teslimat.kamyon_anahtar
+            if tip is SevkiyatTipi.FTL
+            else (teslimat.kamyon_ham_anahtar or teslimat.kamyon_anahtar)
+        )
     return (
         teslimat.birim
         if tip is SevkiyatTipi.FTL
@@ -169,8 +193,12 @@ def teslimati_bol(
     tip: SevkiyatTipi,
     palet_ici: Mapping[str, int] | None = None,
     yukleme_adeti: Mapping[str, int] | None = None,
+    kamyon: bool = False,
 ) -> list[Teslimat]:
     """Araç kapasitesini aşan **bölünebilir** teslimatı araç boyutunda parçalara ayırır.
+
+    `kamyon` verilirse ölçüler ve `yukleme_adeti` haritası kamyona aittir; kesim
+    kamyon kapasitesine göre yapılır.
 
     Önce satırlar bütün hâlde yerleştirilir; bir satır tek başına sığmıyorsa miktarı
     kesilir. Kesim **tam palet** sınırında yapılır: 1000 adetlik bir siparişten araca
@@ -181,7 +209,7 @@ def teslimati_bol(
     """
     if not teslimat.bolunebilir_mi or not teslimat.satir_miktarlari:
         return [teslimat]
-    if _teslimat_olcusu(teslimat, tip) <= kapasite:
+    if _teslimat_olcusu(teslimat, tip, kamyon) <= kapasite:
         return [teslimat]
 
     palet_ici = palet_ici or {}
@@ -240,7 +268,10 @@ def teslimati_bol(
         parcalar.append(kutu)
         kalanlar = yeni_kalanlar
 
-    return [_teslimat_parcasi(teslimat, kutu, palet_ici, yukleme_adeti) for kutu in parcalar]
+    return [
+        _teslimat_parcasi(teslimat, kutu, palet_ici, yukleme_adeti, kamyon)
+        for kutu in parcalar
+    ]
 
 
 def _teslimat_parcasi(
@@ -248,8 +279,14 @@ def _teslimat_parcasi(
     satirlar: dict[int, tuple[str, Decimal]],
     palet_ici: Mapping[str, int],
     yukleme_adeti: Mapping[str, int],
+    kamyon: bool = False,
 ) -> Teslimat:
-    """Teslimatın bir parçası: ölçüler alınan miktarlara göre yeniden hesaplanır."""
+    """Teslimatın bir parçası: ölçüler alınan miktarlara göre yeniden hesaplanır.
+
+    Hesaplanan anahtar hangi araca aitse (`kamyon`) o alanlara yazılır; diğer aracın
+    ölçüsü miktar oranıyla ölçeklenir. İki ölçü de dolu kalmalı, yoksa araç tipi
+    kararı bölünmüş teslimatlarda çalışmaz.
+    """
     sku_miktarlari: dict[str, Decimal] = defaultdict(Decimal)
     for sku, miktar in satirlar.values():
         sku_miktarlari[sku] += miktar
@@ -269,19 +306,30 @@ def _teslimat_parcasi(
     oran = (
         toplam_miktar / Decimal(teslimat.miktar) if teslimat.miktar else Decimal(1)
     )
+    if kamyon:
+        yeni_anahtar = teslimat.anahtar * oran
+        yeni_ham = teslimat.ham_anahtar * oran
+        kamyon_anahtar, kamyon_ham = anahtar, ham
+    else:
+        yeni_anahtar, yeni_ham = anahtar, ham
+        kamyon_anahtar = teslimat.kamyon_anahtar * oran
+        kamyon_ham = teslimat.kamyon_ham_anahtar * oran
+
     return replace(
         teslimat,
         miktar=toplam_miktar,
-        birim=anahtar or teslimat.birim * oran,
+        birim=yeni_anahtar or teslimat.birim * oran,
         palet=palet,
-        anahtar=anahtar,
-        ham_anahtar=ham,
+        anahtar=yeni_anahtar,
+        ham_anahtar=yeni_ham,
+        kamyon_anahtar=kamyon_anahtar,
+        kamyon_ham_anahtar=kamyon_ham,
         agirlik=(Decimal(teslimat.agirlik) * oran).quantize(Decimal("0.001")),
         sku_miktarlari=dict(sku_miktarlari),
         sku_kodlari=tuple(sorted(sku_miktarlari)),
         satir_idleri=tuple(sorted(satirlar)),
         satir_miktarlari=dict(satirlar),
-        depo_katkilari={teslimat.depo_kodu: anahtar},
+        depo_katkilari={teslimat.depo_kodu: yeni_anahtar},
     )
 
 
@@ -291,8 +339,12 @@ def musteriyi_bol(
     ust_limit: Decimal,
     palet_ici: Mapping[str, int] | None = None,
     yukleme_adeti: Mapping[str, int] | None = None,
+    kamyon: bool = False,
 ) -> list[MusteriSiparisi]:
     """Tek aracı aşan müşteriyi araç boyutunda parçalara ayırır.
+
+    `kamyon` verilirse ölçüler kamyona göre alınır; tır giremeyen müşterinin 1,7
+    kamyonluk yükü tek araca sığdırılmaz, iki kamyona bölünür.
 
     Kural olarak bölünmez olan **teslimattır**, müşteri değil: 3,6 araçlık sipariş
     veren bir bayiye gerçekte de dört araç gider. Teslimatlar büyükten küçüğe
@@ -302,16 +354,17 @@ def musteriyi_bol(
     Bayi ortak deposu (-1) teslimatları bunun istisnasıdır: miktarları araç
     kapasitesine göre kesilir (bkz. `teslimati_bol`).
     """
-    if musteri.olcu(tip) <= ust_limit:
+    mevcut = musteri.kamyon_olcusu(tip) if kamyon else musteri.olcu(tip)
+    if mevcut <= ust_limit:
         return [musteri]
 
     def olcu(teslimat: Teslimat) -> Decimal:
-        return _teslimat_olcusu(teslimat, tip)
+        return _teslimat_olcusu(teslimat, tip, kamyon)
 
     bolunmus: list[Teslimat] = []
     for teslimat in musteri.teslimatlar:
         bolunmus.extend(
-            teslimati_bol(teslimat, ust_limit, tip, palet_ici, yukleme_adeti)
+            teslimati_bol(teslimat, ust_limit, tip, palet_ici, yukleme_adeti, kamyon)
         )
 
     kutular: list[list[Teslimat]] = []
@@ -364,16 +417,73 @@ class RotaPlani:
     bolge_kodu: str
     tip: SevkiyatTipi
     profil: KapasiteProfili
+    """Paketlemenin yapıldığı profil — her zaman **tır**, yani büyük araç."""
     musteriler: list[MusteriSiparisi] = field(default_factory=list)
     alt_limit_esnetildi: bool = False
     istisna_asim: bool = False
+    kamyon_profili: KapasiteProfili | None = None
+    """Aynı tipin kamyon profili. Verilmezse araç her zaman tır olur."""
+    kamyon_zorunlu: bool = False
+    """Araçta tır giremeyen bir müşteri var; bu araç kamyon olmak zorunda.
+
+    Bu durumda `profil` zaten kamyon profilidir ve ölçüler baştan kamyona göre
+    hesaplanır — sonradan indirme değil, baştan kamyon planlaması.
+    """
 
     def musteri_olcusu(self, musteri: MusteriSiparisi) -> Decimal:
+        if self.kamyon_zorunlu:
+            return musteri.kamyon_olcusu(self.tip)
         return musteri.olcu(self.tip)
 
     @property
     def toplam_birim(self) -> Decimal:
+        """Tır ölçüsüyle toplam; paketleme ve sığdırma kararları bunun üzerinden."""
         return sum((self.musteri_olcusu(m) for m in self.musteriler), Decimal(0))
+
+    @property
+    def kamyon_birimi(self) -> Decimal:
+        return sum(
+            (m.kamyon_olcusu(self.tip) for m in self.musteriler), Decimal(0)
+        )
+
+    @property
+    def kamyona_sigar_mi(self) -> bool:
+        """Yük bir kamyona sığıyor mu?
+
+        Kamyon tırdan küçüktür; aynı yük tırın yarısını doldururken kamyonun tamamına
+        yakınını doldurur. Yarım kalan bir tır aslında dolu bir kamyondur — bu yüzden
+        araç tipi yükleme bittikten sonra seçilir. Bir SKU'nun kamyon yükleme adeti
+        tanımsızsa o yük kamyona verilemez.
+        """
+        if self.kamyon_zorunlu:
+            return True
+        if self.kamyon_profili is None or self.istisna_asim:
+            return False
+        if not self.musteriler or not all(m.kamyon_uygun for m in self.musteriler):
+            return False
+        kamyon = self.kamyon_birimi
+        return 0 < kamyon <= self.kamyon_profili.ust_limit
+
+    @property
+    def arac_tipi(self) -> AracTipi:
+        return AracTipi.KAMYON if self.kamyona_sigar_mi else AracTipi.TIR
+
+    @property
+    def secili_profil(self) -> KapasiteProfili:
+        """Aracın gerçekte hangi profille gittiği; doluluk buna göre ölçülür."""
+        if self.kamyona_sigar_mi and self.kamyon_profili is not None:
+            return self.kamyon_profili
+        return self.profil
+
+    @property
+    def secili_birim(self) -> Decimal:
+        if self.kamyon_zorunlu:
+            # Ölçüler zaten kamyona göre hesaplandı.
+            return self.toplam_birim
+        return (
+            self.kamyon_birimi if self.arac_tipi is AracTipi.KAMYON
+            else self.toplam_birim
+        )
 
     @property
     def toplam_palet(self) -> Decimal:
@@ -397,7 +507,8 @@ class RotaPlani:
 
     @property
     def doluluk_yuzdesi(self) -> Decimal:
-        return self.profil.doluluk_yuzdesi(self.toplam_birim)
+        """Seçilen araca göre doluluk: kamyona inen yük kamyon kapasitesiyle ölçülür."""
+        return self.secili_profil.doluluk_yuzdesi(self.secili_birim)
 
     @property
     def teslimatlar(self) -> list[Teslimat]:
@@ -519,20 +630,26 @@ def _paketle(
     kurallar: Kurallar,
     palet_ici: Mapping[str, int] | None = None,
     yukleme_adeti: Mapping[str, int] | None = None,
+    kamyon_profili: KapasiteProfili | None = None,
+    kamyon_zorunlu: bool = False,
 ) -> list[RotaPlani]:
     """Bir bölgedeki müşterileri araçlara yerleştirir.
 
     Sıra: büyükten küçüğe, eşitlikte yakından uzağa. Böylece bir araç önce hacmi
     tutan müşteriyle kurulur, kalan yer aynı yöndeki küçük müşterilerle doldurulur.
     """
+    def olcu(musteri: MusteriSiparisi) -> Decimal:
+        return musteri.kamyon_olcusu(tip) if kamyon_zorunlu else musteri.olcu(tip)
+
     planlar: list[RotaPlani] = []
     normal: list[MusteriSiparisi] = []
     for ham_musteri in grup:
         # Bir aracı aşan müşteri önce araç boyutunda parçalara ayrılır.
         for musteri in musteriyi_bol(
-            ham_musteri, tip, profil.ust_limit, palet_ici, yukleme_adeti
+            ham_musteri, tip, profil.ust_limit, palet_ici, yukleme_adeti,
+            kamyon_zorunlu,
         ):
-            if musteri.olcu(tip) > profil.ust_limit:
+            if olcu(musteri) > profil.ust_limit:
                 # Tek teslimat bile aracı aşıyor: bölünemez, istisna aracıyla gider.
                 planlar.append(
                     RotaPlani(
@@ -541,12 +658,14 @@ def _paketle(
                         profil=profil,
                         musteriler=[musteri],
                         istisna_asim=True,
+                        kamyon_profili=kamyon_profili,
+                        kamyon_zorunlu=kamyon_zorunlu,
                     )
                 )
             else:
                 normal.append(musteri)
 
-    sirali = sorted(normal, key=lambda m: (-m.olcu(tip), m.uzaklik, m.bayi_adi))
+    sirali = sorted(normal, key=lambda m: (-olcu(m), m.uzaklik, m.bayi_adi))
     araclar: list[RotaPlani] = []
     for musteri in sirali:
         adaylar = [a for a in araclar if a.sigar_mi(musteri, kurallar)]
@@ -561,7 +680,13 @@ def _paketle(
                 ),
             )
         else:
-            hedef = RotaPlani(bolge_kodu=bolge_kodu, tip=tip, profil=profil)
+            hedef = RotaPlani(
+                bolge_kodu=bolge_kodu,
+                tip=tip,
+                profil=profil,
+                kamyon_profili=kamyon_profili,
+                kamyon_zorunlu=kamyon_zorunlu,
+            )
             araclar.append(hedef)
         hedef.ekle(musteri)
 
@@ -602,8 +727,15 @@ def planla(
     kalanlari_zorla: bool = False,
     palet_ici: Mapping[str, int] | None = None,
     yukleme_adeti: Mapping[str, int] | None = None,
+    kamyon_profili: KapasiteProfili | None = None,
+    kamyon_yukleme_adeti: Mapping[str, int] | None = None,
 ) -> IcPiyasaSonucu:
     """Verilen tipteki müşterileri araçlara böler.
+
+    Paketleme **tır** ölçüsüyle yapılır; araç tipi yükleme bittikten sonra seçilir.
+    `kamyon_profili` verilirse bir tıra yarım kalan yük, sığıyorsa kamyona indirilir
+    ve alt limit kontrolü kamyon kapasitesine göre yapılır — yoksa dolu bir kamyonluk
+    yük "tır alt limitini dolduramadı" diye beklemede kalırdı.
 
     Kargo bir araç planlaması değildir: kapasite ve durak kuralları aranmaz, aynı
     bölgedeki kargo müşterileri tek bir kargo listesinde toplanır.
@@ -624,10 +756,36 @@ def planla(
             )
         return sonuc
 
+    # Tır giremeyen müşteriler ayrı planlanır: onların aracı baştan kamyondur,
+    # ölçüleri de kamyon kapasitesine göre hesaplanır. Aynı araca tır girebilen bir
+    # müşteriyle konmazlar; yoksa araç tıra çıkabilir ve mal kapıya inemez.
+    zorunlu_kamyon: list[MusteriSiparisi] = []
+    serbest: list[MusteriSiparisi] = []
+    for musteri in musteriler:
+        if (
+            kamyon_profili is not None
+            and musteri.tir_girisi == "H"
+            and musteri.kamyon_uygun
+        ):
+            zorunlu_kamyon.append(musteri)
+        else:
+            serbest.append(musteri)
+
     ham_planlar: list[RotaPlani] = []
-    for bolge_kodu, grup in _bolgelere_ayir(musteriler):
+    for bolge_kodu, grup in _bolgelere_ayir(serbest):
         ham_planlar.extend(
-            _paketle(grup, bolge_kodu, tip, profil, kurallar, palet_ici, yukleme_adeti)
+            _paketle(
+                grup, bolge_kodu, tip, profil, kurallar, palet_ici, yukleme_adeti,
+                kamyon_profili,
+            )
+        )
+    for bolge_kodu, grup in _bolgelere_ayir(zorunlu_kamyon):
+        ham_planlar.extend(
+            _paketle(
+                grup, bolge_kodu, tip, kamyon_profili, kurallar, palet_ici,
+                kamyon_yukleme_adeti or yukleme_adeti, kamyon_profili,
+                kamyon_zorunlu=True,
+            )
         )
 
     if tip is SevkiyatTipi.FTL:
@@ -647,7 +805,10 @@ def planla(
 
     uygunlar: list[RotaPlani] = []
     for plan in ham_planlar:
-        if plan.istisna_asim or profil.gecerli_dolu(plan.toplam_birim):
+        # Alt limit, aracın gerçekte hangi tiple gittiğine göre aranır: tırın yarısını
+        # dolduran yük kamyona sığıyorsa dolu bir araçtır.
+        secili = plan.secili_profil
+        if plan.istisna_asim or secili.gecerli_dolu(plan.secili_birim):
             uygunlar.append(plan)
         elif kalanlari_zorla:
             plan.alt_limit_esnetildi = True
@@ -659,9 +820,9 @@ def planla(
                         musteri=musteri,
                         tip=tip,
                         sebep=(
-                            "Yeterli hacim yok: kalan müşteriler "
-                            f"{profil.alt_limit} {profil.olcu_adi} alt limitini "
-                            "doldurmuyor"
+                            "Yeterli hacim yok: kalan müşteriler kamyonun da tırın da "
+                            "alt limitini doldurmuyor "
+                            f"({profil.alt_limit} {profil.olcu_adi})"
                         ),
                     )
                 )

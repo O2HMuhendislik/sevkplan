@@ -27,6 +27,8 @@ class PlanFiltresi:
     """RING ya da ROTA. Verilmezse bütün modüllerin planları döner."""
     sevkiyat_tipi: str | None = None
     bolge_kodu: str | None = None
+    arac_tipi: str | None = None
+    """KAMYON / TIR — iç piyasada araç tipine göre filtre."""
 
 
 def planlari_getir(db: Session, filtre: PlanFiltresi, limit: int = 500) -> list[SevkiyatPlani]:
@@ -45,6 +47,8 @@ def planlari_getir(db: Session, filtre: PlanFiltresi, limit: int = 500) -> list[
         sorgu = sorgu.where(SevkiyatPlani.sevkiyat_tipi == filtre.sevkiyat_tipi)
     if filtre.bolge_kodu:
         sorgu = sorgu.where(SevkiyatPlani.bolge_kodu == filtre.bolge_kodu)
+    if filtre.arac_tipi:
+        sorgu = sorgu.where(SevkiyatPlani.arac_tipi == filtre.arac_tipi)
     if filtre.arama:
         desen = f"%{filtre.arama.strip()}%"
         eslesen_plan_idleri = select(SiparisSatiri.plan_id).where(
@@ -309,6 +313,43 @@ def ic_piyasa_ozeti(db: Session) -> dict:
         }
         for tip, adet, durak, doluluk, toplam_adet in satirlar
     }
+
+
+def ic_arac_ozeti(db: Session) -> list[dict]:
+    """İç piyasa planlarının araç (kamyon / tır) dağılımı.
+
+    Aynı yük hem kamyona hem tıra yüklenebildiği için planlamanın verdiği asıl karar
+    budur; "kaç kamyon, kaç tır" sorusunun cevabı gösterge panelinde durmalı.
+    """
+    satirlar = db.execute(
+        select(
+            SevkiyatPlani.arac_tipi,
+            SevkiyatPlani.sevkiyat_tipi,
+            func.count(SevkiyatPlani.id),
+            func.avg(SevkiyatPlani.doluluk_yuzdesi),
+            func.sum(SevkiyatPlani.toplam_adet),
+        )
+        .where(
+            SevkiyatPlani.modul == "ROTA",
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+            SevkiyatPlani.sevkiyat_tipi != "KARGO",
+        )
+        .group_by(SevkiyatPlani.arac_tipi, SevkiyatPlani.sevkiyat_tipi)
+        .order_by(func.count(SevkiyatPlani.id).desc())
+    ).all()
+    adlar = {"KAMYON": "Kamyon", "TIR": "Tır"}
+    return [
+        {
+            "arac": adlar.get((arac or "").upper(), arac or "—"),
+            "tip": tip or "—",
+            "plan": adet,
+            "doluluk": (
+                Decimal(doluluk).quantize(Decimal("0.1")) if doluluk else Decimal(0)
+            ),
+            "adet": Decimal(toplam_adet or 0),
+        }
+        for arac, tip, adet, doluluk, toplam_adet in satirlar
+    ]
 
 
 def bolge_ozeti(db: Session) -> list[dict]:

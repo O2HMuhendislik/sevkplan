@@ -23,7 +23,13 @@ from app.domain.ic_piyasa import (
     tip_belirle,
     yukleme_deposu,
 )
-from app.domain.kapasite import IC_FTL, IC_KARGO, IC_RUTIN
+from app.domain.kapasite import (
+    AracTipi,
+    IC_FTL,
+    IC_FTL_KAMYON,
+    IC_KARGO,
+    IC_RUTIN,
+)
 from app.domain.planlama import Teslimat
 from app.services import ic_piyasa_servisi
 from tests.conftest import satir_ekle, urun_ekle
@@ -551,3 +557,92 @@ def test_kesilen_satirin_kalani_ayni_teslimatla_beklemede_kalir(ic_veri):
     assert [Decimal(s.miktar) for s in bekleyen] == [Decimal(50)]
     # Bölünen parçalar aynı teslimat ve sipariş numarasını taşır.
     assert len({s.siparis_no for s in satirlar}) == 1
+
+
+# ------------------------------------------------------------- kamyon / tır ayrımı
+
+
+def _kamyonlu_musteri(ad, il, tir, kamyon, kamyon_uygun=True):
+    """Aynı yükün tır ve kamyon anahtar değerini birlikte taşıyan müşteri."""
+    t = replace(
+        teslimat(f"{ad}-1", float(tir)),
+        kamyon_anahtar=Decimal(str(kamyon)),
+        kamyon_ham_anahtar=Decimal(str(kamyon)),
+        kamyon_olculebilir=kamyon_uygun,
+    )
+    return replace(
+        musteri(ad, il, float(tir), teslimatlar=(t,)),
+        kamyon_birim=Decimal(str(kamyon)),
+        kamyon_ham_birim=Decimal(str(kamyon)),
+        kamyon_uygun=kamyon_uygun,
+    )
+
+
+def test_yarim_kalan_tir_dolu_bir_kamyondur():
+    """Tırın %50'sini dolduran yük kamyonun %93'ünü doldurur; araç kamyona iner.
+
+    Kamyon seçeneği olmadan bu yük "alt limiti dolduramadı" diye beklemede kalırdı.
+    """
+    yarim = _kamyonlu_musteri("YARIM", "IZMIR", "0.50", "0.93")
+
+    beklemede = planla([yarim], SevkiyatTipi.FTL, IC_FTL)
+    assert beklemede.planlar == []
+
+    sonuc = planla([yarim], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON)
+    plan = sonuc.planlar[0]
+    assert plan.arac_tipi is AracTipi.KAMYON
+    assert plan.secili_profil is IC_FTL_KAMYON
+    # Doluluk kamyon kapasitesine göre ölçülür, tıra göre değil.
+    assert plan.doluluk_yuzdesi == Decimal("93.00")
+
+
+def test_kamyona_sigmayan_yuk_tirla_gider():
+    tam = _kamyonlu_musteri("TAM", "IZMIR", "0.95", "1.77")
+    plan = planla(
+        [tam], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON
+    ).planlar[0]
+    assert plan.arac_tipi is AracTipi.TIR
+    assert plan.doluluk_yuzdesi == Decimal("95.00")
+
+
+def test_kamyon_olcusu_olmayan_urun_kamyona_yuklenmez():
+    """Bir SKU'nun kamyon yükleme adeti tanımsızsa o yük kamyona verilemez."""
+    olcusuz = _kamyonlu_musteri("ÖLÇÜSÜZ", "IZMIR", "0.90", "0", kamyon_uygun=False)
+    plan = planla(
+        [olcusuz], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON
+    ).planlar[0]
+    assert plan.arac_tipi is AracTipi.TIR
+
+
+def test_plan_kamyon_tir_ayrimini_kaydeder(db):
+    """Servis katmanı: ürün master datasındaki iki yükleme adeti plana yansımalı."""
+    from app.models import SevkiyatPlani
+
+    # Tıra 100, kamyona 54 adet giren ürün: 50 adet tırın yarısı, kamyonun %93'ü.
+    urun_ekle(db, "U1", palet_ici_adet=1, tir_yukleme_adeti=100,
+              kamyon_yukleme_adeti=54)
+    _siparis(db, "T1", 50, "BAYİ A", "IZMIR")
+
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    assert plan.arac_tipi == "KAMYON"
+    assert plan.plan_tipi == "IC_FTL_KAMYON"
+    assert plan.ic_arac_adi == "Kamyon"
+    # Listelerde "FTL" değil aracın adı yazar.
+    assert plan.sevkiyat_tipi_adi == "Kamyon (tam araç)"
+    assert db.get(SevkiyatPlani, plan.id).doluluk_yuzdesi > 90
+
+
+def test_buyuk_siparis_tirla_planlanir(db):
+    urun_ekle(db, "U1", palet_ici_adet=1, tir_yukleme_adeti=100,
+              kamyon_yukleme_adeti=54)
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+
+    plan = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    ).planlar[0]
+    assert plan.arac_tipi == "TIR"
+    assert plan.sevkiyat_tipi_adi == "Tır (tam araç)"

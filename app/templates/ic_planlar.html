@@ -41,6 +41,8 @@
   <a href="/rota/planlar?tip=FTL" class="{{ 'aktif' if tip == 'FTL' }}">FTL</a>
   <a href="/rota/planlar?tip=RUTIN" class="{{ 'aktif' if tip == 'RUTIN' }}">Rutin</a>
   <a href="/rota/planlar?tip=KARGO" class="{{ 'aktif' if tip == 'KARGO' }}">Kargo</a>
+  <a href="/rota/planlar?arac=KAMYON" class="{{ 'aktif' if arac == 'KAMYON' }}">Kamyon</a>
+  <a href="/rota/planlar?arac=TIR" class="{{ 'aktif' if arac == 'TIR' }}">Tır</a>
   {% for d in durumlar %}
     <a href="/rota/planlar?durum={{ d }}" class="{{ 'aktif' if durum == d }}">{{ d }}</a>
   {% endfor %}
@@ -50,6 +52,7 @@
   <form class="satir" method="get" action="/rota/planlar" style="margin-bottom:14px">
     <input type="hidden" name="durum" value="{{ durum }}">
     <input type="hidden" name="tip" value="{{ tip }}">
+    <input type="hidden" name="arac" value="{{ arac }}">
     <div><label for="arama">Ara</label>
       <input id="arama" name="arama" value="{{ arama }}"
              placeholder="Sefer no, axata no, il, teslimat no, sipariş no" style="width:360px"></div>

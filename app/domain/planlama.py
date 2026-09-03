@@ -56,6 +56,15 @@ class Teslimat:
     anahtar: Decimal = Decimal(0)
     ham_anahtar: Decimal = Decimal(0)
     """Palete yuvarlanmamış anahtar değer; parsiyel (karışık istifli) araçlarda kullanılır."""
+    kamyon_anahtar: Decimal = Decimal(0)
+    """Aynı teslimatın **kamyon** anahtar değeri.
+
+    İç piyasada araç tipi (kamyon / tır) plan dolduktan sonra seçildiği için her
+    teslimat iki ölçüyü birden taşır. Ring bu alanı kullanmaz.
+    """
+    kamyon_ham_anahtar: Decimal = Decimal(0)
+    kamyon_olculebilir: bool = False
+    """Kamyon yükleme adeti bütün SKU'larda tanımlı mı? Değilse kamyona yüklenemez."""
     agirlik: Decimal = Decimal(0)
     """Raporlama için; planlama yalnızca `birim` alanını kullanır."""
     desi: Decimal = Decimal(0)

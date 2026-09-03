@@ -118,7 +118,7 @@ kullanıcı yalnızca yetkili olduğu modülleri açabilir.
 | Modül | Durum |
 |---|---|
 | **Ring Planlama** | Hazır |
-| **İç Piyasa Sevkiyat Planlama** | Hazır — FTL / rutin / kargo |
+| **İç Piyasa Sevkiyat Planlama** | Hazır — kamyon / tır, FTL / rutin / kargo |
 | **İhracat Planlama** | Hazır — tır / konteyner, kara / deniz |
 | **Raporlama** | Hazır — modüller arası liste ve plana alınma KPI'ı |
 | Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
@@ -162,10 +162,10 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 
 | Ekran | İşlev |
 |---|---|
-| **Gösterge Paneli** (`/rota`) | Sevkiyat tipi ve bölge dağılımı, planlamayı çalıştırma |
+| **Gösterge Paneli** (`/rota`) | Sevkiyat tipi, **araç (kamyon/tır)** ve bölge dağılımı, planlamayı çalıştırma |
 | **Siparişler** | Sipariş dosyası yükleme; her müşterinin hangi tiple gideceği ve **gerekçesi**; alınamayan satırlar sebebiyle. Ring ile aynı sipariş havuzu |
-| **Planlar** | Tip (FTL/rutin/kargo), bölge ve durum filtresi; günlük yükleme formu |
-| **Plan Detayı** | Rota ve duraklar, son uğrak oranı, ortak yükleme notu, araç/şoför bilgisi, Axata, marka payı |
+| **Planlar** | Tip (FTL/rutin/kargo), **araç (kamyon/tır)**, bölge ve durum filtresi; günlük yükleme formu. Liste "FTL" yerine aracın adını yazar |
+| **Plan Detayı** | **Araç (kamyon/tır)**, rota ve duraklar, son uğrak oranı, ortak yükleme notu, araç/şoför bilgisi, Axata, marka payı |
 | **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
@@ -212,24 +212,42 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    müşteri toplamı **10 desinin altında** → kargo, toplamı **3 paleti aşmıyorsa** →
    rutin/parsiyel, kalanı → **FTL**. Sefer numarası belge kodunu buradan alır:
    `2609S1001` (FTL), `2609R1001` (rutin), `2609K1001` (kargo).
-2. **Bölge bazlı rotalama.** Bir araca yalnızca aynı bölgedeki müşteriler yüklenir;
+2. **Araç kamyon mu tır mı?** Aynı yükün iki anahtar değeri vardır: kamyon ve tır.
+   Kamyon küçüktür — tır yükleme adeti 468 olan bir üründen kamyona 252 adet girer,
+   yani aynı yük tırın yarısını doldururken kamyonun tamamına yakınını doldurur.
+   Bu yüzden **araç tipi yükleme bittikten sonra seçilir:** paketleme tır ölçüsüyle
+   yapılır, yük bir kamyona sığıyorsa (kamyon anahtar değeri ≤ 1,00) plan kamyona
+   iner ve doluluk kamyon kapasitesine göre ölçülür. Yarım kalan bir tır, dolu bir
+   kamyondur; eskiden bu yükler "tır alt limitini dolduramadı" diye beklemede
+   kalıyordu.
+   *Doğrulama:* 2025'in gerçek 3.548 iç piyasa aracında **tır olarak çıkanların
+   %0'ının** kamyon anahtar değeri 1,00'ın altında (yani kural hiçbir tırı yanlışlıkla
+   kamyona indirmiyor), **kamyon olarak çıkanların** kamyon değeri medyan 0,95 / tır
+   değeri medyan 0,49 — tam olarak "yarım tır = dolu kamyon" durumu.
+3. **Tır giremeyen müşterinin aracı baştan kamyondur.** Müşteri master datasındaki
+   *tır girişi* alanı `H` ise o müşteri ayrı planlanır: ölçüler kamyona göre
+   hesaplanır, yükü 1,7 kamyonluksa iki kamyona bölünür. Aynı araca tır girebilen bir
+   müşteri konmaz — yoksa araç tıra çıkar ve mal kapıya inemez. Master datada
+   5.108 müşterinin 602'sine tır girmiyor, 3.422'sinde bu alan **boş**; boş olanlar
+   tır varsayılır, doldurdukça planlama gerçeğe yaklaşır.
+4. **Bölge bazlı rotalama.** Bir araca yalnızca aynı bölgedeki müşteriler yüklenir;
    bölgeler geçmiş FTL planlarından çıkarıldı (`app/domain/bolgeler.py`) ve müşteri
    ekranından değiştirilebilir.
-3. **Durak sırası** yükleme tesisine uzaklığa göredir; en uzak il **son uğraktır** ve
+5. **Durak sırası** yükleme tesisine uzaklığa göredir; en uzak il **son uğraktır** ve
    aracın en az **%15**'ini kaplamalıdır, aksi hâlde o durak araçtan çıkarılır.
-4. FTL araçta en fazla **5 durak**; rutinde durak sınırı yoktur (sahada 25-30 durak).
-5. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
+6. FTL araçta en fazla **5 durak**; rutinde durak sınırı yoktur (sahada 25-30 durak).
+7. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
    araçta paletler karışık istiflenir, kırık palet tam palet gözü saymaz. FTL'de
    yuvarlanır — orada her müşterinin malı tam paletle yüklenir.
-6. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
+8. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
    sonraki gün planlanır. Sınır, o gün daha önce üretilmiş planları da sayar.
-7. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
+9. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
    birden çok araca dağıtılır; tek başına aracı aşan teslimat istisna planına gider.
-8. **Ortak yükleme:** 64, 74 ve -1 depoları aynı araca yüklenebilir. Araç, hacmin
+10. **Ortak yükleme:** 64, 74 ve -1 depoları aynı araca yüklenebilir. Araç, hacmin
    çoğunu taşıyan depodan yüklenir; diğer depodaki malın satırına yükleme formunda
    *"… depoya gönderilmelidir"* notu düşülür. Aktarma için ayrı plan üretilmez.
-9. **Tır girişi olmayan müşteri** engellenmez ama plan detayında ve sipariş
-   önizlemesinde uyarı çıkar.
+11. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
+    sipariş önizlemesinde uyarı çıkar.
 
 ## İhracat planlama kuralları (özet)
 

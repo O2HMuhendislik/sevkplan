@@ -126,6 +126,15 @@ class TeslimatOlculeri:
     sku_miktarlari: dict[str, Decimal]
     depo_katkilari: dict[str, Decimal]
     """Depo kodu -> anahtar değer. Marka payının hesaplandığı yer."""
+    ikinci_anahtar: Decimal = Decimal(0)
+    """Diğer araç tipinin anahtar değeri (tır sorulduysa kamyon, kamyon sorulduysa tır).
+
+    İç piyasada araç tipi kamyon/tır olarak seçildiği için her teslimatın iki ölçüsü
+    birden taşınır; hangisiyle planlanacağına araç dolduktan sonra karar verilir.
+    """
+    ikinci_ham_anahtar: Decimal = Decimal(0)
+    ikinci_olculebilir: bool = False
+    """Diğer araç tipinin yükleme adeti bütün SKU'larda tanımlı mı?"""
 
 
 def teslimat_olculeri(
@@ -149,12 +158,29 @@ def teslimat_olculeri(
             satir.miktar
         )
 
+    diger_tip = (
+        AracTipi.KAMYON if arac_tipi is AracTipi.TIR else AracTipi.TIR
+    )
     palet = anahtar = ham_anahtar = agirlik = Decimal(0)
+    ikinci = ikinci_ham = Decimal(0)
+    ikinci_olculebilir = True
     depo_katkilari: dict[str, Decimal] = {}
     for urun_kodu, miktar in sku_miktarlari.items():
         urun = urun_haritasi[urun_kodu]
         if urun.palet_ici_adet:
             palet += palet_hesapla(miktar, urun.palet_ici_adet)
+        diger_yukleme = urun.yukleme_adeti(diger_tip)
+        if diger_yukleme:
+            ikinci_ham += Decimal(miktar) / Decimal(diger_yukleme)
+            diger_islenen = (
+                palet_hesapla(miktar, urun.palet_ici_adet) * urun.palet_ici_adet
+                if urun.palet_ici_adet
+                else miktar
+            )
+            ikinci += Decimal(diger_islenen) / Decimal(diger_yukleme)
+        else:
+            # Tek bir SKU'nun ölçüsü yoksa bu teslimat o araç tipiyle planlanamaz.
+            ikinci_olculebilir = False
         yukleme = urun.yukleme_adeti(arac_tipi)
         if yukleme:
             ham_anahtar += Decimal(miktar) / Decimal(yukleme)
@@ -183,6 +209,9 @@ def teslimat_olculeri(
         agirlik=agirlik.quantize(Decimal("0.001")),
         sku_miktarlari=sku_miktarlari,
         depo_katkilari=depo_katkilari,
+        ikinci_anahtar=ikinci.quantize(Decimal("0.000001")),
+        ikinci_ham_anahtar=ikinci_ham.quantize(Decimal("0.000001")),
+        ikinci_olculebilir=ikinci_olculebilir and bool(sku_miktarlari),
     )
 
 
@@ -293,6 +322,23 @@ def teslimatlari_hazirla(
                 palet=olculer.palet,
                 anahtar=olculer.anahtar,
                 ham_anahtar=olculer.ham_anahtar,
+                # Profil tır ise ikinci ölçü kamyondur; kamyon profiliyle çağrıldıysa
+                # birincil ölçü zaten kamyondur.
+                kamyon_anahtar=(
+                    olculer.anahtar
+                    if profil.arac_tipi is AracTipi.KAMYON
+                    else olculer.ikinci_anahtar
+                ),
+                kamyon_ham_anahtar=(
+                    olculer.ham_anahtar
+                    if profil.arac_tipi is AracTipi.KAMYON
+                    else olculer.ikinci_ham_anahtar
+                ),
+                kamyon_olculebilir=(
+                    True
+                    if profil.arac_tipi is AracTipi.KAMYON
+                    else olculer.ikinci_olculebilir
+                ),
                 agirlik=olculer.agirlik,
             )
         )

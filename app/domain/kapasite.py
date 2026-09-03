@@ -129,6 +129,30 @@ IC_RUTIN = KapasiteProfili(
 "araç tıka basa dolu" değil, "rutin hedefinin üst ucunda" demektir.
 """
 
+# İç piyasada aynı yük hem kamyona hem tıra yüklenebilir. Kamyon küçüktür: tır
+# yükleme adeti 468 olan bir üründen kamyona 252 adet girer, yani aynı miktar tırın
+# %54'ünü doldururken kamyonun tamamına yakınını doldurur. Bu yüzden araç tipi
+# yükleme bittikten sonra seçilir: yarım kalan bir tır, dolu bir kamyondur.
+IC_FTL_KAMYON = KapasiteProfili(
+    kod="IC_FTL_KAMYON",
+    ad="İç piyasa — FTL (kamyon)",
+    belge_kodu="S",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.KAMYON,
+    ust_limit=Decimal(1),
+    alt_limit=Decimal("0.85"),
+)
+
+IC_RUTIN_KAMYON = KapasiteProfili(
+    kod="IC_RUTIN_KAMYON",
+    ad="İç piyasa — Rutin / parsiyel (kamyon)",
+    belge_kodu="R",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.KAMYON,
+    ust_limit=Decimal("0.60"),
+    alt_limit=Decimal("0.50"),
+)
+
 IC_KARGO = KapasiteProfili(
     kod="IC_KARGO",
     ad="İç piyasa — Kargo",
@@ -175,6 +199,7 @@ PROFILLER = {
     profil.kod: profil
     for profil in (
         RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO,
+        IC_FTL_KAMYON, IC_RUTIN_KAMYON,
         IHRACAT_TIR, IHRACAT_KONTEYNER,
     )
 }

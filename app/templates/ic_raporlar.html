@@ -46,6 +46,28 @@
       rutinde %100 = rutin hedefinin üst ucu (tırın %60'ı).
     </p>
     {% else %}<div class="bos">Henüz iç piyasa planı üretilmedi.</div>{% endif %}
+    {% if arac_ozeti %}
+    <h2 style="margin-top:18px">Araca göre</h2>
+    <p class="soluk">
+      Aynı yük hem kamyona hem tıra yüklenebilir; yarım kalan bir tır dolu bir
+      kamyondur. Planlama aracı yükleme bittikten sonra seçer.
+    </p>
+    <table>
+      <thead><tr><th>Araç</th><th>Tip</th><th class="sag">Plan</th>
+        <th class="sag">Adet</th><th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in arac_ozeti %}
+        <tr>
+          <td><b>{{ satir.arac }}</b></td>
+          <td class="soluk">{{ satir.tip }}</td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.adet | sayi }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
 
   <div class="kart">

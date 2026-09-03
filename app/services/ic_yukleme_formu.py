@@ -52,6 +52,21 @@ ARAC_ETIKETLERI = {
     SevkiyatTipi.RUTIN: "FTL RUTİN",
     SevkiyatTipi.KARGO: "KARGO",
 }
+"""Satır tablosunun sol sütununa basılan araç etiketi (planda araç tipi yoksa)."""
+
+
+def _arac_etiketi(plan: SevkiyatPlani) -> str:
+    """Formun sol sütununa yazılan araç adı.
+
+    Aynı yük hem kamyona hem tıra yüklenebildiği için plan hangi araca çıkıyorsa o
+    yazılır; depo formda "TIR" görüp kamyon beklerse yükleme yanlış istiflenir.
+    """
+    arac = (plan.arac_tipi or "").upper()
+    if arac == "KAMYON":
+        return "KAMYON"
+    if arac == "TIR" and _plan_tipi(plan) is SevkiyatTipi.RUTIN:
+        return "TIR RUTİN"
+    return ARAC_ETIKETLERI[_plan_tipi(plan)]
 
 BASLIKLAR = [
     "No", "İl Adi", "Sipariş No", "Belge No", "Depo ", "Ürün Kodu", "Ürün Adi",
@@ -218,7 +233,7 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
         for sutun in range(1, SUTUN_SAYISI + 1):
             sayfa.cell(row=y, column=sutun).border = KENAR
 
-    arac = sayfa.cell(row=veri_basi, column=1, value=ARAC_ETIKETLERI[_plan_tipi(plan)])
+    arac = sayfa.cell(row=veri_basi, column=1, value=_arac_etiketi(plan))
     arac.font = KALIN
     arac.alignment = ORTALI
     if len(satirlar) > 1:
