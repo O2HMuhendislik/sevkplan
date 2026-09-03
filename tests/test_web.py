@@ -561,3 +561,46 @@ def test_uc_modul_ayri_havuz_kullanir(istemci, fabrika):
 
     with fabrika() as db:
         assert {s.modul for s in db.query(SiparisSatiri).all()} == {"ROTA", "IHRACAT"}
+
+
+def test_axatali_plan_silinebilir(istemci, fabrika):
+    """Plana Axata numarası girilmişse silme yabancı anahtar hatası vermemeli.
+
+    Toplu `delete()` ORM ilişkilerini çalıştırmadığı için plana bağlı Axata
+    satırları elle silinmezse veritabanı planı silmeyi reddeder ve ekran
+    "Internal Server Error" gösterir.
+    """
+    from app.models import AxataNumarasi, SevkiyatPlani
+
+    ihracat_verisi_yukle(istemci)
+    istemci.post("/ihracat/planlar/uret", data={"plan_tarihi": "2026-09-01"})
+    with fabrika() as db:
+        plan_id = db.query(SevkiyatPlani).filter_by(modul="IHRACAT").first().id
+    istemci.post(f"/ihracat/planlar/{plan_id}/axata", data={"axata_no": "2735"})
+    with fabrika() as db:
+        assert db.query(AxataNumarasi).count() == 1
+
+    cevap = istemci.post(
+        "/veri-yonetimi/sil", data={"islem": "siparis_ve_planlar", "onay": "SIL"}
+    )
+    assert cevap.status_code == 200
+    assert "silindi" in sorgu(cevap)
+    with fabrika() as db:
+        assert db.query(SevkiyatPlani).count() == 0
+        assert db.query(AxataNumarasi).count() == 0
+
+
+def test_her_seyi_sil_master_datayi_da_temizler(istemci, fabrika):
+    """"Her şeyi sil" ihracat ürün ve müşteri master datasını da kapsamalı."""
+    from app.models import IhracatMusterisi, IhracatUrunu, SiparisSatiri
+
+    ihracat_verisi_yukle(istemci)
+    with fabrika() as db:
+        assert db.query(IhracatMusterisi).count() > 0
+
+    cevap = istemci.post("/veri-yonetimi/sil", data={"islem": "hepsi", "onay": "SIL"})
+    assert cevap.status_code == 200
+    with fabrika() as db:
+        assert db.query(SiparisSatiri).count() == 0
+        assert db.query(IhracatMusterisi).count() == 0
+        assert db.query(IhracatUrunu).count() == 0

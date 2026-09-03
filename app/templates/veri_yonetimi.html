@@ -5,13 +5,18 @@
 <h1>Veri Yönetimi</h1>
 
 <div class="izgara dort" style="margin-bottom:18px">
-  <div class="metrik"><div class="etiket">Ürün</div><div class="deger">{{ sayimlar.urun }}</div></div>
+  <div class="metrik"><div class="etiket">Ürün</div>
+    <div class="deger">{{ sayimlar.urun }}</div>
+    <div class="soluk">{{ sayimlar.ihracat_urun }} ihracat ürünü</div></div>
   <div class="metrik"><div class="etiket">Sipariş satırı</div>
     <div class="deger">{{ sayimlar.siparis }}</div>
     <div class="soluk">{{ sayimlar.bekleyen }} tanesi planlanmamış</div></div>
   <div class="metrik"><div class="etiket">Plan</div>
     <div class="deger">{{ sayimlar.plan }}</div>
     <div class="soluk">{{ sayimlar.tamamlanan_plan }} tanesi tamamlanmış</div></div>
+  <div class="metrik"><div class="etiket">Müşteri</div>
+    <div class="deger">{{ sayimlar.musteri }}</div>
+    <div class="soluk">{{ sayimlar.ihracat_musteri }} ihracat müşterisi</div></div>
   <div class="metrik"><div class="etiket">Aktarım kaydı</div>
     <div class="deger">{{ sayimlar.aktarim }}</div></div>
 </div>
@@ -99,8 +104,10 @@
 <div class="kart">
   <h2>4 · Her şeyi sil</h2>
   <p class="soluk">
-    Ürün master datası dahil bütün verileri siler ve sefer sayacını sıfırlar.
-    Sistem ilk kurulduğu hâle döner; master datayı yeniden yüklemeniz gerekir.
+    Ürün, müşteri ve ihracat master datası dahil bütün verileri siler, sefer sayacını
+    sıfırlar. Kullanıcı hesapları korunur. Programla gelen gömülü master data
+    (ihracat ürünleri ve müşterileri, iç piyasa müşterileri) bir sonraki açılışta
+    kendiliğinden geri yüklenir.
   </p>
   <form class="satir" method="post" action="/veri-yonetimi/sil">
     <input type="hidden" name="islem" value="hepsi">

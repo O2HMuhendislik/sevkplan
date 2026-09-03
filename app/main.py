@@ -27,6 +27,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
@@ -1679,24 +1680,32 @@ def veri_sil(
     def tarihe_cevir(deger: str):
         return datetime.strptime(deger, "%Y-%m-%d").date() if deger else None
 
-    if islem == "bekleyen":
-        sonuc = temizleme.bekleyen_siparisleri_sil(db)
-    elif islem == "planlar":
-        sonuc = temizleme.planlari_sil(
-            db,
-            baslangic=tarihe_cevir(baslangic),
-            bitis=tarihe_cevir(bitis),
-            tamamlananlar_dahil=tamamlananlar_dahil,
-            siparisleri_de_sil=siparisleri_de_sil,
+    try:
+        if islem == "bekleyen":
+            sonuc = temizleme.bekleyen_siparisleri_sil(db)
+        elif islem == "planlar":
+            sonuc = temizleme.planlari_sil(
+                db,
+                baslangic=tarihe_cevir(baslangic),
+                bitis=tarihe_cevir(bitis),
+                tamamlananlar_dahil=tamamlananlar_dahil,
+                siparisleri_de_sil=siparisleri_de_sil,
+            )
+        elif islem == "siparis_ve_planlar":
+            sonuc = temizleme.siparis_ve_planlari_sil(db, sayaci_sifirla=sayaci_sifirla)
+        elif islem == "hepsi":
+            sonuc = temizleme.her_seyi_sil(db)
+        else:
+            return yonlendir("/veri-yonetimi", hata=f"Bilinmeyen işlem: {islem}")
+        db.commit()
+    except SQLAlchemyError as hata:
+        # Silme yarıda kalırsa veritabanı tutarlı kalsın ve kullanıcı sebebini görsün;
+        # sunucu hatası sayfası hiçbir şey anlatmıyor.
+        db.rollback()
+        return yonlendir(
+            "/veri-yonetimi",
+            hata=f"Silme tamamlanamadı, hiçbir kayıt silinmedi: {hata.__class__.__name__}",
         )
-    elif islem == "siparis_ve_planlar":
-        sonuc = temizleme.siparis_ve_planlari_sil(db, sayaci_sifirla=sayaci_sifirla)
-    elif islem == "hepsi":
-        sonuc = temizleme.her_seyi_sil(db)
-    else:
-        return yonlendir("/veri-yonetimi", hata=f"Bilinmeyen işlem: {islem}")
-
-    db.commit()
     return yonlendir("/veri-yonetimi", mesaj=sonuc.ozet())
 
 

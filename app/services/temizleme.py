@@ -13,7 +13,11 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models import (
+    AxataNumarasi,
     IceAktarim,
+    IhracatMusterisi,
+    IhracatUrunu,
+    Musteri,
     PlanDurumu,
     PlanHareketi,
     SeferSayaci,
@@ -29,6 +33,9 @@ class SilmeSonucu:
     siparis: int = 0
     plan: int = 0
     urun: int = 0
+    ihracat_urun: int = 0
+    musteri: int = 0
+    ihracat_musteri: int = 0
     ice_aktarim: int = 0
     sayac: int = 0
 
@@ -40,6 +47,12 @@ class SilmeSonucu:
             parcalar.append(f"{self.siparis} sipariş satırı")
         if self.urun:
             parcalar.append(f"{self.urun} ürün")
+        if self.ihracat_urun:
+            parcalar.append(f"{self.ihracat_urun} ihracat ürünü")
+        if self.musteri:
+            parcalar.append(f"{self.musteri} müşteri")
+        if self.ihracat_musteri:
+            parcalar.append(f"{self.ihracat_musteri} ihracat müşterisi")
         if self.ice_aktarim:
             parcalar.append(f"{self.ice_aktarim} aktarım kaydı")
         if self.sayac:
@@ -64,6 +77,9 @@ def sayimlar(db: Session) -> dict[str, int]:
             )
         ) or 0,
         "aktarim": db.scalar(select(func.count(IceAktarim.id))) or 0,
+        "musteri": db.scalar(select(func.count(Musteri.id))) or 0,
+        "ihracat_musteri": db.scalar(select(func.count(IhracatMusterisi.id))) or 0,
+        "ihracat_urun": db.scalar(select(func.count(IhracatUrunu.id))) or 0,
     }
 
 
@@ -78,7 +94,10 @@ def _planlari_sil(db: Session, planlar: list[SevkiyatPlani]) -> int:
         satir.plan_id = None
         satir.durum = SiparisDurumu.BEKLEMEDE
     db.flush()
+    # Plana bağlı bütün kayıtlar plandan önce silinmeli: toplu `delete()` ORM
+    # ilişkilerini çalıştırmaz, kalan satır yabancı anahtar hatası verir.
     db.execute(delete(PlanHareketi).where(PlanHareketi.plan_id.in_(plan_idleri)))
+    db.execute(delete(AxataNumarasi).where(AxataNumarasi.plan_id.in_(plan_idleri)))
     db.execute(delete(SevkiyatPlani).where(SevkiyatPlani.id.in_(plan_idleri)))
     db.flush()
     return len(plan_idleri)
@@ -154,10 +173,21 @@ def siparis_ve_planlari_sil(db: Session, sayaci_sifirla: bool = False) -> SilmeS
 
 
 def her_seyi_sil(db: Session) -> SilmeSonucu:
-    """Ürün master datası dahil bütün verileri siler. Boş sistemle başlamak için."""
+    """Master data dahil bütün verileri siler. Boş sistemle başlamak için.
+
+    Ürün, müşteri ve ihracat master datası da gider. Programla gelen gömülü master
+    data bir sonraki açılışta yeniden yüklenir (`app/services/gomulu_veri.py`);
+    kullanıcı hesapları ve yetkileri korunur.
+    """
     sonuc = siparis_ve_planlari_sil(db, sayaci_sifirla=True)
-    sonuc.urun = db.scalar(select(func.count(Urun.id))) or 0
-    db.execute(delete(Urun))
+    for tablo, alan in (
+        (Urun, "urun"),
+        (IhracatUrunu, "ihracat_urun"),
+        (Musteri, "musteri"),
+        (IhracatMusterisi, "ihracat_musteri"),
+    ):
+        setattr(sonuc, alan, db.scalar(select(func.count(tablo.id))) or 0)
+        db.execute(delete(tablo))
     kalan_aktarim = db.scalar(select(func.count(IceAktarim.id))) or 0
     sonuc.ice_aktarim += kalan_aktarim
     db.execute(delete(IceAktarim))
