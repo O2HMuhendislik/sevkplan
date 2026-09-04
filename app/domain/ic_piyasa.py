@@ -120,15 +120,12 @@ class MusteriSiparisi:
     teslimatlar: tuple[Teslimat, ...]
     palet: Decimal
     birim: Decimal
-    """Tam palet ölçüsüyle anahtar değer: kırık palet bir palet gözü kaplar (FTL)."""
+    """Tır anahtar değeri: Σ miktar / tır yükleme adeti (palete yuvarlanmaz)."""
     desi: Decimal
     adet: Decimal
     agirlik: Decimal
-    ham_birim: Decimal = Decimal(0)
-    """Yuvarlamasız anahtar değer: parsiyel araçta paletler karışık istiflenir (rutin/kargo)."""
     kamyon_birim: Decimal = Decimal(0)
-    """Aynı siparişin kamyon anahtar değeri (tam palet ölçüsüyle)."""
-    kamyon_ham_birim: Decimal = Decimal(0)
+    """Aynı siparişin kamyon anahtar değeri."""
     kamyon_uygun: bool = False
     """Bütün SKU'ların kamyon yükleme adeti tanımlı mı? Değilse kamyona yüklenemez."""
     incoterms: str = ""
@@ -136,22 +133,17 @@ class MusteriSiparisi:
     """E = tır girer, H = giremez, ? = geçmişten karar verilemedi."""
 
     def olcu(self, tip: "SevkiyatTipi") -> Decimal:
-        """Aracı doldurma ölçüsü, sevkiyat tipine göre.
+        """Aracı doldurma ölçüsü. Sevkiyat tipi ölçüyü değiştirmez.
 
-        FTL'de her müşterinin malı tam palet olarak yüklenir; kırık palet de bir palet
-        gözü kaplar. Rutinde ve kargoda paletler karışık istiflendiği için yuvarlama
-        yapılmaz — yoksa 3 parçalık bir sipariş tam palet sayılır ve araç 5 durakta
-        dolmuş görünür (gerçekte rutin araçlar 25-30 durak yapıyor).
+        Bir dönem FTL'de miktar palete yukarı yuvarlanıyor, rutin/kargoda
+        yuvarlanmıyordu. Yuvarlama gerçek araçlarda doğrulanmadı (bkz. AnahtarBirimi)
+        ve kaldırıldı; iki tipte de aynı ham anahtar değer kullanılır.
         """
-        if tip is SevkiyatTipi.FTL:
-            return self.birim
-        return self.ham_birim or self.birim
+        return self.birim
 
     def kamyon_olcusu(self, tip: "SevkiyatTipi") -> Decimal:
         """Aynı siparişin kamyondaki ölçüsü; kural `olcu` ile aynıdır."""
-        if tip is SevkiyatTipi.FTL:
-            return self.kamyon_birim
-        return self.kamyon_ham_birim or self.kamyon_birim
+        return self.kamyon_birim
 
     @property
     def bolge_kodu(self) -> str:
@@ -221,11 +213,7 @@ class MusteriSiparisi:
             teslimatlar=tuple(teslimatlar),
             palet=sum((t.palet for t in teslimatlar), Decimal(0)),
             birim=sum((t.birim for t in teslimatlar), Decimal(0)),
-            ham_birim=sum((t.ham_anahtar for t in teslimatlar), Decimal(0)),
             kamyon_birim=sum((t.kamyon_anahtar for t in teslimatlar), Decimal(0)),
-            kamyon_ham_birim=sum(
-                (t.kamyon_ham_anahtar for t in teslimatlar), Decimal(0)
-            ),
             kamyon_uygun=all(t.kamyon_olculebilir for t in teslimatlar),
             adet=sum((t.miktar for t in teslimatlar), Decimal(0)),
             agirlik=sum((t.agirlik for t in teslimatlar), Decimal(0)),
@@ -236,17 +224,8 @@ class MusteriSiparisi:
 def _teslimat_olcusu(
     teslimat: Teslimat, tip: SevkiyatTipi, kamyon: bool = False
 ) -> Decimal:
-    if kamyon:
-        return (
-            teslimat.kamyon_anahtar
-            if tip is SevkiyatTipi.FTL
-            else (teslimat.kamyon_ham_anahtar or teslimat.kamyon_anahtar)
-        )
-    return (
-        teslimat.birim
-        if tip is SevkiyatTipi.FTL
-        else (teslimat.ham_anahtar or teslimat.birim)
-    )
+    """Teslimatın araçtaki büyüklüğü. Sevkiyat tipi ölçüyü değiştirmez."""
+    return teslimat.kamyon_anahtar if kamyon else teslimat.birim
 
 
 def teslimati_bol(
@@ -265,8 +244,10 @@ def teslimati_bol(
     için aksesuarı ana ürüne bağlayan başka bir bilgi yok; oransal bölme bu bağı
     kendiliğinden korur.)
 
-    Her SKU'nun payı **tam palete** yuvarlanır: kırık palet araçta tam palet gözü
-    kaplar. Payı bir paletin altında kalan küçük kalemler bölünmez, ilk araca konur.
+    Kesim noktası **tam palete** indirilir: araca 100 adet sığıyorsa ve palete 16
+    giriyorsa 96 adet konur, depoda palet kırılmaz. (Bu bir kapasite kısıtı değil,
+    depo elleçlemesini azaltan bir tercihtir; kapasite ölçüsü ham anahtar değerdir.)
+    Payı bir paletin altında kalan küçük kalemler bölünmez, ilk araca konur.
 
     `kamyon` verilirse ölçüler ve `yukleme_adeti` haritası kamyona aittir.
     Bölünemeyen ya da zaten sığan teslimat olduğu gibi döner.
@@ -284,13 +265,7 @@ def teslimati_bol(
         adet = yukleme_adeti.get(sku)
         if not adet:
             return Decimal(0)
-        ici = palet_ici.get(sku)
-        islenen = (
-            palet_hesapla(miktar, ici) * ici
-            if ici and tip is SevkiyatTipi.FTL
-            else miktar
-        )
-        return Decimal(islenen) / Decimal(adet)
+        return Decimal(miktar) / Decimal(adet)
 
     def palete_indir(sku: str, miktar: Decimal) -> Decimal:
         """Miktarı aşağı doğru tam palete yuvarlar; palet bilgisi yoksa tam sayıya.
@@ -366,16 +341,14 @@ def _teslimat_parcasi(
     for sku, miktar in satirlar.values():
         sku_miktarlari[sku] += miktar
 
-    palet = anahtar = ham = Decimal(0)
+    palet = anahtar = Decimal(0)
     for sku, miktar in sku_miktarlari.items():
         ici = palet_ici.get(sku)
         adet = yukleme_adeti.get(sku)
         if ici:
             palet += palet_hesapla(miktar, ici)
         if adet:
-            ham += miktar / Decimal(adet)
-            islenen = palet_hesapla(miktar, ici) * ici if ici else miktar
-            anahtar += Decimal(islenen) / Decimal(adet)
+            anahtar += miktar / Decimal(adet)
 
     toplam_miktar = sum(sku_miktarlari.values(), Decimal(0))
     oran = (
@@ -383,12 +356,10 @@ def _teslimat_parcasi(
     )
     if kamyon:
         yeni_anahtar = teslimat.anahtar * oran
-        yeni_ham = teslimat.ham_anahtar * oran
-        kamyon_anahtar, kamyon_ham = anahtar, ham
+        kamyon_anahtar = anahtar
     else:
-        yeni_anahtar, yeni_ham = anahtar, ham
+        yeni_anahtar = anahtar
         kamyon_anahtar = teslimat.kamyon_anahtar * oran
-        kamyon_ham = teslimat.kamyon_ham_anahtar * oran
 
     return replace(
         teslimat,
@@ -396,9 +367,7 @@ def _teslimat_parcasi(
         birim=yeni_anahtar or teslimat.birim * oran,
         palet=palet,
         anahtar=yeni_anahtar,
-        ham_anahtar=yeni_ham,
         kamyon_anahtar=kamyon_anahtar,
-        kamyon_ham_anahtar=kamyon_ham,
         agirlik=(Decimal(teslimat.agirlik) * oran).quantize(Decimal("0.001")),
         sku_miktarlari=dict(sku_miktarlari),
         sku_kodlari=tuple(sorted(sku_miktarlari)),

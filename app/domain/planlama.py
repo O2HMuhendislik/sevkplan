@@ -54,15 +54,13 @@ class Teslimat:
     """Depo kodu -> anahtar değer. Marka payı (navlun dağıtımı) buradan hesaplanır."""
     palet: Decimal = Decimal(0)
     anahtar: Decimal = Decimal(0)
-    ham_anahtar: Decimal = Decimal(0)
-    """Palete yuvarlanmamış anahtar değer; parsiyel (karışık istifli) araçlarda kullanılır."""
+    """Tır anahtar değeri: Σ miktar / tır yükleme adeti (palete yuvarlanmaz)."""
     kamyon_anahtar: Decimal = Decimal(0)
     """Aynı teslimatın **kamyon** anahtar değeri.
 
     İç piyasada araç tipi (kamyon / tır) plan dolduktan sonra seçildiği için her
     teslimat iki ölçüyü birden taşır. Ring bu alanı kullanmaz.
     """
-    kamyon_ham_anahtar: Decimal = Decimal(0)
     kamyon_olculebilir: bool = False
     """Kamyon yükleme adeti bütün SKU'larda tanımlı mı? Değilse kamyona yüklenemez."""
     agirlik: Decimal = Decimal(0)
@@ -137,22 +135,31 @@ class PaletBirimi:
 
 @dataclass(frozen=True)
 class AnahtarBirimi:
-    """Anahtar değeri **işgal edilen palet** üzerinden hesaplar.
+    """Aracın kapasite ölçüsü: anahtar değer.
 
-    Ham miktar / yükleme adeti oranı yanıltıcıdır: kırık bir palet araçta yarım yer
-    kaplamaz, tam bir palet gözü kaplar. Bu yüzden her SKU'nun plandaki toplam miktarı
-    önce palete yuvarlanır, sonra anahtar değere çevrilir.
+        birim = Σ  miktar / (o aracın) yükleme adeti      · 1,00 = %100 dolu araç
 
-        birim = Σ  yukarı_yuvarla(miktar / palet içi) x palet içi / tır yükleme adeti
+    **Palete yuvarlama yoktur.** Bir dönem kırık paletin tam palet gözü kapladığı
+    varsayılıp miktar palete yukarı yuvarlanıyordu; bu, ölçüyü sistematik olarak
+    şişiriyordu:
 
-    Örnek: palet içi 15, tır yükleme adeti 360 (= 24 tam palet) olan bir üründen
-    305 adet, ham oranla 0,847 görünür ama 21 palet gözü kaplar ve gerçek karşılığı
-    0,875'tir. Böylece motor 305 yerine 300 adetlik (20 tam palet) bileşimi seçer.
+    * Şirketin kendi sevk dosyası anahtar değeri satır bazında taşıyor ve orada
+      yuvarlama yok — satırın değeri birim değerin tam olarak `adet` katı.
+    * 2025'in **2.048** gerçek tırında (master datayla birebir eşleşenler) bu ham
+      ölçünün medyanı **1,000**; yuvarlamalı ölçünün medyanı **1,263** ve araçların
+      **%94,6'sı** 1,00 üstünde çıkıyordu. Yani dolu sayılan araç aslında dolu değil.
+    * Kırılmanın en sert olduğu yer, tek tek küçük kalemlerden oluşan bayi ortak
+      deposu (-1) yükleri: 18 SKU'nun her biri bir tam palet sayılınca %36 dolu bir
+      araç %98 görünüyordu.
 
-    Palet içi adedi tanımsız ürünlerde ham oran kullanılır.
+    Kırık palet yine de istenmeyen bir şeydir; ama bu bir **kapasite** kısıtı değil,
+    bir **kalite** ölçüsüdür ve yerleştirme kararında `PaletIsrafi` ile ölçülür.
+
+    Yükleme adeti tanımsız ürün ölçüye girmez (o teslimat zaten planlamaya alınmaz).
     """
 
     palet_ici: Mapping[str, int]
+    """Palet israfı ve palet sayısı için taşınır; anahtar değere girmez."""
     yukleme_adeti: Mapping[str, int]
 
     def __call__(self, teslimatlar: Sequence[Teslimat]) -> Decimal:
@@ -161,11 +168,7 @@ class AnahtarBirimi:
             adet = self.yukleme_adeti.get(sku)
             if not adet:
                 continue
-            palet_ici = self.palet_ici.get(sku)
-            islenen = (
-                palet_hesapla(miktar, palet_ici) * palet_ici if palet_ici else miktar
-            )
-            toplam += Decimal(islenen) / Decimal(adet)
+            toplam += Decimal(miktar) / Decimal(adet)
         return toplam
 
 

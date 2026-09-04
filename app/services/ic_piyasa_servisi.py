@@ -207,13 +207,9 @@ def musterileri_topla(
                 teslimatlar=tuple(grup),
                 palet=sum((t.palet for t in grup), Decimal(0)),
                 birim=sum((t.birim for t in grup), Decimal(0)),
-                ham_birim=sum((t.ham_anahtar for t in grup), Decimal(0)),
                 # Araç tipi yükleme bittikten sonra seçildiği için kamyon ölçüsü de
                 # baştan taşınır; bir SKU'nun kamyon adedi yoksa kamyon elenir.
                 kamyon_birim=sum((t.kamyon_anahtar for t in grup), Decimal(0)),
-                kamyon_ham_birim=sum(
-                    (t.kamyon_ham_anahtar for t in grup), Decimal(0)
-                ),
                 kamyon_uygun=all(t.kamyon_olculebilir for t in grup),
                 desi=desi.quantize(Decimal("0.001")),
                 adet=sum((t.miktar for t in grup), Decimal(0)),
@@ -592,7 +588,6 @@ def musteri_ozeti(db: Session, satirlar: list[SiparisSatiri]) -> list[dict]:
                 "bolge": bolge_adi(musteri.bolge_kodu),
                 "palet": musteri.palet,
                 "anahtar": musteri.birim,
-                "ham_anahtar": musteri.ham_birim,
                 "desi": musteri.desi,
                 "adet": musteri.adet,
                 "incoterms": musteri.incoterms,

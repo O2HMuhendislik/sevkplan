@@ -288,9 +288,8 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    *Eskişehir* Eskişehir ve Bilecik (depoların bulunduğu iller — yük taşınmaz,
    yerinde dağıtılır), *Ankara* Ankara ve doğusu, yani kalan her yer. Tablo
    `app/domain/aktarma.py` içindedir; tarife değişirse yalnızca orası güncellenir.
-10. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
-   araçta paletler karışık istiflenir, kırık palet tam palet gözü saymaz. FTL'de
-   yuvarlanır — orada her müşterinin malı tam paletle yüklenir.
+10. **Rutin araç %50-60 dolulukta bırakılır.** Kapasite ölçüsü FTL ile aynıdır:
+   ham anahtar değer. Sevkiyat tipi ölçüyü değiştirmez.
 11. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
    sonraki gün planlanır. Sınır, o gün daha önce üretilmiş planları da sayar.
 12. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
@@ -305,8 +304,9 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 15. **Bölünebilir (-1) teslimat oransal bölünür.** Her araca teslimattaki bütün
     ürünlerden aynı oranda konur; şofben bir araca, bacası başka araca düşmez. (Ürün
     master datasında header kod alanı boş olduğu için aksesuarı ana ürüne bağlayan
-    başka bir bilgi yok; oransal bölme bu bağı kendiliğinden korur.) Her SKU'nun payı
-    tam palete yuvarlanır, payı bir paletin altında kalan küçük kalemler bölünmez.
+    başka bir bilgi yok; oransal bölme bu bağı kendiliğinden korur.) Kesim noktası
+    tam palete indirilir (depoda palet kırılmasın diye); payı bir paletin altında
+    kalan küçük kalemler bölünmez.
 16. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
     sipariş önizlemesinde uyarı çıkar.
 
@@ -361,19 +361,76 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
   formundaki müşteri notu birleştirilmiş, `wrap_text` verilmiş kutulardır; satır
   yüksekliği metne göre ayarlanır, böylece yazı komşu hücrelerin altında kalmaz.
 
+## Anahtar değer neden palete yuvarlanmaz
+
+Anahtar değer, aracın kapasite ölçüsüdür:
+
+```
+anahtar değer = Σ ( miktar / o aracın yükleme adeti )      1,00 = araç %100 dolu
+```
+
+Bir dönem bu ölçü **palete yukarı yuvarlanıyordu**: "kırık palet araçta yarım yer
+kaplamaz, tam bir palet gözü kaplar" varsayımıyla miktar önce palete çıkarılıyordu.
+Varsayım sahada tutmadı ve ölçüyü sistematik olarak şişirdi.
+
+**Kanıt 1 — şirketin kendi dosyası.** `2025 tüm sevkleri` dosyası anahtar değeri
+satır bazında taşıyor (birim / kamyon / tır sütunları). Orada yuvarlama yok: satırın
+değeri birim değerin tam olarak `adet` katı (7.240 aracın tamamında oran 1,0).
+
+**Kanıt 2 — 2.048 gerçek tır.** Master datayla birebir eşleşen gerçek tırlarda:
+
+| Ölçü | Medyan | %25 | %75 | 1,00'ı aşan |
+|---|---|---|---|---|
+| Şirketin kendi anahtar değeri | 0,995 | 0,959 | 1,021 | %40,9 |
+| **Ham (yuvarlamasız) — bugünkü ölçü** | **1,000** | 0,967 | 1,034 | %48,6 |
+| Palete yuvarlanmış — eski ölçü | 1,263 | 1,122 | 1,500 | **%94,6** |
+
+Yuvarlanmış ölçüyle gerçek tırların %94,6'sı "araca sığmıyor" görünüyordu; ham ölçü
+gerçek araçların medyanını tam 1,000 veriyor.
+
+**Kanıt 3 — sahadan gelen 2609S1026 planı.** Bayi ortak deposundan (-1) çıkan
+18 SKU'luk yük: sistem **%98,43** yazıyordu, araç gerçekte **%35,7** doluydu.
+Sebep iki katmanlı:
+
+* -1 siparişlerinde her satır kendi teslimatını oluşturuyor. Aynı ürünün dört ayrı
+  satırı dört ayrı palet sayılıyordu: 28 adet atık gaz borusu 4 × 77 = 308 adet gibi
+  ölçülüyordu.
+* Yuvarlama sonrası kalan kısımda da her SKU bir tam palet sayılıyordu; 1, 3, 5
+  adetlik kalemler tam palet oluyordu.
+
+**Etki — 30.09.2025'in gerçek iç piyasa siparişleriyle** (2.453 satır, 299 müşteri):
+
+| | Üretilen FTL aracı | Araçların **gerçek** doluluğu (medyan) | Gerçekte %75 altında |
+|---|---|---|---|
+| Eski ölçü | 35 | %51,4 | 30 / 35 |
+| **Bugünkü ölçü** | **28** | **%99,4** | **0 / 28** |
+
+Aynı yük 7 araç daha az yer tutuyor ve çıkan araçların hepsi gerçekten dolu.
+
+Kırık palet hâlâ istenmeyen bir şeydir; ama bu bir **kapasite** kısıtı değil, bir
+**kalite** ölçüsüdür: `PaletIsrafi` ile ölçülür ve yerleştirme kararında
+gözetilir. Bölünebilir teslimatın kesim noktası da tam palete indirilir. Kod
+`app/domain/planlama.py` içindeki `AnahtarBirimi` sınıfındadır.
+
+İhracat modülü bu ölçüyü hiç kullanmadı; orada doluluk `Hesaplama.xlsx`'in kendi
+formülüyle (miktar / yükleme adeti, yuvarlamasız) hesaplanır.
+
 ## Ring planlama kuralları (özet)
 
 1. Teslimat numaraları **bölünmez**; bir teslimatın tüm satırları aynı plandadır.
-2. **Kapasite anahtar değerdir ve işgal edilen palet üzerinden hesaplanır.**
-   Bütün depolar tır bazında planlanır; toplam **1,00 = araç %100 dolu**, alt limit
-   **0,90**. Kırık palet araçta tam bir palet gözü kapladığı için miktar önce palete
-   yuvarlanır: palet içi 15, tır kapasitesi 360 olan bir üründen 305 adet ham oranla
-   %85 görünür ama gerçekte %87,5 yer kaplar — motor 305 değil **300 adetlik
-   (20 tam palet)** bileşimi seçer.
-3. **Hedef tam palet.** Palet, plan bazında hesaplanır: aynı ürünün farklı
+2. **Kapasite anahtar değerdir; palete yuvarlanmaz.**
+
+   ```
+   anahtar değer = Σ ( miktar / o aracın yükleme adeti )      1,00 = araç %100 dolu
+   ```
+
+   Bütün depolar tır bazında planlanır; alt limit **0,90**. Ayrıntı ve doğrulama
+   için aşağıdaki "Anahtar değer neden palete yuvarlanmaz" bölümüne bakın.
+3. **Hedef tam palet.** Palet sayısı plan bazında hesaplanır: aynı ürünün farklı
    teslimatlardaki miktarları önce toplanır, sonra palete yuvarlanır. Palet içi adedi
    16 olan bir üründen 13 + 3 adet, iki kırık palet değil **tek dolu palet**tir.
-   Yerleştirme, kırık palet israfını en aza indirecek plana yönelir.
+   Yerleştirme, kırık palet israfını en aza indirecek plana yönelir — ama bu bir
+   **kalite** ölçüsüdür, kapasiteye girmez.
 4. **İki fazlı gruplama:**
    - *Faz 1* — her ürün kodu kendi içinde paketlenir (SKU saf planlar).
    - *Faz 2* — aracı dolduramayan artıklar aynı **ürün grubu** içinde birleştirilir

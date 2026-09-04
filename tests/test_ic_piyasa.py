@@ -50,7 +50,6 @@ def teslimat(no, birim, depo="64", miktar=None, palet=None):
         depo_katkilari={depo: Decimal(str(birim))},
         palet=Decimal(str(palet if palet is not None else birim * 10)),
         anahtar=Decimal(str(birim)),
-        ham_anahtar=Decimal(str(birim)),
     )
 
 
@@ -67,7 +66,6 @@ def musteri(
         teslimatlar=tuple(teslimatlar),
         palet=Decimal(str(palet if palet is not None else birim * 10)),
         birim=Decimal(str(birim)),
-        ham_birim=Decimal(str(birim)),
         desi=Decimal(str(desi)),
         adet=sum((t.miktar for t in teslimatlar), Decimal(0)),
         agirlik=Decimal(0),
@@ -248,13 +246,16 @@ def test_rutin_aracta_durak_siniri_yoktur():
     assert max(plan.durak_sayisi for plan in sonuc.planlar) > 5
 
 
-def test_rutin_olcusu_palete_yuvarlanmaz():
-    """Parsiyel araçta paletler karışık istiflenir; kırık palet tam palet sayılmaz."""
+def test_olcu_sevkiyat_tipine_gore_degismez():
+    """FTL, rutin ve kargo aynı ham anahtar değeri kullanır.
+
+    Bir dönem FTL'de miktar palete yukarı yuvarlanıyordu; gerçek araçlarda
+    doğrulanmadığı için kaldırıldı (bkz. AnahtarBirimi).
+    """
     kucuk = musteri("BAYİ", "IZMIR", 0.30, palet=3)
-    yuvarlanmis = kucuk.birim
-    ham = kucuk.olcu(SevkiyatTipi.RUTIN)
-    assert kucuk.olcu(SevkiyatTipi.FTL) == yuvarlanmis
-    assert ham == kucuk.ham_birim
+    assert kucuk.olcu(SevkiyatTipi.FTL) == kucuk.birim
+    assert kucuk.olcu(SevkiyatTipi.RUTIN) == kucuk.birim
+    assert kucuk.olcu(SevkiyatTipi.KARGO) == kucuk.birim
 
 
 def test_kargoda_kapasite_ve_durak_kurali_aranmaz():
@@ -481,7 +482,6 @@ def bolunebilir_teslimat(no, miktar, satirlar):
         depo_katkilari={"-1": Decimal(miktar) / 100},
         palet=Decimal(miktar) / 10,
         anahtar=Decimal(miktar) / 100,
-        ham_anahtar=Decimal(miktar) / 100,
     )
 
 
@@ -568,13 +568,11 @@ def _kamyonlu_musteri(ad, il, tir, kamyon, kamyon_uygun=True):
     t = replace(
         teslimat(f"{ad}-1", float(tir)),
         kamyon_anahtar=Decimal(str(kamyon)),
-        kamyon_ham_anahtar=Decimal(str(kamyon)),
         kamyon_olculebilir=kamyon_uygun,
     )
     return replace(
         musteri(ad, il, float(tir), teslimatlar=(t,)),
         kamyon_birim=Decimal(str(kamyon)),
-        kamyon_ham_birim=Decimal(str(kamyon)),
         kamyon_uygun=kamyon_uygun,
     )
 
