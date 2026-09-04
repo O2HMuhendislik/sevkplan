@@ -217,3 +217,113 @@ def test_ilce_adi_koy_ile_bitiyorsa_adres_sanilmaz(db, tmp_path):
     satir = db.query(SiparisSatiri).filter_by(teslimat_no="T1").one()
     assert satir.ilce == "ARNAVUTKOY"
     assert "SAZLIBOSNA" in (satir.sevk_adresi or "")
+
+
+def test_bayi_sutunu_yalnizca_bayi_basligiyla_geliyorsa_okunur(db, tmp_path):
+    """Sahadaki dosyalarda sütun başlığı 'BayiAdi' değil, yalnızca 'BAYI'.
+
+    Alias listesinde olmadığı için sütun hiç eşleşmiyor, bayi adı boş kalıyor ve
+    yükleme formunda / plan detayında '—' görünüyordu.
+    """
+    from openpyxl import Workbook
+
+    from app.models import SiparisSatiri
+    from app.services import ice_aktarim
+    from tests.conftest import urun_ekle
+
+    urun_ekle(db, "316101213", palet_ici_adet=10, tir_yukleme_adeti=100)
+
+    kitap = Workbook()
+    sayfa = kitap.active
+    sayfa.append(
+        ["Planlayan", "İL", "Sipariş No", "DEPO", "STOK KODU", "ADET",
+         "BAYI", "ALICI FİRMA", "SEVK ADRESİ", "NOT", "Tarih", "Not",
+         "TESLİMAT NO"]
+    )
+    sayfa.append(
+        ["RİNG", "ESKİŞEHİR", "2010422279", "64", "316101213", 320,
+         "MOVUS DEPO-EREMİZ ISITMA SOĞUTMA", "OSB 20. CADDE NO:36", "ODUNPAZARI",
+         "CIF", None, "EREMİZ ISITMA", "2013625966"]
+    )
+    dosya = tmp_path / "siparis.xlsx"
+    kitap.save(dosya)
+
+    ice_aktarim.siparisleri_aktar(db, dosya, "siparis.xlsx")
+
+    satir = db.query(SiparisSatiri).filter_by(teslimat_no="2013625966").one()
+    assert satir.bayi_adi == "MOVUS DEPO-EREMİZ ISITMA SOĞUTMA"
+    assert satir.bayi_gosterimi == "MOVUS DEPO-EREMİZ ISITMA SOĞUTMA"
+    # Adres kalıbı taşıyan 'ALICI FİRMA' adres olarak okunur, ilçe kendi sütununda.
+    assert satir.ilce == "ODUNPAZARI"
+
+
+def test_planlanmis_satirda_bayi_adi_yeniden_yuklemeyle_tazelenir(db, tmp_path):
+    """Bayi adı düzelen dosya yeniden yüklendiğinde mevcut planlar da düzelmeli.
+
+    Planlanmış satır miktar/depo bakımından korunur ama tanıtıcı alanları dosyadan
+    tazelenir; yoksa hatalı okunmuş bayi adı plan kapanana kadar '—' kalıyordu.
+    """
+    from openpyxl import Workbook
+
+    from app.models import SiparisDurumu, SiparisSatiri
+    from app.services import ice_aktarim
+    from tests.conftest import urun_ekle
+
+    urun_ekle(db, "U1", palet_ici_adet=10, tir_yukleme_adeti=100)
+
+    def dosya_uret(bayi: str, ad: str):
+        kitap = Workbook()
+        sayfa = kitap.active
+        sayfa.append(
+            ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "BAYI"]
+        )
+        sayfa.append(["S1", "T1", "U1", 10, "64", bayi])
+        yol = tmp_path / ad
+        kitap.save(yol)
+        return yol
+
+    ice_aktarim.siparisleri_aktar(db, dosya_uret("", "bos.xlsx"), "bos.xlsx")
+    satir = db.query(SiparisSatiri).filter_by(teslimat_no="T1").one()
+    satir.durum = SiparisDurumu.PLANLANDI
+    db.flush()
+
+    sonuc = ice_aktarim.siparisleri_aktar(
+        db, dosya_uret("ALTEK TEKNİK TESİSAT", "dolu.xlsx"), "dolu.xlsx"
+    )
+
+    db.refresh(satir)
+    assert sonuc.atlanan == 1            # satır planlı kaldı, yeniden planlanmadı
+    assert satir.durum is SiparisDurumu.PLANLANDI
+    assert satir.bayi_adi == "ALTEK TEKNİK TESİSAT"
+
+
+def test_bos_gelen_bayi_adi_mevcut_kaydi_silmez(db, tmp_path):
+    """Dosyada boş gelen sütun sistemdeki dolu bilgiyi silmemeli."""
+    from openpyxl import Workbook
+
+    from app.models import SiparisDurumu, SiparisSatiri
+    from app.services import ice_aktarim
+    from tests.conftest import urun_ekle
+
+    urun_ekle(db, "U1", palet_ici_adet=10, tir_yukleme_adeti=100)
+
+    def dosya_uret(bayi: str, ad: str):
+        kitap = Workbook()
+        sayfa = kitap.active
+        sayfa.append(
+            ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "BAYI"]
+        )
+        sayfa.append(["S1", "T1", "U1", 10, "64", bayi])
+        yol = tmp_path / ad
+        kitap.save(yol)
+        return yol
+
+    ice_aktarim.siparisleri_aktar(db, dosya_uret("ALTEK", "dolu.xlsx"), "dolu.xlsx")
+    satir = db.query(SiparisSatiri).filter_by(teslimat_no="T1").one()
+    satir.durum = SiparisDurumu.PLANLANDI
+    db.flush()
+
+    ice_aktarim.siparisleri_aktar(db, dosya_uret("", "bos.xlsx"), "bos.xlsx")
+
+    db.refresh(satir)
+    assert satir.bayi_adi == "ALTEK"

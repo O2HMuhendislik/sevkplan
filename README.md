@@ -158,6 +158,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Plan Detayı** | Plan içeriği, Axata no girişi, yükleme formu, statü işlemleri, plan geçmişi |
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
+| **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
@@ -170,6 +171,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Siparişler** | Sipariş dosyası yükleme; her müşterinin hangi tiple gideceği ve **gerekçesi**; alınamayan satırlar sebebiyle. Ring ile aynı sipariş havuzu |
 | **Planlar** | Tip (FTL/rutin/kargo), **araç (kamyon/tır)**, bölge ve durum filtresi; günlük yükleme formu. Liste "FTL" yerine aracın adını yazar |
 | **Plan Detayı** | **Araç (kamyon/tır)**, **yükleme tesisi**, parsiyelde **aktarma merkezi**, rota ve duraklar, son uğrak oranı, ortak yükleme uyarısı, araç/şoför bilgisi, Axata, marka payı |
+| **Manuel Planlama** (`/rota/manuel-plan`) | Teslimat seçerek planlama |
 | **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
@@ -180,6 +182,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Gösterge Paneli** (`/ihracat`) | Ülke ve taşıma modu dağılımı, planlamayı çalıştırma |
 | **Siparişler** | Sipariş yükleme; müşteri bazında araç tipi, taşıma modu, hesap sürümü, palet sayısı, kaç araç gerekeceği ve hangi sınırın (hacim/ağırlık) dolduracağı |
 | **Planlar** | Durum filtresi, günlük yükleme formu, Excel'e aktarma |
+| **Manuel Planlama** (`/ihracat/manuel-plan`) | Teslimat seçerek planlama |
 | **Plan Detayı** | Doluluk, palet/desi/ağırlık, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
 | **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, hesap sürümü ve müşteriye özel yükleme notu |
 | **Ürünler** (`/ihracat/urunler`) | İhracat ürün master datası: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık; ölçüsü eksik ürünlerin listesi |
@@ -191,6 +194,24 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Özet ve KPI** | Modül bazında sipariş/plan sayıları; siparişin plana alınma süresi dağılımı ve termin gecikme oranı |
 | **Tüm Siparişler** | Bütün modüllerin sipariş satırları, modül sekmeleriyle filtrelenir; her satırın plana alınma süresi |
 | **Tüm Planlar** | Bütün modüllerin planları, modüle göre filtrelenir |
+
+### Manuel planlama (`/ring|/rota|/ihracat` + `/manuel-plan`)
+
+Otomatik planlama beklemedeki bütün siparişleri değerlendirir. Manuel planlama
+ekranında **hangi teslimatların planlanacağını kullanıcı seçer**; motor yalnızca
+seçilenler üzerinde çalışır, doluluk / rota / aktarma kuralları aynen işler.
+
+* Seçim **teslimat** bazındadır — teslimat planlamanın bölünemez birimidir, yarısı
+  planlanıp yarısı beklemede bırakılamaz. Aynı teslimatın satırları tek satırda toplanır.
+* Liste teslimat no, sipariş, bayi, il/ilçe, ürün ve depo üzerinden aranabilir;
+  depoya göre daraltılabilir.
+* Seçim çubuğu tablo kaydırılırken ekranda kalır: seçili sayısı, plan tarihi,
+  "tümünü seç", "seçimi temizle" ve **Seçilenleri planla**.
+* **Alt limiti esnet** varsayılan olarak açıktır; az sayıda teslimat seçildiğinde de
+  plan üretilir ve plan "alt limit esnetildi" olarak işaretlenir. Kapatılırsa seçim
+  aracı dolduramadığında plan çıkmaz.
+* Plana giren teslimat listeden düşer; iki kez planlanamaz. Her modül yalnızca kendi
+  havuzunu listeler.
 
 ### Plan raporu (`/rapor/plan-raporu`)
 
@@ -388,6 +409,20 @@ planlaması onu almaz. Hepsini bir arada görmenin tek yeri Raporlama modülüd�
 modül sekmeleriyle filtrelenir.
 
 Sipariş dosyası hangi modülün ekranından yüklendiyse o havuza yazılır.
+
+### Bayi adı sütunu
+
+Sahadaki sipariş dosyalarında bu sütunun başlığı çoğu zaman yalnızca **`BAYI`**;
+`BayiAdi` / `Bayi Adı` / `Bayii Adı` / `Müşteri Adı` yazımları da tanınır. Başlık
+tanınmazsa sütun hiç okunmaz ve bayi adı plan detayında, yükleme formunda `—` görünür.
+Bayi adı gerçekten boş gelirse sırayla ikinci `Not` sütunu, alıcı firma ve açık adres
+denenir (bkz. `SiparisSatiri.bayi_gosterimi`).
+
+Aynı dosya yeniden yüklendiğinde **planlanmış satırlar bozulmaz**: miktar, depo, durum
+ve plan bağı korunur. Yalnızca tanıtıcı alanlar (bayi adı, alıcı firma, adres, ilçe)
+dosyadaki dolu değerle tazelenir — böylece yanlış okunmuş bir bayi adı, satır zaten
+planlandığı için sonsuza kadar `—` kalmaz. Dosyada boş gelen sütun sistemdeki dolu
+bilgiyi silmez.
 
 **Sayaçlar ve özetler de modüle bağlıdır.** Gösterge panelindeki "bekleyen sipariş
 satırı", raporlardaki aylık/ürün bazlı özet, sevk-Axata takibi ve bekleyenlerin

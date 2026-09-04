@@ -625,3 +625,71 @@ def ihracat_ulke_ozeti(db: Session) -> list[dict]:
         }
         for ulke, modu, adet, desi, doluluk in satirlar
     ]
+
+
+def planlanabilir_teslimatlar(
+    db: Session,
+    modul: str,
+    arama: str | None = None,
+    depo_kodu: str | None = None,
+    limit: int = 1500,
+) -> list[dict]:
+    """Manuel planlama ekranının listesi: plana girmeyi bekleyen teslimatlar.
+
+    Planlamanın bölünemez birimi teslimattır; kullanıcı satır değil **teslimat**
+    seçer. Aynı teslimatın satırları tek satırda toplanır, böylece bir teslimatın
+    yarısını seçip diğer yarısını dışarıda bırakmak mümkün olmaz.
+    """
+    sorgu = select(SiparisSatiri).where(
+        SiparisSatiri.modul == modul,
+        SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
+        SiparisSatiri.plan_id.is_(None),
+    )
+    if depo_kodu:
+        sorgu = sorgu.where(SiparisSatiri.depo_kodu == depo_kodu)
+    if arama:
+        desen = f"%{arama.strip()}%"
+        sorgu = sorgu.where(
+            or_(
+                SiparisSatiri.siparis_no.ilike(desen),
+                SiparisSatiri.teslimat_no.ilike(desen),
+                SiparisSatiri.urun_kodu.ilike(desen),
+                SiparisSatiri.urun_adi.ilike(desen),
+                SiparisSatiri.bayi_adi.ilike(desen),
+                SiparisSatiri.alici_firma.ilike(desen),
+                SiparisSatiri.sehir.ilike(desen),
+                SiparisSatiri.ilce.ilike(desen),
+                SiparisSatiri.depo_kodu.ilike(desen),
+            )
+        )
+    satirlar = list(db.scalars(sorgu).all())
+
+    gruplar: dict[str, list[SiparisSatiri]] = {}
+    for satir in satirlar:
+        gruplar.setdefault(satir.teslimat_no, []).append(satir)
+
+    teslimatlar: list[dict] = []
+    for teslimat_no, grup in gruplar.items():
+        ana = grup[0]
+        teslimatlar.append(
+            {
+                "teslimat_no": teslimat_no,
+                "siparis_no": ana.siparis_no,
+                "bayi": ana.bayi_gosterimi,
+                "alici": ana.alici_gosterimi,
+                "il": ana.sehir or "",
+                "ilce": ana.ilce or "",
+                "depolar": ", ".join(sorted({s.depo_kodu for s in grup})),
+                "satir_sayisi": len(grup),
+                "adet": sum(s.miktar for s in grup),
+                "urun_kodu": ana.urun_kodu,
+                "urun_adi": ana.gosterilecek_urun_adi,
+                "termin_tarihi": min(
+                    (s.termin_tarihi for s in grup if s.termin_tarihi), default=None
+                ),
+                "oncelik_tarihi": min(s.oncelik_tarihi for s in grup),
+                "bekleme_gunu": max(s.bekleme_gunu for s in grup),
+            }
+        )
+    teslimatlar.sort(key=lambda t: (t["oncelik_tarihi"], t["teslimat_no"]))
+    return teslimatlar[:limit]

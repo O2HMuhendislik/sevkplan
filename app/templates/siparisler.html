@@ -38,12 +38,13 @@
   {% if satirlar %}
   <table>
     <thead><tr>
-      <th>Sipariş</th><th>Teslimat</th><th>Bayi / İl</th><th>Ürün</th>
+      <th class="sag">#</th><th>Sipariş</th><th>Teslimat</th><th>Bayi / İl</th><th>Ürün</th>
       <th class="sag">Miktar</th><th>Depo</th><th>Termin</th><th>Durum</th><th>Plan</th>
     </tr></thead>
     <tbody>
     {% for satir in satirlar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
         <td><b>{{ satir.teslimat_no }}</b></td>
         <td>{{ satir.bayi_gosterimi }}<div class="soluk">{{ satir.sehir or '' }}</div></td>

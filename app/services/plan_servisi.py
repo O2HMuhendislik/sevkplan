@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -353,6 +354,7 @@ def plan_uret(
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
     grup_ici_mix: bool | None = None,
+    teslimat_nolar: Collection[str] | None = None,
 ) -> PlanUretimSonucu:
     """Beklemedeki siparişlerden taslak sevkiyat planları üretir.
 
@@ -365,6 +367,9 @@ def plan_uret(
 
     Alt limiti yine de dolduramayan kalıntılar beklemede kalır; `kalanlari_zorla`
     verildiğinde alt limit aranmaz ve plan "alt limit esnetildi" olarak işaretlenir.
+
+    `teslimat_nolar` verilirse yalnızca o teslimatlar değerlendirilir; manuel
+    planlama ekranı bunu kullanır (bkz. /ring/manuel-plan).
     """
     plan_tarihi = plan_tarihi or date.today()
     profil = profil or depo_profili(depo_kodu)
@@ -384,6 +389,9 @@ def plan_uret(
             SiparisSatiri.modul == "RING",
         )
     ).all()
+    if teslimat_nolar is not None:
+        secilenler = {str(no).strip() for no in teslimat_nolar if str(no).strip()}
+        satirlar = [s for s in satirlar if s.teslimat_no in secilenler]
 
     grup_ici_mix = GRUP_ICI_MIX if grup_ici_mix is None else grup_ici_mix
     teslimatlar, hatalilar, urun_haritasi = teslimatlari_hazirla(
@@ -436,6 +444,7 @@ def tum_depolari_planla(
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
     grup_ici_mix: bool | None = None,
+    teslimat_nolar: Collection[str] | None = None,
 ) -> PlanUretimSonucu:
     """Tanımlı bütün depolar için sırayla planlama çalıştırır.
 
@@ -454,6 +463,7 @@ def tum_depolari_planla(
             kullanici=kullanici,
             kalanlari_zorla=kalanlari_zorla,
             grup_ici_mix=grup_ici_mix,
+            teslimat_nolar=teslimat_nolar,
         )
         toplam.planlar.extend(parca.planlar)
         toplam.bekleyenler.extend(parca.bekleyenler)

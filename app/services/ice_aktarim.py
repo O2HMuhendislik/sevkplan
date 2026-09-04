@@ -172,6 +172,30 @@ def urunleri_aktar(
     return sonuc
 
 
+def _tanitici_alanlari_tazele(satir: SiparisSatiri, kayit: dict) -> None:
+    """Planı etkilemeyen tanıtıcı alanları dosyadaki güncel değerle doldurur.
+
+    Yalnızca **dolu** bir değer yazılır; dosyada boş gelen sütun sistemdeki mevcut
+    bilgiyi silmez. Planlanmış satırlarda da çalıştığı için bu güvence şart.
+    """
+    bayi = excel.metin(kayit.get("bayi_adi")) or excel.metin(kayit.get("ikinci_not"))
+    if bayi:
+        satir.bayi_adi = bayi
+    firma, adres, ilce, incoterms = yer_alanlarini_coz(
+        excel.metin(kayit.get("alici_firma")),
+        excel.metin(kayit.get("sevk_adresi")),
+        excel.metin(kayit.get("teslim_sekli")),
+    )
+    if firma:
+        satir.alici_firma = firma
+    if adres:
+        satir.sevk_adresi = adres
+    if ilce:
+        satir.ilce = ilce
+    if incoterms:
+        satir.incoterms = incoterms
+
+
 def siparisleri_aktar(
     db: Session,
     dosya: Path | Any,
@@ -258,7 +282,12 @@ def siparisleri_aktar(
             SiparisDurumu.PLANLANDI,
             SiparisDurumu.TAMAMLANDI,
         }:
-            # Planlanmış satır yeniden yüklemeyle bozulmaz.
+            # Planlanmış satır yeniden yüklemeyle bozulmaz: miktar, depo, durum ve
+            # plan bağı olduğu gibi kalır. Yalnızca **tanıtıcı** alanlar tazelenir —
+            # bayi adı, alıcı, adres, ilçe. Bunlar planı değiştirmiyor ama yükleme
+            # formunda görünüyor; boş kalırsa depo formu okuyamıyor ve satır zaten
+            # planlandığı için bir daha hiç düzelmiyordu.
+            _tanitici_alanlari_tazele(mevcut, kayit)
             sonuc.atlanan += 1
             continue
 

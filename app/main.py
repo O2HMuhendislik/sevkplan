@@ -2048,3 +2048,198 @@ def parola_sifirla(
             "kullanıcı ilk girişte değiştirecek."
         ),
     )
+
+
+# ------------------------------------------------------------------ manuel planlama
+MANUEL_MODULLER = {
+    "RING": ("/ring", "Ring"),
+    "ROTA": ("/rota", "İç Piyasa"),
+    "IHRACAT": ("/ihracat", "İhracat"),
+}
+"""Manuel planlama ekranı üç modülde de aynı şablonla çalışır.
+
+Ekran seçimi teslimat bazında toplar ve modülün kendi planlama motorunu yalnızca
+seçilen teslimatlarla çağırır; kurallar (doluluk, rota, aktarma) aynen işler.
+"""
+
+
+def _manuel_sayfa(
+    istek: Request,
+    kullanici: Kullanici,
+    db: Session,
+    modul_kodu: str,
+    arama: str,
+    depo: str,
+):
+    taban, modul_adi = MANUEL_MODULLER[modul_kodu]
+    teslimatlar = rapor_servisi.planlanabilir_teslimatlar(
+        db, modul=modul_kodu, arama=arama or None, depo_kodu=depo or None
+    )
+    # Depo listesi filtreden bağımsız olmalı; aksi hâlde bir depo seçilince
+    # açılır listede yalnızca o depo kalıyor ve seçim değiştirilemiyor.
+    tum_teslimatlar = rapor_servisi.planlanabilir_teslimatlar(db, modul=modul_kodu)
+    depo_kodlari = sorted(
+        {
+            kod.strip()
+            for t in tum_teslimatlar
+            for kod in t["depolar"].split(",")
+            if kod.strip()
+        }
+    )
+    return sayfa(
+        istek,
+        "manuel_plan.html",
+        kullanici,
+        modul_kodu=modul_kodu,
+        modul_adi=modul_adi,
+        taban=taban,
+        teslimatlar=teslimatlar,
+        arama=arama,
+        depo=depo,
+        depolar=depo_kodlari,
+    )
+
+
+def _manuel_secim(teslimat_nolar: list[str]) -> list[str]:
+    return [no.strip() for no in teslimat_nolar if no and no.strip()]
+
+
+def _manuel_tarih(plan_tarihi: str) -> date:
+    return (
+        datetime.strptime(plan_tarihi, "%Y-%m-%d").date() if plan_tarihi else date.today()
+    )
+
+
+@uygulama.get("/ring/manuel-plan")
+def ring_manuel_plan(
+    istek: Request,
+    arama: str = "",
+    depo: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _manuel_sayfa(istek, kullanici, db, "RING", arama, depo)
+
+
+@uygulama.post("/ring/manuel-plan/uret")
+def ring_manuel_plan_uret(
+    teslimat_nolar: list[str] = Form([]),
+    plan_tarihi: str = Form(""),
+    kalanlari_zorla: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("RING", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    secilenler = _manuel_secim(teslimat_nolar)
+    if not secilenler:
+        return yonlendir("/ring/manuel-plan", hata="Planlanacak teslimat seçilmedi.")
+    try:
+        sonuc = plan_servisi.tum_depolari_planla(
+            db,
+            plan_tarihi=_manuel_tarih(plan_tarihi),
+            kullanici=kullanici.kullanici_adi,
+            kalanlari_zorla=kalanlari_zorla,
+            teslimat_nolar=secilenler,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/ring/manuel-plan", hata=str(hata))
+    if not sonuc.planlar:
+        return yonlendir(
+            "/ring/manuel-plan",
+            hata=(
+                f"Seçilen {len(secilenler)} teslimattan plan üretilemedi. "
+                f"{sonuc.ozet()}"
+            ),
+        )
+    return yonlendir("/ring/planlar", mesaj=f"Manuel planlama — {sonuc.ozet()}")
+
+
+@uygulama.get("/rota/manuel-plan")
+def rota_manuel_plan(
+    istek: Request,
+    arama: str = "",
+    depo: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _manuel_sayfa(istek, kullanici, db, "ROTA", arama, depo)
+
+
+@uygulama.post("/rota/manuel-plan/uret")
+def rota_manuel_plan_uret(
+    teslimat_nolar: list[str] = Form([]),
+    plan_tarihi: str = Form(""),
+    kalanlari_zorla: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    secilenler = _manuel_secim(teslimat_nolar)
+    if not secilenler:
+        return yonlendir("/rota/manuel-plan", hata="Planlanacak teslimat seçilmedi.")
+    try:
+        sonuc = ic_piyasa_servisi.plan_uret(
+            db,
+            plan_tarihi=_manuel_tarih(plan_tarihi),
+            kullanici=kullanici.kullanici_adi,
+            kalanlari_zorla=kalanlari_zorla,
+            teslimat_nolar=secilenler,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/rota/manuel-plan", hata=str(hata))
+    if not sonuc.planlar:
+        return yonlendir(
+            "/rota/manuel-plan",
+            hata=(
+                f"Seçilen {len(secilenler)} teslimattan plan üretilemedi. "
+                f"{sonuc.ozet()}"
+            ),
+        )
+    return yonlendir("/rota/planlar", mesaj=f"Manuel planlama — {sonuc.ozet()}")
+
+
+@uygulama.get("/ihracat/manuel-plan")
+def ihracat_manuel_plan(
+    istek: Request,
+    arama: str = "",
+    depo: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _manuel_sayfa(istek, kullanici, db, "IHRACAT", arama, depo)
+
+
+@uygulama.post("/ihracat/manuel-plan/uret")
+def ihracat_manuel_plan_uret(
+    teslimat_nolar: list[str] = Form([]),
+    plan_tarihi: str = Form(""),
+    kalanlari_zorla: bool = Form(False),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    secilenler = _manuel_secim(teslimat_nolar)
+    if not secilenler:
+        return yonlendir("/ihracat/manuel-plan", hata="Planlanacak teslimat seçilmedi.")
+    try:
+        sonuc = ihracat_servisi.plan_uret(
+            db,
+            plan_tarihi=_manuel_tarih(plan_tarihi),
+            kullanici=kullanici.kullanici_adi,
+            kalanlari_zorla=kalanlari_zorla,
+            teslimat_nolar=secilenler,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/manuel-plan", hata=str(hata))
+    if not sonuc.planlar:
+        return yonlendir(
+            "/ihracat/manuel-plan",
+            hata=(
+                f"Seçilen {len(secilenler)} teslimattan plan üretilemedi. "
+                f"{sonuc.ozet()}"
+            ),
+        )
+    return yonlendir("/ihracat/planlar", mesaj=f"Manuel planlama — {sonuc.ozet()}")

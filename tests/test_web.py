@@ -90,6 +90,7 @@ def kitap(basliklar, satirlar) -> BytesIO:
         "/ring/raporlar", "/ring/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
         "/rota", "/rota/siparisler", "/rota/planlar", "/rota/musteriler",
         "/rota/raporlar",
+        "/ring/manuel-plan", "/rota/manuel-plan", "/ihracat/manuel-plan",
         "/raporlama", "/raporlama/siparisler", "/raporlama/planlar",
         "/ihracat", "/ihracat/siparisler", "/ihracat/planlar", "/ihracat/musteriler",
     ],
@@ -738,3 +739,68 @@ def test_baska_modulun_siparisi_ring_sayacinda_gorunmez(istemci, fabrika):
     # Ekranda da görünmemeli: Ring panelindeki sayaç sıfır, iç piyasada dolu.
     assert _bekleyen_sayaci(istemci.get("/ring").text) == 0
     assert _bekleyen_sayaci(istemci.get("/rota").text) > 0
+
+
+def test_manuel_planlama_secilen_teslimati_planlar(istemci, fabrika):
+    """Kullanıcı listeden teslimat seçip planlayabilmeli; seçilmeyen beklemede kalır."""
+    from app.models import SevkiyatPlani, SiparisSatiri
+
+    ic_piyasa_verisi_yukle(istemci)
+
+    ekran = istemci.get("/rota/manuel-plan")
+    assert ekran.status_code == 200
+    # Liste teslimat bazında; iki teslimat da seçilebilir durumda.
+    assert 'value="T1"' in ekran.text
+    assert 'value="T2"' in ekran.text
+
+    cevap = istemci.post(
+        "/rota/manuel-plan/uret",
+        data={
+            "teslimat_nolar": ["T1"],
+            "plan_tarihi": "2026-09-01",
+            "kalanlari_zorla": "1",
+        },
+    )
+    assert "Manuel planlama" in sorgu(cevap)
+
+    with fabrika() as db:
+        planlar = db.query(SevkiyatPlani).filter_by(modul="ROTA").all()
+        assert len(planlar) == 1
+        planli = {s.teslimat_no for s in planlar[0].satirlar}
+        assert planli == {"T1"}
+        # Seçilmeyen teslimat plana girmez, beklemede kalır.
+        t2 = db.query(SiparisSatiri).filter_by(teslimat_no="T2").one()
+        assert t2.plan_id is None
+
+
+def test_manuel_planlamada_secim_yoksa_uyari_verilir(istemci):
+    ic_piyasa_verisi_yukle(istemci)
+    cevap = istemci.post("/rota/manuel-plan/uret", data={"plan_tarihi": "2026-09-01"})
+    assert "teslimat seçilmedi" in sorgu(cevap)
+
+
+def test_manuel_planlama_planlanmis_teslimati_listelemez(istemci, fabrika):
+    """Plana giren teslimat listeden düşer; iki kez planlanamaz."""
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post(
+        "/rota/manuel-plan/uret",
+        data={"teslimat_nolar": ["T1"], "kalanlari_zorla": "1"},
+    )
+    ekran = istemci.get("/rota/manuel-plan")
+    assert 'value="T1"' not in ekran.text
+    assert 'value="T2"' in ekran.text
+
+
+def test_manuel_planlama_moduller_arasi_sizmaz(istemci):
+    """İç piyasa siparişi Ring'in manuel planlama listesinde görünmemeli."""
+    ic_piyasa_verisi_yukle(istemci)
+    ring = istemci.get("/ring/manuel-plan")
+    assert 'value="T1"' not in ring.text
+    assert 'value="T2"' not in ring.text
+
+
+def test_manuel_planlama_aramayla_daraltilir(istemci):
+    ic_piyasa_verisi_yukle(istemci)
+    cevap = istemci.get("/rota/manuel-plan", params={"arama": "MANİSA"})
+    assert 'value="T2"' in cevap.text
+    assert 'value="T1"' not in cevap.text

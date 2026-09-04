@@ -31,13 +31,14 @@
   {% if satirlar %}
   <table>
     <thead><tr>
-      <th>Modül</th><th>Teslimat</th><th>Sipariş</th><th>Ürün</th><th>Bayi / İl</th>
+      <th class="sag">#</th><th>Modül</th><th>Teslimat</th><th>Sipariş</th><th>Ürün</th><th>Bayi / İl</th>
       <th>Depo</th><th class="sag">Miktar</th><th>Sisteme giriş</th><th>Termin</th>
       <th>Plan</th><th class="sag">Plana alınma</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for satir in satirlar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td>{{ modul_adlari.get(satir.modul, satir.modul) }}</td>
         <td><b>{{ satir.teslimat_no }}</b></td>
         <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>

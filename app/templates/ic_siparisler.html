@@ -39,13 +39,14 @@
   {% if musteriler %}
   <table>
     <thead><tr>
-      <th>Tip</th><th>Bayi</th><th>İl / İlçe</th><th>Bölge</th>
+      <th class="sag">#</th><th>Tip</th><th>Bayi</th><th>İl / İlçe</th><th>Bölge</th>
       <th class="sag">Palet</th><th class="sag">Anahtar</th><th class="sag">Desi</th>
       <th class="sag">Adet</th><th>Incoterms</th><th>Tır</th><th>Depo</th><th>Gerekçe</th>
     </tr></thead>
     <tbody>
     {% for m in musteriler %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td><span class="rozet {{ 'TAMAMLANDI' if m.tip.value == 'FTL' else ('PLANLANDI' if m.tip.value == 'RUTIN' else 'TASLAK') }}">
           {{ m.tip.value }}</span></td>
         <td><b>{{ m.bayi_adi }}</b>
@@ -83,12 +84,13 @@
   </p>
   <table>
     <thead><tr>
-      <th>Teslimat</th><th>Sipariş</th><th>Ürün</th><th>Bayi / İl</th>
+      <th class="sag">#</th><th>Teslimat</th><th>Sipariş</th><th>Ürün</th><th>Bayi / İl</th>
       <th class="sag">Miktar</th><th>Sebep</th>
     </tr></thead>
     <tbody>
     {% for satir in hatalilar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td>{{ satir.teslimat_no }}</td>
         <td>{{ satir.siparis_no }}</td>
         <td>{{ satir.urun_kodu }}<div class="soluk">{{ satir.gosterilecek_urun_adi }}</div></td>

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -264,12 +265,16 @@ def plan_uret(
     kalanlari_zorla: bool = False,
     kurallar: Kurallar = VARSAYILAN_KURALLAR,
     depolar: list[str] | None = None,
+    teslimat_nolar: Collection[str] | None = None,
 ) -> IcPlanSonucu:
     """Beklemedeki iç piyasa siparişlerinden plan üretir.
 
     `tipler` verilmezse üç tip de çalıştırılır. Sevkiyat tipi müşteri bazında
     belirlenir; kullanıcının seçtiği tipler yalnızca **hangi kovaların planlanacağını**
     sınırlar, müşterinin tipini değiştirmez.
+
+    `teslimat_nolar` verilirse yalnızca o teslimatlar planlanır; manuel planlama
+    ekranı (/rota/manuel-plan) seçilen siparişleri böyle geçirir.
     """
     plan_tarihi = plan_tarihi or date.today()
     tipler = tipler or list(SevkiyatTipi)
@@ -282,6 +287,9 @@ def plan_uret(
     if depolar:
         sorgu = sorgu.where(SiparisSatiri.depo_kodu.in_(depolar))
     satirlar = list(db.scalars(sorgu).all())
+    if teslimat_nolar is not None:
+        secilenler = {str(no).strip() for no in teslimat_nolar if str(no).strip()}
+        satirlar = [satir for satir in satirlar if satir.teslimat_no in secilenler]
 
     musteriler, hatalilar = musterileri_topla(db, satirlar)
     sonuc = IcPlanSonucu(

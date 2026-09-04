@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Collection
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -189,8 +190,13 @@ def plan_uret(
     kullanici: str = "sistem",
     kalanlari_zorla: bool = False,
     kurallar: Kurallar = VARSAYILAN_KURALLAR,
+    teslimat_nolar: Collection[str] | None = None,
 ) -> IhracatPlanSonucu:
-    """Beklemedeki ihracat siparişlerinden araç planı üretir."""
+    """Beklemedeki ihracat siparişlerinden araç planı üretir.
+
+    `teslimat_nolar` verilirse yalnızca o teslimatlar değerlendirilir; manuel
+    planlama ekranı (/ihracat/manuel-plan) bunu kullanır.
+    """
     plan_tarihi = plan_tarihi or date.today()
     satirlar = list(
         db.scalars(
@@ -201,6 +207,9 @@ def plan_uret(
             )
         ).all()
     )
+    if teslimat_nolar is not None:
+        secilenler = {str(no).strip() for no in teslimat_nolar if str(no).strip()}
+        satirlar = [satir for satir in satirlar if satir.teslimat_no in secilenler]
 
     yukler, tanimsizlar = musteri_yuklerini_topla(db, satirlar)
     sonuc = IhracatPlanSonucu(

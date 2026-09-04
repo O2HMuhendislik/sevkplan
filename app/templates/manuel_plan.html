@@ -1,0 +1,139 @@
+{% extends "temel.html" %}
+{% set aktif_modul = modul_kodu %}
+{% set aktif_menu = 'manuel' %}
+{% block icerik %}
+<h1>Manuel Planlama — {{ modul_adi }}</h1>
+
+<div class="kart">
+  <p class="soluk" style="margin:0">
+    Otomatik planlama beklemedeki bütün siparişleri değerlendirir. Bu ekranda
+    <b>hangi teslimatların planlanacağını siz seçersiniz</b>; planlama motoru yalnızca
+    seçtikleriniz üzerinde çalışır, araç kurma ve doluluk kuralları aynen geçerlidir.
+    Seçim <b>teslimat</b> bazındadır: teslimat planlamanın bölünemez birimidir, bir
+    teslimatın yarısı planlanıp yarısı beklemede bırakılamaz.
+  </p>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="{{ taban }}/manuel-plan" style="margin-bottom:0">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Teslimat, sipariş, bayi, il, ürün, depo" style="width:340px"></div>
+    {% if depolar %}
+    <div><label for="depo">Depo</label>
+      <select id="depo" name="depo">
+        <option value="">Tümü</option>
+        {% for d in depolar %}
+          <option value="{{ d }}" {{ 'selected' if depo == d }}>{{ d }}</option>
+        {% endfor %}
+      </select></div>
+    {% endif %}
+    <button type="submit">Filtrele</button>
+    {% if arama or depo %}
+      <a class="dugme ikincil" href="{{ taban }}/manuel-plan">Temizle</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if teslimatlar %}
+<form method="post" action="{{ taban }}/manuel-plan/uret" id="manuel-form">
+  <div class="secim-cubugu">
+    <div>
+      <div class="soluk">Seçili teslimat</div>
+      <div class="sayac"><span id="secim-sayaci">0</span> / {{ teslimatlar|length }}</div>
+    </div>
+    <div><label for="plan_tarihi">Plan tarihi</label>
+      <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}"></div>
+    <div>
+      <label>Doluluk</label>
+      <label style="font-weight:400;text-transform:none;color:var(--metin)">
+        <input type="checkbox" name="kalanlari_zorla" value="1" checked
+               style="width:auto;vertical-align:-2px"> Alt limiti esnet
+      </label>
+    </div>
+    <div class="ayrac"></div>
+    <button type="button" class="ikincil" id="tumunu-sec">Tümünü seç</button>
+    <button type="button" class="ikincil" id="secimi-temizle">Seçimi temizle</button>
+    <button type="submit" id="planla-dugmesi" disabled>Seçilenleri planla</button>
+  </div>
+  <p class="soluk" style="margin:-6px 0 14px">
+    <b>Alt limiti esnet</b> açıkken az sayıda teslimat seçseniz de plan üretilir ve
+    plan "alt limit esnetildi" olarak işaretlenir. Kapalıyken seçim aracı dolduramazsa
+    plan çıkmaz, teslimatlar beklemede kalır.
+  </p>
+
+  <div class="kart">
+    <table>
+      <thead><tr>
+        <th class="secim"><input type="checkbox" id="baslik-secim" title="Tümünü seç"></th>
+        <th class="sag">#</th><th>Teslimat</th><th>Sipariş</th><th>Bayi</th>
+        <th>İl / İlçe</th><th>Depo</th><th>Ürün</th>
+        <th class="sag">Satır</th><th class="sag">Adet</th>
+        <th>Termin</th><th class="sag">Bekleme</th>
+      </tr></thead>
+      <tbody>
+      {% for t in teslimatlar %}
+        <tr>
+          <td class="secim">
+            <input type="checkbox" name="teslimat_nolar" value="{{ t.teslimat_no }}"
+                   class="teslimat-secim"></td>
+          <td class="sag soluk">{{ loop.index }}</td>
+          <td><b>{{ t.teslimat_no }}</b></td>
+          <td class="soluk">{{ t.siparis_no }}</td>
+          <td>{{ t.bayi }}{% if t.alici %}<div class="soluk">{{ t.alici }}</div>{% endif %}</td>
+          <td>{{ t.il or '—' }}<div class="soluk">{{ t.ilce or '' }}</div></td>
+          <td>{{ t.depolar }}</td>
+          <td>{{ t.urun_kodu }}<div class="soluk">{{ t.urun_adi }}</div></td>
+          <td class="sag">{{ t.satir_sayisi }}</td>
+          <td class="sag">{{ t.adet | sayi }}</td>
+          <td>{{ t.termin_tarihi | tarih }}</td>
+          <td class="sag">{{ t.bekleme_gunu }} gün</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="soluk" style="margin-top:12px">
+      Listenin sonu — {{ teslimatlar|length }} teslimat gösterildi.
+    </p>
+  </div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById('manuel-form');
+  var kutular = form.querySelectorAll('.teslimat-secim');
+  var sayac = document.getElementById('secim-sayaci');
+  var dugme = document.getElementById('planla-dugmesi');
+  var baslik = document.getElementById('baslik-secim');
+
+  function tazele() {
+    var secili = 0;
+    kutular.forEach(function (kutu) {
+      var satir = kutu.closest('tr');
+      if (kutu.checked) { secili += 1; satir.classList.add('secili'); }
+      else { satir.classList.remove('secili'); }
+    });
+    sayac.textContent = secili;
+    dugme.disabled = secili === 0;
+    baslik.checked = secili === kutular.length && secili > 0;
+    baslik.indeterminate = secili > 0 && secili < kutular.length;
+  }
+
+  function hepsi(deger) {
+    kutular.forEach(function (kutu) { kutu.checked = deger; });
+    tazele();
+  }
+
+  kutular.forEach(function (kutu) { kutu.addEventListener('change', tazele); });
+  baslik.addEventListener('change', function () { hepsi(baslik.checked); });
+  document.getElementById('tumunu-sec').addEventListener('click', function () { hepsi(true); });
+  document.getElementById('secimi-temizle').addEventListener('click', function () { hepsi(false); });
+  tazele();
+})();
+</script>
+{% else %}
+<div class="kart"><div class="bos">
+  Planlanmayı bekleyen teslimat yok{% if arama or depo %} (filtreye uyan){% endif %}.
+</div></div>
+{% endif %}
+{% endblock %}

@@ -211,3 +211,17 @@ header.ust .modul-cikis {
 .modul-kart p { flex: 1; margin: 0 0 16px; }
 .modul-simge { font-size: 30px; line-height: 1; }
 .modul-alt { display: flex; align-items: center; gap: 10px; }
+
+/* Manuel planlama: seçim çubuğu tablo kaydırılırken de görünür kalmalı,
+   çünkü kullanıcı listenin altında seçim yapıp yukarıdaki tuşa basıyor. */
+.secim-cubugu {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+  background: var(--vurgu-cok-acik); border: 1px solid var(--vg-yesil-40);
+  border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
+}
+.secim-cubugu .sayac { font-weight: 700; color: var(--vurgu); font-size: 15px; }
+.secim-cubugu .ayrac { flex: 1; }
+td.secim, th.secim { width: 34px; text-align: center; }
+td.secim input, th.secim input { width: 16px; height: 16px; cursor: pointer; }
+tr.secili { background: var(--vg-yesil-10); }

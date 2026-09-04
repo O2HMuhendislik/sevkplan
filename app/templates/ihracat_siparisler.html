@@ -44,7 +44,7 @@
   {% if musteriler %}
   <table>
     <thead><tr>
-      <th>Müşteri</th><th>Ülke</th><th>Araç</th><th>Taşıma</th><th>Sefer</th>
+      <th class="sag">#</th><th>Müşteri</th><th>Ülke</th><th>Araç</th><th>Taşıma</th><th>Sefer</th>
       <th>Yükleme tipi</th><th>Hesap</th><th class="sag">Palet</th>
       <th class="sag">Desi</th><th class="sag">Ağırlık</th>
       <th class="sag">Adet</th><th class="sag">Araç</th><th>Doluluk</th>
@@ -53,6 +53,7 @@
     <tbody>
     {% for m in musteriler %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td><b>{{ m.musteri_adi }}</b>
           <div class="soluk">{{ m.teslimat_sayisi }} teslimat</div>
           {% if m.master_datada_yok %}
@@ -87,11 +88,12 @@
 <div class="kart">
   <h2>Alınamayan satırlar <span class="soluk">({{ hatalilar|length }})</span></h2>
   <table>
-    <thead><tr><th>Sipariş</th><th>Ürün</th><th>Müşteri</th>
+    <thead><tr><th class="sag">#</th><th>Sipariş</th><th>Ürün</th><th>Müşteri</th>
       <th class="sag">Adet</th><th>Sebep</th></tr></thead>
     <tbody>
     {% for satir in hatalilar %}
       <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
         <td>{{ satir.siparis_no }}</td>
         <td>{{ satir.urun_kodu }}</td>
         <td>{{ satir.bayi_gosterimi }}</td>

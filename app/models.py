@@ -849,10 +849,17 @@ class SiparisSatiri(Temel):
     def bayi_gosterimi(self) -> str:
         """Yükleme formunun 'Bayii Adı' sütunu.
 
-        Kaynak dosyalarda bayi adı sütunu bazen boş geliyor; o zaman alıcı firma
-        yazılır. Sütunun boş kalması depo için formu okunmaz hâle getiriyor.
+        Kaynak dosyalarda bayi adı sütunu bazen boş geliyor; sırayla alıcı firma ve
+        açık adres denenir. Sütunun boş kalması depo için formu okunmaz hâle
+        getiriyor: sürücü kime gittiğini göremiyor. Sıralama iç piyasa planlamasının
+        durak adıyla aynıdır (bkz. ic_piyasa_servisi._durak_adi), böylece plan ekranı
+        ile yükleme formu aynı adı yazar.
         """
-        return (self.bayi_adi or self.alici_firma or "—").strip() or "—"
+        for aday in (self.bayi_adi, self.alici_firma, self.sevk_adresi):
+            metin = (aday or "").strip()
+            if metin:
+                return metin
+        return "—"
 
     @property
     def alici_gosterimi(self) -> str:
