@@ -15,6 +15,14 @@
   bölünemedi. Sevkiyat birden fazla araç gerektirebilir.
 </div>
 {% endif %}
+{% if plan.ortak_yukleme_mi %}
+<div class="uyari">
+  <b>Ortak yükleme:</b> bu araç {{ plan.yukleme_tesisleri | join(' ve ') }}
+  tesislerinden yükleniyor — iki ayrı şehir. Önce her tesis kendi aracını
+  doldurmaya çalışır; hacim yetmediği için bu araçta birleştirildiler. Az olan
+  depodaki mal, yükleme formundaki nota göre diğer depoya gönderilmelidir.
+</div>
+{% endif %}
 {% if plan.alt_limit_esnetildi %}
 <div class="uyari basari">
   Alt limit esnetilerek açıldı: kalan müşteriler tek başına
@@ -37,14 +45,20 @@
   <div class="metrik"><div class="etiket">Durak (Yer Miktarı)</div>
     <div class="deger">{{ plan.durak_sayisi }}</div>
     <div class="soluk">{{ plan.teslimat_sayisi }} teslimat</div></div>
-  <div class="metrik"><div class="etiket">Son uğrak</div>
+  <div class="metrik">
+    <div class="etiket">{{ 'Aktarma merkezi' if plan.aktarma_merkezi_adi else 'Son uğrak' }}</div>
     <div class="deger" style="font-size:21px">{{ plan.son_ugrak or '—' }}</div>
     <div class="soluk">aracın %{{ (plan.son_ugrak_orani * 100) | sayi }}'i
       {% if plan.son_ugrak_orani and plan.son_ugrak_orani < 0.15 %}
         · <b class="dikkat">%15 sınırının altında</b>{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Yükleme deposu</div>
     <div class="deger" style="font-size:21px">{{ plan.yukleme_deposu or plan.depo_kodu }}</div>
-    <div class="soluk">{{ plan.iller_metni }}</div></div>
+    <div class="soluk">{{ plan.yukleme_tesisleri | join(' + ') }}</div></div>
+  <div class="metrik"><div class="etiket">Varış illeri</div>
+    <div class="deger" style="font-size:17px">{{ plan.iller_metni or '—' }}</div>
+    {% if plan.aktarma_merkezi_adi %}
+    <div class="soluk">dağıtım {{ plan.aktarma_merkezi_adi }} aktarmasından</div>
+    {% endif %}</div>
   <div class="metrik"><div class="etiket">Adet / ağırlık / desi</div>
     <div class="deger" style="font-size:21px">{{ plan.toplam_adet | sayi }}</div>
     <div class="soluk">{{ plan.toplam_agirlik | sayi }} kg · {{ plan.toplam_desi | sayi }} desi</div></div>

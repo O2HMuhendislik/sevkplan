@@ -610,6 +610,27 @@ class SevkiyatPlani(Temel):
         return (musteri.yukleme_tipi or "") if musteri is not None else ""
 
     @property
+    def yukleme_tesisleri(self) -> list[str]:
+        """Aracın hangi tesis(ler)den yüklendiği: ESKİŞEHİR (64, -1) / BOZÜYÜK (74, 34 ...)."""
+        from app.domain.iller import yukleme_tesisi
+
+        return sorted({yukleme_tesisi(satir.depo_kodu) for satir in self.satirlar})
+
+    @property
+    def ortak_yukleme_mi(self) -> bool:
+        """Araç iki ayrı şehirden yükleniyor mu? Depo bunu formda görmeli."""
+        return len(self.yukleme_tesisleri) > 1
+
+    @property
+    def aktarma_merkezi_adi(self) -> str:
+        """Parsiyel aracın aktarma merkezi (Ankara / İstanbul / Bursa); yoksa boş."""
+        if self.sevkiyat_tipi != "RUTIN" or not (self.bolge_kodu or "").startswith("AKT:"):
+            return ""
+        from app.domain.aktarma import merkez_adi
+
+        return merkez_adi(self.bolge_kodu[4:].partition("|")[0])
+
+    @property
     def urun_grubu_ozeti(self) -> list[dict]:
         """Plandaki ürünlerin grup bazında adedi.
 

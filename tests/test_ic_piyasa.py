@@ -646,3 +646,142 @@ def test_buyuk_siparis_tirla_planlanir(db):
     ).planlar[0]
     assert plan.arac_tipi == "TIR"
     assert plan.sevkiyat_tipi_adi == "Tır (tam araç)"
+
+
+# ------------------------------------------------- yükleme tesisi ve parsiyel depo
+
+
+def _depolu_musteri(ad, il, birim, depolar, ilce="MERKEZ"):
+    """Malı verilen depolara dağılmış müşteri."""
+    pay = birim / len(depolar)
+    teslimatlar = tuple(
+        teslimat(f"{ad}-{sira}", pay, depo=depo)
+        for sira, depo in enumerate(depolar, start=1)
+    )
+    return musteri(ad, il, birim, ilce=ilce, teslimatlar=teslimatlar)
+
+
+def test_64_ve_bayi_deposu_ayni_araca_yuklenir():
+    """64 ile bayi ortak deposu (-1) aynı tesistedir; birlikte yüklenmeleri önceliktir."""
+    sonuc = planla(
+        [_depolu_musteri("BAYİ", "IZMIR", 0.9, ("64", "-1"))],
+        SevkiyatTipi.FTL,
+        IC_FTL,
+    )
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].yukleme_tesisleri == ["ESKİŞEHİR"]
+    assert not sonuc.planlar[0].ortak_yukleme_mi
+
+
+def test_74_deposu_ayri_sehirde_oldugu_icin_once_kendi_aracina_binmeye_calisir():
+    """64 (Eskişehir) ile 74 (Bozüyük) ayrı şehirdir; ikisi de kendi aracını doldurabiliyorsa
+    aynı araca konmaz — yoksa depo malı iki şehirden toplamak zorunda kalır."""
+    sonuc = planla(
+        [
+            _depolu_musteri("ESK", "IZMIR", 0.9, ("64",)),
+            _depolu_musteri("BOZ", "IZMIR", 0.9, ("74",), ilce="BORNOVA"),
+        ],
+        SevkiyatTipi.FTL,
+        IC_FTL,
+    )
+    assert len(sonuc.planlar) == 2
+    assert all(not p.ortak_yukleme_mi for p in sonuc.planlar)
+    assert {p.yukleme_tesisleri[0] for p in sonuc.planlar} == {"ESKİŞEHİR", "BOZÜYÜK"}
+
+
+def test_tek_tesisten_dolmayan_yukler_ortak_araca_biner():
+    """İkinci öncelik: kendi tesisinden araç dolduramayan yükler birleşebilir."""
+    sonuc = planla(
+        [
+            _depolu_musteri("ESK", "IZMIR", 0.45, ("64",)),
+            _depolu_musteri("BOZ", "IZMIR", 0.45, ("74",), ilce="BORNOVA"),
+        ],
+        SevkiyatTipi.FTL,
+        IC_FTL,
+    )
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    assert plan.ortak_yukleme_mi
+    assert plan.yukleme_tesisleri == ["BOZÜYÜK", "ESKİŞEHİR"]
+
+
+# --------------------------------------------------------------- parsiyel kuralları
+
+
+def test_parsiyelde_74_ile_64_ayni_araca_binmez():
+    """Parsiyelde 64/-1 birlikte gider; 74 kendi aracıyla gider."""
+    sonuc = planla(
+        [
+            _depolu_musteri("A", "IZMIR", 0.2, ("64", "-1")),
+            _depolu_musteri("B", "IZMIR", 0.2, ("74",), ilce="BORNOVA"),
+        ],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    assert len(sonuc.planlar) == 2
+    depo_gruplari = [sorted(p.depolar) for p in sonuc.planlar]
+    assert ["-1", "64"] in depo_gruplari
+    assert ["74"] in depo_gruplari
+
+
+def test_parsiyel_yalnizca_uc_depodan_yapilir():
+    """34, 44 gibi depoların malı parsiyel araca yüklenmez; gerekçesiyle bekler."""
+    sonuc = planla(
+        [_depolu_musteri("A", "IZMIR", 0.2, ("34",))],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    assert sonuc.planlar == []
+    assert "yalnızca 64, -1 ve 74" in sonuc.bekleyenler[0].sebep
+
+
+def test_parsiyel_musterisi_depo_grubuna_gore_bolunur():
+    """Malı hem 64 hem 74'te olan müşteri iki parsiyel aracına ayrılır."""
+    sonuc = planla(
+        [_depolu_musteri("A", "IZMIR", 0.4, ("64", "74"))],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    assert len(sonuc.planlar) == 2
+    assert sorted(sorted(p.depolar) for p in sonuc.planlar) == [["64"], ["74"]]
+
+
+@pytest.mark.parametrize(
+    "il,merkez",
+    [
+        ("KOCAELI", "ISTANBUL"), ("TEKIRDAG", "ISTANBUL"), ("ZONGULDAK", "ISTANBUL"),
+        ("IZMIR", "BURSA"), ("ANTALYA", "BURSA"), ("BALIKESIR", "BURSA"),
+        ("KONYA", "ANKARA"), ("TRABZON", "ANKARA"), ("GAZIANTEP", "ANKARA"),
+    ],
+)
+def test_parsiyelin_son_noktasi_aktarma_merkezidir(il, merkez):
+    """Parsiyel yük müşteriye değil merkeze iner; aracın son noktası merkez ilidir."""
+    plan = planla(
+        [_depolu_musteri("A", il, 0.5, ("64",))],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    ).planlar[0]
+    assert plan.aktarma_merkezi == merkez
+    assert plan.son_ugrak == merkez
+    # Aracın tamamı merkeze iniyor.
+    assert plan.son_ugrak_orani == Decimal(1)
+    # Gerçek varış ili bilgi olarak durur.
+    assert plan.iller == [il]
+
+
+def test_farkli_aktarma_merkezleri_ayni_araca_binmez():
+    sonuc = planla(
+        [
+            _depolu_musteri("EGE", "IZMIR", 0.2, ("64",)),
+            _depolu_musteri("DOGU", "TRABZON", 0.2, ("64",)),
+        ],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    assert len(sonuc.planlar) == 2
+    assert {p.aktarma_merkezi for p in sonuc.planlar} == {"BURSA", "ANKARA"}

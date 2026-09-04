@@ -68,7 +68,7 @@
     <thead><tr>
       <th class="sag">#</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Bölge / İller</th>
       <th class="sag">Durak</th><th class="sag">Büyüklük</th><th>Doluluk</th>
-      <th>Son uğrak</th><th>Depo</th><th>Axata No</th><th>Durum</th>
+      <th>Son uğrak / aktarma</th><th>Depo</th><th>Axata No</th><th>Durum</th>
     </tr></thead>
     <tbody>
     {% for plan in planlar %}
@@ -87,6 +87,9 @@
           <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
           <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>
         <td>{{ plan.son_ugrak or '—' }}
+          {% if plan.ortak_yukleme_mi %}
+            <div><span class="rozet AXATA_BEKLIYOR">ORTAK YÜKLEME</span></div>
+          {% endif %}
           {% if plan.son_ugrak_orani %}
             <div class="soluk">%{{ (plan.son_ugrak_orani * 100) | sayi }}</div>
           {% endif %}</td>

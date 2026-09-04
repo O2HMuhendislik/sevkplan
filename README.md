@@ -122,7 +122,7 @@ kullanıcı yalnızca yetkili olduğu modülleri açabilir.
 | Modül | Durum |
 |---|---|
 | **Ring Planlama** | Hazır |
-| **İç Piyasa Sevkiyat Planlama** | Hazır — kamyon / tır, FTL / rutin / kargo |
+| **İç Piyasa Sevkiyat Planlama** | Hazır — kamyon / tır, FTL / rutin (Ankara-İstanbul-Bursa aktarma) / kargo |
 | **İhracat Planlama** | Hazır — tır / konteyner, kara / deniz |
 | **Raporlama** | Hazır — modüller arası liste ve plana alınma KPI'ı |
 | Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
@@ -169,7 +169,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Gösterge Paneli** (`/rota`) | Sevkiyat tipi, **araç (kamyon/tır)** ve bölge dağılımı, planlamayı çalıştırma |
 | **Siparişler** | Sipariş dosyası yükleme; her müşterinin hangi tiple gideceği ve **gerekçesi**; alınamayan satırlar sebebiyle. Ring ile aynı sipariş havuzu |
 | **Planlar** | Tip (FTL/rutin/kargo), **araç (kamyon/tır)**, bölge ve durum filtresi; günlük yükleme formu. Liste "FTL" yerine aracın adını yazar |
-| **Plan Detayı** | **Araç (kamyon/tır)**, rota ve duraklar, son uğrak oranı, ortak yükleme notu, araç/şoför bilgisi, Axata, marka payı |
+| **Plan Detayı** | **Araç (kamyon/tır)**, **yükleme tesisi**, parsiyelde **aktarma merkezi**, rota ve duraklar, son uğrak oranı, ortak yükleme uyarısı, araç/şoför bilgisi, Axata, marka payı |
 | **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
@@ -240,17 +240,34 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 5. **Durak sırası** yükleme tesisine uzaklığa göredir; en uzak il **son uğraktır** ve
    aracın en az **%15**'ini kaplamalıdır, aksi hâlde o durak araçtan çıkarılır.
 6. FTL araçta en fazla **5 durak**; rutinde durak sınırı yoktur (sahada 25-30 durak).
-7. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
+7. **Önce tek tesisten dolu araç; ortak yükleme ikinci tercihtir.** 64 ve bayi ortak
+   deposu (-1) **Eskişehir**'dedir, 74/34/44 **Bozüyük**'te — iki ayrı şehir.
+   Paketleme iki fazlıdır: *faz 1*'de her tesis kendi içinde paketlenir ve dolan
+   araçlar orada kalır; *faz 2*'de yalnızca kendi tesisinden araç dolduramayan
+   yükler birleştirilir. Eskiden tek fazda hacim uyduğu için 64 ile 74 aynı araca
+   giriyor, depo malı iki şehirden toplamak zorunda kalıyordu. İki tesisten yüklenen
+   araç plan listesinde **ORTAK YÜKLEME** rozetiyle işaretlenir.
+8. **Parsiyel yalnızca 64, -1 ve 74 depolarından yapılır** ve **64/-1 ile 74 aynı
+   araca binmez** — 74 kendi aracıyla gider. Başka depodan (34, 44 ...) parsiyel
+   planlanmaz; o teslimatlar gerekçesiyle beklemede kalır. *Doğrulama:* 2025'in 691
+   parsiyel aracındaki satırların %99,95'i bu üç depodan çıkmış.
+9. **Parsiyelin son noktası aktarma merkezidir.** Yük müşteriye tek tek uğramaz;
+   **Ankara, İstanbul ya da Bursa** merkezine indirilir, dağıtımı oradan yapılır.
+   Araçlar bu üç merkeze göre kurulur ve plan üzerinde son uğrak merkez ilidir:
+   *İstanbul* Marmara/Trakya/Batı Karadeniz, *Bursa* Bursa ve batısı/güneyi (Güney
+   Marmara, Ege, Batı Akdeniz), *Ankara* Ankara ve doğusu — kalan her yer. Tablo
+   `app/domain/aktarma.py` içindedir; tarife değişirse yalnızca orası güncellenir.
+10. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
    araçta paletler karışık istiflenir, kırık palet tam palet gözü saymaz. FTL'de
    yuvarlanır — orada her müşterinin malı tam paletle yüklenir.
-8. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
+11. **Günlük sınır:** 35 FTL, 4 rutin. Aşan hacim gerekçesiyle beklemede kalır ve
    sonraki gün planlanır. Sınır, o gün daha önce üretilmiş planları da sayar.
-9. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
+12. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
    birden çok araca dağıtılır; tek başına aracı aşan teslimat istisna planına gider.
-10. **Ortak yükleme:** 64, 74 ve -1 depoları aynı araca yüklenebilir. Araç, hacmin
-   çoğunu taşıyan depodan yüklenir; diğer depodaki malın satırına yükleme formunda
-   *"… depoya gönderilmelidir"* notu düşülür. Aktarma için ayrı plan üretilmez.
-11. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
+13. **Ortak yüklemede aktarma notu:** araç, hacmin çoğunu taşıyan depodan yüklenir;
+    diğer depodaki malın satırına yükleme formunda *"… depoya gönderilmelidir"* notu
+    düşülür. Aktarma için ayrı plan üretilmez.
+14. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
     sipariş önizlemesinde uyarı çıkar.
 
 ## İhracat planlama kuralları (özet)

@@ -90,9 +90,21 @@ def il_bolgesi(il: str) -> str:
 
 
 def bolge_adi(kod: str) -> str:
+    """Bölge kodunun ekranda görünen adı.
+
+    Parsiyel planların kodu bölge değil aktarma merkezidir: `AKT:ANKARA|64`
+    ("Ankara aktarma · 64/-1 deposu").
+    """
     bolge = BOLGE_HARITASI.get(kod)
     if bolge is not None:
         return bolge.ad
+    if kod.startswith("AKT:"):
+        from app.domain.aktarma import merkez_adi
+
+        merkez, _, depo_grubu = kod[4:].partition("|")
+        ad = f"{merkez_adi(merkez)} aktarma"
+        depolar = {"64": "64/-1 deposu", "74": "74 deposu"}
+        return f"{ad} · {depolar.get(depo_grubu, depo_grubu)}" if depo_grubu else ad
     if kod.startswith("IL:"):
         return kod[3:].title()
     return "Bölgesiz"

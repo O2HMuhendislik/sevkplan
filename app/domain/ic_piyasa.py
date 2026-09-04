@@ -26,8 +26,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
+from app.domain.aktarma import aktarma_merkezi, merkez_bolge_kodu
 from app.domain.bolgeler import il_bolgesi
-from app.domain.iller import BOLUNEBILIR_DEPOLAR, ana_depo, mesafe, yer_adi
+from app.domain.iller import (
+    BOLUNEBILIR_DEPOLAR,
+    ana_depo,
+    mesafe,
+    yer_adi,
+    yukleme_tesisi,
+)
 from app.domain.kapasite import AracTipi, KapasiteProfili
 from app.domain.planlama import Teslimat, palet_hesapla
 
@@ -68,6 +75,20 @@ class Kurallar:
 
 
 VARSAYILAN_KURALLAR = Kurallar()
+
+PARSIYEL_DEPO_GRUPLARI: dict[str, frozenset[str]] = {
+    "64": frozenset({"64", "-1"}),
+    "74": frozenset({"74"}),
+}
+"""Parsiyel araca birlikte yüklenebilen depolar.
+
+64 ile bayi ortak deposu (-1) **aynı tesistedir** (Eskişehir) ve tek araca yüklenir.
+74 Bozüyük'tedir; parsiyelde 64/-1 ile birleştirilmez, kendi aracıyla gider. Bu üç
+depo dışında parsiyel planlama yapılmaz — 2025'in 691 parsiyel aracında satırların
+%99,95'i bu depolardan çıkmış.
+"""
+
+PARSIYEL_DEPOLARI = frozenset().union(*PARSIYEL_DEPO_GRUPLARI.values())
 
 
 @dataclass(frozen=True)
@@ -144,6 +165,35 @@ class MusteriSiparisi:
             for depo_kodu, deger in teslimat.depo_katkilari.items():
                 toplamlar[depo_kodu] += deger
         return dict(toplamlar)
+
+    @property
+    def yukleme_tesisleri(self) -> frozenset[str]:
+        """Malın hangi tesisten yükleneceği: ESKİŞEHİR (64, -1) ya da BOZÜYÜK (74, 34 ...)."""
+        return frozenset(yukleme_tesisi(t.depo_kodu) for t in self.teslimatlar)
+
+    @property
+    def tek_tesis(self) -> str | None:
+        """Bütün malı tek tesisten yükleniyorsa o tesis, yoksa None."""
+        tesisler = self.yukleme_tesisleri
+        return next(iter(tesisler)) if len(tesisler) == 1 else None
+
+    @property
+    def ana_depolar(self) -> set[str]:
+        """Marka soneki atılmış depo kodları: 64-V ve 64-P hepsi 64'tür."""
+        return {ana_depo(depo) for depo in self.depolar}
+
+    @property
+    def aktarma_merkezi(self) -> str:
+        """Parsiyel yükün indirileceği aktarma merkezi (Ankara / İstanbul / Bursa)."""
+        return aktarma_merkezi(self.il)
+
+    def parsiyel_depo_grubu(self) -> str | None:
+        """Müşterinin malı hangi parsiyel depo grubuna ait? Karışıksa None."""
+        depolar = self.ana_depolar
+        for grup, kapsam in PARSIYEL_DEPO_GRUPLARI.items():
+            if depolar and depolar <= kapsam:
+                return grup
+        return None
 
     def alt_kume(self, teslimatlar: Sequence[Teslimat]) -> "MusteriSiparisi":
         """Aynı durağın bir kısım teslimatından oluşan yeni bir müşteri siparişi.
@@ -423,6 +473,12 @@ class RotaPlani:
     istisna_asim: bool = False
     kamyon_profili: KapasiteProfili | None = None
     """Aynı tipin kamyon profili. Verilmezse araç her zaman tır olur."""
+    aktarma_merkezi: str = ""
+    """Parsiyel aracın yükü indireceği merkez (ANKARA / ISTANBUL / BURSA).
+
+    Parsiyelde araç müşteriye tek tek uğramaz; yük merkeze iner, dağıtımı oradan
+    yapılır. Bu yüzden aracın son noktası merkez ilidir.
+    """
     kamyon_zorunlu: bool = False
     """Araçta tır giremeyen bir müşteri var; bu araç kamyon olmak zorunda.
 
@@ -546,12 +602,25 @@ class RotaPlani:
 
     @property
     def son_ugrak(self) -> str | None:
+        """Aracın son noktası.
+
+        Parsiyelde bu her zaman aktarma merkezidir (Ankara / İstanbul / Bursa); yük
+        oraya indirilir, dağıtımı merkez yapar. Diğer tiplerde en uzak ildir.
+        """
+        if self.aktarma_merkezi:
+            return self.aktarma_merkezi
         iller = self.iller
         return iller[-1] if iller else None
 
     @property
     def son_ugrak_orani(self) -> Decimal:
-        """Son uğrak ilindeki müşterilerin araçtaki payı."""
+        """Son uğrak ilindeki müşterilerin araçtaki payı.
+
+        Parsiyelde aracın tamamı merkeze indiği için oran 1'dir; %15 kuralı zaten
+        yalnızca FTL'de aranır.
+        """
+        if self.aktarma_merkezi:
+            return Decimal(1)
         toplam = self.toplam_birim
         if toplam <= 0 or self.son_ugrak is None:
             return Decimal(0)
@@ -572,6 +641,20 @@ class RotaPlani:
     @property
     def depolar(self) -> list[str]:
         return sorted({depo for m in self.musteriler for depo in m.depolar})
+
+    @property
+    def yukleme_tesisleri(self) -> list[str]:
+        return sorted({t for m in self.musteriler for t in m.yukleme_tesisleri})
+
+    @property
+    def ortak_yukleme_mi(self) -> bool:
+        """Araç birden çok tesisten yükleniyor mu?
+
+        Eskişehir (64, -1) ile Bozüyük (74, 34 ...) ayrı şehirlerdir; aynı araca
+        ikisinden birden yüklemek malın bir şehirden diğerine aktarılmasını gerektirir.
+        Bu yüzden ikinci önceliktir, ilk tercih tek tesisten dolu araçtır.
+        """
+        return len(self.yukleme_tesisleri) > 1
 
     @property
     def tir_giremeyen_musteriler(self) -> list[MusteriSiparisi]:
@@ -632,14 +715,59 @@ def _paketle(
     yukleme_adeti: Mapping[str, int] | None = None,
     kamyon_profili: KapasiteProfili | None = None,
     kamyon_zorunlu: bool = False,
+    aktarma: str = "",
 ) -> list[RotaPlani]:
     """Bir bölgedeki müşterileri araçlara yerleştirir.
 
-    Sıra: büyükten küçüğe, eşitlikte yakından uzağa. Böylece bir araç önce hacmi
-    tutan müşteriyle kurulur, kalan yer aynı yöndeki küçük müşterilerle doldurulur.
+    **İki fazlı, tesis öncelikli:**
+
+    * *Faz 1 — tek tesis:* müşteriler malın yükleneceği tesise göre ayrılır
+      (Eskişehir: 64 ve -1; Bozüyük: 74, 34, 44 ...) ve her tesis kendi içinde
+      paketlenir. Dolan araçlar burada kalır — tek şehirden yüklenirler.
+    * *Faz 2 — ortak yükleme:* faz 1'de hiçbir tesiste aracı dolduramayan müşteriler
+      ile malı zaten iki tesise yayılmış müşteriler birlikte paketlenir. Bu araçlar
+      iki şehirden yüklenir; ilk tercih değil, hacim yetmediğinde başvurulan yoldur.
+
+    Eskiden tek fazda paketleniyordu: 64 ile 74 aynı araca hacim uyduğu için
+    giriyordu ve depo malı iki şehirden toplamak zorunda kalıyordu.
+
+    Faz içindeki sıra: büyükten küçüğe, eşitlikte yakından uzağa. Böylece bir araç
+    önce hacmi tutan müşteriyle kurulur, kalan yer aynı yöndeki küçüklerle dolar.
     """
     def olcu(musteri: MusteriSiparisi) -> Decimal:
         return musteri.kamyon_olcusu(tip) if kamyon_zorunlu else musteri.olcu(tip)
+
+    def yeni_arac() -> RotaPlani:
+        return RotaPlani(
+            bolge_kodu=bolge_kodu,
+            tip=tip,
+            profil=profil,
+            kamyon_profili=kamyon_profili,
+            kamyon_zorunlu=kamyon_zorunlu,
+            aktarma_merkezi=aktarma,
+        )
+
+    def yerlestir(musteriler: list[MusteriSiparisi]) -> list[RotaPlani]:
+        araclar: list[RotaPlani] = []
+        for musteri in sorted(
+            musteriler, key=lambda m: (-olcu(m), m.uzaklik, m.bayi_adi)
+        ):
+            adaylar = [a for a in araclar if a.sigar_mi(musteri, kurallar)]
+            if adaylar:
+                # En dolu araca ekle (best-fit); eşitlikte rotası en yakın olan.
+                hedef = min(
+                    adaylar,
+                    key=lambda a: (
+                        a.bos_alan,
+                        abs(a.musteriler[0].uzaklik - musteri.uzaklik),
+                        a.musteriler[0].bayi_adi,
+                    ),
+                )
+            else:
+                hedef = yeni_arac()
+                araclar.append(hedef)
+            hedef.ekle(musteri)
+        return araclar
 
     planlar: list[RotaPlani] = []
     normal: list[MusteriSiparisi] = []
@@ -651,46 +779,34 @@ def _paketle(
         ):
             if olcu(musteri) > profil.ust_limit:
                 # Tek teslimat bile aracı aşıyor: bölünemez, istisna aracıyla gider.
-                planlar.append(
-                    RotaPlani(
-                        bolge_kodu=bolge_kodu,
-                        tip=tip,
-                        profil=profil,
-                        musteriler=[musteri],
-                        istisna_asim=True,
-                        kamyon_profili=kamyon_profili,
-                        kamyon_zorunlu=kamyon_zorunlu,
-                    )
-                )
+                arac = yeni_arac()
+                arac.istisna_asim = True
+                arac.ekle(musteri)
+                planlar.append(arac)
             else:
                 normal.append(musteri)
 
-    sirali = sorted(normal, key=lambda m: (-olcu(m), m.uzaklik, m.bayi_adi))
-    araclar: list[RotaPlani] = []
-    for musteri in sirali:
-        adaylar = [a for a in araclar if a.sigar_mi(musteri, kurallar)]
-        if adaylar:
-            # En dolu araca ekle (best-fit); eşitlikte rotası bu müşteriye en yakın olan.
-            hedef = min(
-                adaylar,
-                key=lambda a: (
-                    a.bos_alan,
-                    abs(a.musteriler[0].uzaklik - musteri.uzaklik),
-                    a.musteriler[0].bayi_adi,
-                ),
-            )
+    # Faz 1: her tesis kendi içinde. Malı iki tesise yayılmış müşteri zaten ortak
+    # yükleme gerektirir, doğrudan ikinci faza gider.
+    tesis_gruplari: dict[str, list[MusteriSiparisi]] = defaultdict(list)
+    artiklar: list[MusteriSiparisi] = []
+    for musteri in normal:
+        tesis = musteri.tek_tesis
+        if tesis is None:
+            artiklar.append(musteri)
         else:
-            hedef = RotaPlani(
-                bolge_kodu=bolge_kodu,
-                tip=tip,
-                profil=profil,
-                kamyon_profili=kamyon_profili,
-                kamyon_zorunlu=kamyon_zorunlu,
-            )
-            araclar.append(hedef)
-        hedef.ekle(musteri)
+            tesis_gruplari[tesis].append(musteri)
 
-    planlar.extend(araclar)
+    for _, tesis_grubu in sorted(tesis_gruplari.items()):
+        for arac in yerlestir(tesis_grubu):
+            if arac.secili_profil.gecerli_dolu(arac.secili_birim):
+                planlar.append(arac)
+            else:
+                # Kendi tesisinden dolmadı; ortak yükleme şansı için havuza döner.
+                artiklar.extend(arac.musteriler)
+
+    # Faz 2: kalanlar birlikte — araç iki tesisten yüklenebilir.
+    planlar.extend(yerlestir(artiklar))
     return planlar
 
 
@@ -716,6 +832,46 @@ def _son_ugragi_duzelt(
         if plan.musteriler:
             duzeltilmis.append(plan)
     return duzeltilmis, kalanlar
+
+
+def parsiyel_ayikla(
+    musteriler: list[MusteriSiparisi],
+) -> tuple[list[tuple[str, MusteriSiparisi]], list[tuple[MusteriSiparisi, str]]]:
+    """Parsiyel müşterilerini depo grubuna ayırır; kapsam dışındakileri gerekçeler.
+
+    Malı birden çok gruba yayılmış müşteri **bölünür**: 64/-1 teslimatları bir araca,
+    74 teslimatları başka bir araca gider. Parsiyel depoları dışındaki teslimatlar
+    (34, 44 ...) hiçbir gruba giremez ve gerekçesiyle beklemede kalır.
+
+    Döner: [(depo grubu, müşteri)], [(müşteri, gerekçe)]
+    """
+    ayrilmis: list[tuple[str, MusteriSiparisi]] = []
+    disarida: list[tuple[MusteriSiparisi, str]] = []
+    for musteri in musteriler:
+        gruplar: dict[str, list[Teslimat]] = defaultdict(list)
+        kapsam_disi: list[Teslimat] = []
+        for teslimat in musteri.teslimatlar:
+            depo = ana_depo(teslimat.depo_kodu)
+            for grup, kapsam in PARSIYEL_DEPO_GRUPLARI.items():
+                if depo in kapsam:
+                    gruplar[grup].append(teslimat)
+                    break
+            else:
+                kapsam_disi.append(teslimat)
+
+        if kapsam_disi:
+            disarida.append(
+                (
+                    musteri.alt_kume(kapsam_disi),
+                    "Parsiyel yalnızca 64, -1 ve 74 depolarından yapılır; "
+                    + ", ".join(sorted({t.depo_kodu for t in kapsam_disi}))
+                    + " deposundaki mal parsiyel araca yüklenemez",
+                )
+            )
+        for grup, teslimatlar in sorted(gruplar.items()):
+            alt = musteri if len(gruplar) == 1 and not kapsam_disi else musteri.alt_kume(teslimatlar)
+            ayrilmis.append((grup, alt))
+    return ayrilmis, disarida
 
 
 def planla(
@@ -771,20 +927,44 @@ def planla(
         else:
             serbest.append(musteri)
 
+    def gruplandir(liste: list[MusteriSiparisi]) -> list[tuple[str, str, list[MusteriSiparisi]]]:
+        """Müşterileri araç kovalarına ayırır: (bölge kodu, aktarma merkezi, müşteriler).
+
+        FTL ve kargoda kova bölgedir. **Parsiyelde kova depo grubu + aktarma
+        merkezidir:** yük müşteriye değil merkeze iner, 64/-1 ile 74 aynı araca
+        binmez.
+        """
+        if tip is not SevkiyatTipi.RUTIN:
+            return [(kod, "", grup) for kod, grup in _bolgelere_ayir(liste)]
+
+        kovalar: dict[tuple[str, str], list[MusteriSiparisi]] = defaultdict(list)
+        for depo_grubu, musteri in parsiyel_ayikla(liste)[0]:
+            kovalar[(depo_grubu, musteri.aktarma_merkezi)].append(musteri)
+        return [
+            (f"{merkez_bolge_kodu(merkez)}|{depo_grubu}", merkez, grup)
+            for (depo_grubu, merkez), grup in sorted(kovalar.items())
+        ]
+
+    if tip is SevkiyatTipi.RUTIN:
+        for musteri, gerekce in parsiyel_ayikla(musteriler)[1]:
+            sonuc.bekleyenler.append(
+                BekleyenMusteri(musteri=musteri, tip=tip, sebep=gerekce)
+            )
+
     ham_planlar: list[RotaPlani] = []
-    for bolge_kodu, grup in _bolgelere_ayir(serbest):
+    for bolge_kodu, merkez, grup in gruplandir(serbest):
         ham_planlar.extend(
             _paketle(
                 grup, bolge_kodu, tip, profil, kurallar, palet_ici, yukleme_adeti,
-                kamyon_profili,
+                kamyon_profili, aktarma=merkez,
             )
         )
-    for bolge_kodu, grup in _bolgelere_ayir(zorunlu_kamyon):
+    for bolge_kodu, merkez, grup in gruplandir(zorunlu_kamyon):
         ham_planlar.extend(
             _paketle(
                 grup, bolge_kodu, tip, kamyon_profili, kurallar, palet_ici,
                 kamyon_yukleme_adeti or yukleme_adeti, kamyon_profili,
-                kamyon_zorunlu=True,
+                kamyon_zorunlu=True, aktarma=merkez,
             )
         )
 
