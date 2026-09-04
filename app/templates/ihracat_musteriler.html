@@ -1,6 +1,6 @@
 {% extends "temel.html" %}
-{% set aktif_modul = 'IHRACAT' %}
-{% set aktif_menu = 'musteriler' %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'ihracat_musteriler' %}
 {% block icerik %}
 <h1>İhracat Müşterileri <span class="soluk">({{ toplam }} kayıt)</span></h1>
 
@@ -11,11 +11,12 @@
       Eşleştirme müşteri adı üzerinden yapılır. Yükleme formu kitabının
       <b>FORMÜLLER</b> sayfası da doğrudan yüklenebilir: sütun başlıkları tanınır.
     </p>
-    <form class="satir" method="post" action="/ihracat/musteriler/yukle"
+    <form class="satir" method="post" action="/masterdata/ihracat-musteriler/yukle"
           enctype="multipart/form-data">
       <input type="file" name="dosya" accept=".xlsx,.xlsm" required>
       <button type="submit">Yükle</button>
-      <a class="dugme ikincil" href="/ihracat/musteriler/sablon">Şablonu indir</a>
+      <a class="dugme ikincil" href="/masterdata/ihracat-musteriler/excel?{{ sorgu }}">Listeyi indir</a>
+      <a class="dugme ikincil" href="/masterdata/ihracat-musteriler/sablon">Şablonu indir</a>
     </form>
   </div>
   <div class="kart">
@@ -41,7 +42,7 @@
 </div>
 
 <div class="kart">
-  <form class="satir" method="get" action="/ihracat/musteriler" style="margin-bottom:14px">
+  <form class="satir" method="get" action="/masterdata/ihracat-musteriler" style="margin-bottom:14px">
     <div><label for="arama">Ara</label>
       <input id="arama" name="arama" value="{{ arama }}"
              placeholder="Müşteri, ülke, ülke kodu" style="width:320px"></div>
@@ -58,7 +59,7 @@
     <tbody>
     {% for m in musteriler %}
       <tr>
-        <form method="post" action="/ihracat/musteriler/{{ m.id }}">
+        <form method="post" action="/masterdata/ihracat-musteriler/{{ m.id }}">
         <td><b>{{ m.musteri_adi }}</b>
           {% if m.plan_sayisi %}<div class="soluk">{{ m.plan_sayisi }} plan</div>{% endif %}</td>
         <td>{{ m.ulke or '—' }}<div class="soluk">{{ m.ulke_kodu or '' }}</div></td>

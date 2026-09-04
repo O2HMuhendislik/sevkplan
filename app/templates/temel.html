@@ -32,7 +32,6 @@
       <a href="/rota/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
       <a href="/rota/manuel-plan" class="{{ 'aktif' if aktif_menu == 'manuel' }}">Manuel Planlama</a>
       <a href="/rota/bekleyenler" class="{{ 'aktif' if aktif_menu == 'bekleyenler' }}">Bekleyenler</a>
-      <a href="/rota/musteriler" class="{{ 'aktif' if aktif_menu == 'musteriler' }}">Müşteriler</a>
       <a href="/rota/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
     {% elif aktif_modul == 'IHRACAT' %}
       <a href="/ihracat" class="{{ 'aktif' if aktif_menu == 'gosterge' }}">Gösterge Paneli</a>
@@ -40,8 +39,6 @@
       <a href="/ihracat/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Planlar</a>
       <a href="/ihracat/manuel-plan" class="{{ 'aktif' if aktif_menu == 'manuel' }}">Manuel Planlama</a>
       <a href="/ihracat/bekleyenler" class="{{ 'aktif' if aktif_menu == 'bekleyenler' }}">Bekleyenler</a>
-      <a href="/ihracat/musteriler" class="{{ 'aktif' if aktif_menu == 'musteriler' }}">Müşteriler</a>
-      <a href="/ihracat/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Ürünler</a>
     {% elif aktif_modul == 'RAPORLAMA' %}
       <a href="/raporlama" class="{{ 'aktif' if aktif_menu == 'ozet' }}">Özet ve KPI</a>
       <a href="/raporlama/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Tüm Siparişler</a>
@@ -50,7 +47,13 @@
       <a href="/yonetim/kullanicilar" class="{{ 'aktif' if aktif_menu == 'kullanicilar' }}">Kullanıcılar</a>
       <a href="/veri-yonetimi" class="{{ 'aktif' if aktif_menu == 'veri' }}">Veri Yönetimi</a>
     {% elif aktif_modul == 'MASTERDATA' %}
-      <a href="/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Ürünler</a>
+      <a href="/masterdata" class="{{ 'aktif' if aktif_menu == 'ozet' }}">Özet</a>
+      <a href="/masterdata/urunler" class="{{ 'aktif' if aktif_menu == 'urunler' }}">Ürünler</a>
+      <a href="/masterdata/musteriler" class="{{ 'aktif' if aktif_menu == 'musteriler' }}">Müşteriler</a>
+      <a href="/masterdata/ihracat-musteriler" class="{{ 'aktif' if aktif_menu == 'ihracat_musteriler' }}">İhracat Müşterileri</a>
+      <a href="/masterdata/ihracat-urunler" class="{{ 'aktif' if aktif_menu == 'ihracat_urunler' }}">İhracat Ürünleri</a>
+      <a href="/masterdata/depolar" class="{{ 'aktif' if aktif_menu == 'depolar' }}">Depolar</a>
+      <a href="/masterdata/sistem" class="{{ 'aktif' if aktif_menu == 'sistem' }}">Sistem Tanımları</a>
     {% endif %}
   </nav>
   <div class="kullanici-alani">

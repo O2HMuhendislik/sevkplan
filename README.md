@@ -126,7 +126,7 @@ kullanıcı yalnızca yetkili olduğu modülleri açabilir.
 | **İhracat Planlama** | Hazır — tır / konteyner, kara / deniz |
 | **Raporlama** | Hazır — modüller arası liste ve plana alınma KPI'ı |
 | Araç Talep ve Tedarik | Yakında (sözleşmeli nakliyeciler de erişecek) |
-| **Master Data** | Hazır — modüllerin ortak ürün verisi |
+| **Master Data** | Hazır — ürün, müşteri, depo ve sistem tanımları |
 | **Sistem Yönetimi** | Hazır — kullanıcılar, yetkiler, veri yönetimi |
 
 **Roller:** Yönetici, Planlamacı, Depo, Nakliyeci, İzleyici. Yetki modül bazında
@@ -156,12 +156,65 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Siparişler** | Excel aktarımı; beklemede / planlandı / tamamlandı / hatalı sekmeleri |
 | **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
 | **Plan Detayı** | Plan içeriği, Axata no girişi (**depo bazında**), yükleme formu, statü işlemleri, plan geçmişi |
-| **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
+
+### Master Data modülü (`/masterdata`)
+
+Bütün modüllerin **ortak verisi** burada durur. Müşteri ve ürün ekranları daha önce
+Ring / iç piyasa / ihracat modüllerinin içindeydi; aynı veriye üç ayrı yerden
+bakılıyordu. Artık tek yerdeler, eski adresler yönlendiriliyor.
+
+| Ekran | İşlev |
+|---|---|
+| **Özet** (`/masterdata`) | Kayıt sayıları ve **eksik ürün master datası** dökümü; satıra tıklayınca o eksiği olan ürünler listelenir |
+| **Ürünler** | Sütun filtreleri, filtrelenmiş listeyi indirme, toplu yükleme, tekil düzenleme |
+| **Müşteriler** | İç piyasa müşterileri: il, ilçe, bölge, tır girişi (eski adres `/rota/musteriler`) |
+| **İhracat Müşterileri** | Araç tipi, sefer kodu, yükleme tipi, azami tonaj (eski adres `/ihracat/musteriler`) |
+| **İhracat Ürünleri** | Tır ve konteyner yükleme adetleri, yeni/eski hesap (eski adres `/ihracat/urunler`) |
+| **Depolar** | Kod, ad, tesis, yükleme formundaki satır adı ve sırası, Axata açılır mı, parsiyel yapılır mı |
+| **Sistem Tanımları** | Planlama sayıları (kargo desi sınırı, rutin palet sınırı, azami durak, rota sapması, günlük araç sınırları) |
+
+#### İndir → doldur → geri yükle
+
+Dışa aktarım, **içe aktarımın tanıdığı başlıkları** kullanır; ikisi de
+`app/services/veri_formatlari.py` içindeki aynı alan tanımlarından beslenir. Bu yüzden:
+
+* Ekranda uyguladığınız filtre **indirilen dosyaya da uygulanır** — "palet ölçüsü boş"
+  filtresini seçip indirirseniz dosyada yalnızca o 450 ürün olur.
+* Ekran ilk 500 kaydı gösterir, **dosya filtrenin tamamını içerir**.
+* İndirdiğiniz dosyada eksikleri doldurup aynı dosyayı yükleyebilirsiniz; ayrı bir
+  şablon doldurmak gerekmez.
+* Dosyada **boş bırakılan sütun mevcut veriyi silmez.** Kısmi dosyalar (yalnızca birkaç
+  sütunu olan) yaygın olduğu için bu kural şart: aksi hâlde tek bir kısmi yükleme
+  bütün ölçüleri siler ve planlama durur.
+* Bir alanı **kasten boşaltmak** için ürünü ekrandan açıp alanı boş bırakın; tekil
+  düzenleme formunda boşluk silme anlamına gelir.
+
+#### Depo tanımları
+
+Depolar bugüne kadar koda gömülüydü; yeni depo açıldığında yükleme formunun
+depo/AXATA kutusuna satır eklemek için kod değiştirmek gerekiyordu. Artık **form
+etiketi** ve **sıra** buradan yönetiliyor, form o tanımları okuyor. Tesis bilgisi
+ortak yükleme kararında kullanılıyor (Eskişehir / Bozüyük).
+
+**Sınır:** hangi deponun hangi kapasite ölçüsüyle planlanacağı burada değil,
+`app/config.py` içindeki `DEPO_PROFILLERI`'ndedir. O bir iş kuralıdır ve gerçek sevk
+verisiyle doğrulanmıştır.
+
+#### Sistem tanımları
+
+Sahadan gelen ve değişebilen planlama sayıları ekrandan değiştirilebilir; kayıt yoksa
+koddaki varsayılan geçerlidir, "Varsayılana dön" bütün kayıtları siler. Değişiklik
+**bundan sonraki planlamalarda** geçerli olur, mevcut planlar etkilenmez.
+
+Ekranın alt bölümü **değiştirilemeyen kuralları** ve dayanaklarını listeler (anahtar
+değerin palete yuvarlanmaması, parsiyel depoları, aktarma merkezleri, mesafe modeli).
+Bunlar gerçek sevk verisiyle doğrulandı; değişmeleri gerekirse kod ve doğrulama
+birlikte güncellenmelidir.
 
 ### İç piyasa modülü (`/rota`)
 
@@ -172,7 +225,6 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Planlar** | Tip (FTL/rutin/kargo), **araç (kamyon/tır)**, bölge ve durum filtresi; günlük yükleme formu. Liste "FTL" yerine aracın adını yazar |
 | **Plan Detayı** | **Araç (kamyon/tır)**, **yükleme tesisi**, parsiyelde **aktarma merkezi**, rota ve duraklar, son uğrak oranı, ortak yükleme uyarısı, araç/şoför bilgisi, Axata, marka payı |
 | **Manuel Planlama** (`/rota/manuel-plan`) | Teslimat seçerek planlama |
-| **Müşteriler** | Müşteri master datası: il, ilçe, bölge, **tır girişi** (E/H/?), Excel ile toplu yükleme |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
 ### İhracat modülü (`/ihracat`)
@@ -184,8 +236,6 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Planlar** | Durum filtresi, günlük yükleme formu, Excel'e aktarma |
 | **Manuel Planlama** (`/ihracat/manuel-plan`) | Teslimat seçerek planlama |
 | **Plan Detayı** | Doluluk, palet/desi/ağırlık, yükleme tipi ve müşteri notu, çekici/dorse/mühür, Axata, marka payı |
-| **Müşteriler** | Araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, hesap sürümü ve müşteriye özel yükleme notu |
-| **Ürünler** (`/ihracat/urunler`) | İhracat ürün master datası: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık; ölçüsü eksik ürünlerin listesi |
 
 ### Raporlama modülü (`/raporlama`)
 

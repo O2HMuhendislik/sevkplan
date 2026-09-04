@@ -1,6 +1,7 @@
 """Web katmanı duman testi: ekranlar açılıyor ve uçtan uca akış çalışıyor mu?"""
 from __future__ import annotations
 
+from decimal import Decimal
 from io import BytesIO
 
 import pytest
@@ -86,13 +87,13 @@ def kitap(basliklar, satirlar) -> BytesIO:
 @pytest.mark.parametrize(
     "yol",
     [
-        "/", "/urunler", "/ring", "/ring/siparisler", "/ring/planlar",
+        "/", "/masterdata/urunler", "/ring", "/ring/siparisler", "/ring/planlar",
         "/ring/raporlar", "/ring/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
-        "/rota", "/rota/siparisler", "/rota/planlar", "/rota/musteriler",
+        "/rota", "/rota/siparisler", "/rota/planlar", "/masterdata/musteriler",
         "/rota/raporlar",
         "/ring/manuel-plan", "/rota/manuel-plan", "/ihracat/manuel-plan",
         "/raporlama", "/raporlama/siparisler", "/raporlama/planlar",
-        "/ihracat", "/ihracat/siparisler", "/ihracat/planlar", "/ihracat/musteriler",
+        "/ihracat", "/ihracat/siparisler", "/ihracat/planlar", "/masterdata/ihracat-musteriler",
     ],
 )
 def test_ekranlar_acilir(istemci, yol):
@@ -102,7 +103,7 @@ def test_ekranlar_acilir(istemci, yol):
 
 
 @pytest.mark.parametrize(
-    "yol", ["/", "/urunler", "/ring/planlar", "/yonetim/kullanicilar"]
+    "yol", ["/", "/masterdata/urunler", "/ring/planlar", "/yonetim/kullanicilar"]
 )
 def test_giris_yapmadan_erisilemez(ham_istemci, yol):
     cevap = ham_istemci.get(yol, follow_redirects=False)
@@ -174,7 +175,7 @@ def test_uctan_uca_akis(istemci):
         [["KMB-24", "Kombi 24 kW", "KOMBİ", 10, 100]],
     )
     cevap = istemci.post(
-        "/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)}
+        "/masterdata/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)}
     )
     assert cevap.status_code == 200 and "1 yeni" in sorgu(cevap)
 
@@ -224,7 +225,7 @@ def test_veri_silme_onayla_calisir(istemci):
         ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
         [["KMB-24", "Kombi 24 kW", "KOMBİ", 10, 100]],
     )
-    istemci.post("/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)})
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urunler.xlsx", urun_dosyasi)})
     siparis_dosyasi = kitap(
         ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "Termin Tarihi"],
         [["SIP-1", "TSL-1", "KMB-24", 25, "64", "05.09.2026"]],
@@ -247,7 +248,7 @@ def ring_verisi_yukle(istemci):
         ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
         [["U1", "Kombi A", "KOMBİ", 10, 100]],
     )
-    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
     siparisler = kitap(
         ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
          "BayiAdi"],
@@ -267,7 +268,7 @@ def ic_piyasa_verisi_yukle(istemci):
             ["U2", "Panel B", "PANEL", 10, 100, 12],
         ],
     )
-    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
 
     musteriler = kitap(
         ["Bayi Adı", "İl", "İlçe", "Tır Girişi (E/H/?)"],
@@ -276,7 +277,7 @@ def ic_piyasa_verisi_yukle(istemci):
             ["MANİSA TESİSAT", "MANİSA", "MERKEZ", "H"],
         ],
     )
-    istemci.post("/rota/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
+    istemci.post("/masterdata/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
 
     siparisler = kitap(
         ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
@@ -383,7 +384,7 @@ def test_musteri_ekranindan_tir_girisi_guncellenir(istemci, fabrika):
         assert musteri.tir_girisi == "E"
 
     istemci.post(
-        f"/rota/musteriler/{musteri_id}",
+        f"/masterdata/musteriler/{musteri_id}",
         data={"tir_girisi": "H", "bolge_kodu": "", "il": "İZMİR", "ilce": "BORNOVA",
               "notlar": "AVM içi", "aktif": "true"},
     )
@@ -548,7 +549,7 @@ def ihracat_verisi_yukle(istemci):
              "PALET YÜKSELTME", "19.500 KG", "silika jel konulacak"],
         ],
     )
-    istemci.post("/ihracat/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
+    istemci.post("/masterdata/ihracat-musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
 
     siparisler = kitap(
         ["DEPO", "ÜLKE KODU", "SİPARİŞ NO", "ÜRÜN KODU", "ÜRÜN TANIMI", "ADET",
@@ -678,7 +679,7 @@ def test_ring_eskisehir_disi_siparisi_almaz(istemci, fabrika):
         ["StokKodu", "StokAdi", "Palet içi adet", "Tır yükleme adeti"],
         [["U1", "Kombi A", 10, 100]],
     )
-    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
 
     dosya = kitap(
         ["SehirAdi", "Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu"],
@@ -914,3 +915,98 @@ def test_tek_depolu_planda_axata_deposu_zorunlu_degil(istemci, fabrika):
         assert plan.axata_numaralari[0].depo_kodu is None
         assert plan.depo_axata_ozeti("64") == "AX-1"
 
+
+
+@pytest.mark.parametrize(
+    "yol",
+    ["/masterdata", "/masterdata/urunler", "/masterdata/musteriler",
+     "/masterdata/ihracat-musteriler", "/masterdata/ihracat-urunler",
+     "/masterdata/depolar", "/masterdata/sistem"],
+)
+def test_masterdata_ekranlari_acilir(istemci, yol):
+    cevap = istemci.get(yol)
+    assert cevap.status_code == 200
+    assert "Nakliye Yönetim Sistemi" in cevap.text
+
+
+def test_eski_masterdata_adresleri_yonlendirilir(istemci):
+    """Kayıtlı bağlantılar ve yer imleri kırılmasın."""
+    for eski, yeni in (
+        ("/urunler", "/masterdata/urunler"),
+        ("/rota/musteriler", "/masterdata/musteriler"),
+        ("/ihracat/musteriler", "/masterdata/ihracat-musteriler"),
+        ("/ihracat/urunler", "/masterdata/ihracat-urunler"),
+    ):
+        cevap = istemci.get(eski, follow_redirects=False)
+        assert cevap.status_code == 308
+        assert cevap.headers["location"] == yeni
+
+
+def test_filtrelenen_liste_indirilir(istemci, fabrika, tmp_path):
+    """Ekranda görülen filtre ile inen dosya aynı kayıtları içerir."""
+    from openpyxl import load_workbook
+
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["P1", "Panel 1", "PANEL", 10, 100],
+         ["P2", "Panel 2", "PANEL", None, 100],
+         ["K1", "Kombi 1", "KOMBİ", 15, 360]],
+    )
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("u.xlsx", urunler)})
+
+    ekran = istemci.get("/masterdata/urunler", params={"urun_grubu": "PANEL"})
+    assert "P1" in ekran.text and "K1" not in ekran.text
+
+    dosya = tmp_path / "filtre.xlsx"
+    dosya.write_bytes(
+        istemci.get("/masterdata/urunler/excel", params={"urun_grubu": "PANEL"}).content
+    )
+    sayfa = load_workbook(dosya).active
+    kodlar = {sayfa.cell(row=r, column=1).value for r in range(2, sayfa.max_row + 1)}
+    assert kodlar == {"P1", "P2"}
+
+    # Eksik alan filtresi de dosyaya uygulanır.
+    dosya2 = tmp_path / "eksik.xlsx"
+    dosya2.write_bytes(
+        istemci.get("/masterdata/urunler/excel", params={"eksik": "PALET"}).content
+    )
+    sayfa2 = load_workbook(dosya2).active
+    kodlar2 = {sayfa2.cell(row=r, column=1).value for r in range(2, sayfa2.max_row + 1)}
+    assert kodlar2 == {"P2"}
+
+
+def test_urun_ekrandan_guncellenir(istemci, fabrika):
+    from app.models import Urun
+
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["P1", "Panel 1", "PANEL", 10, 100]],
+    )
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("u.xlsx", urunler)})
+
+    assert istemci.get("/masterdata/urunler/P1").status_code == 200
+    cevap = istemci.post(
+        "/masterdata/urunler/kaydet",
+        data={"geri": "/masterdata/urunler", "urun_kodu": "P1", "urun_adi": "Panel 1",
+              "urun_grubu": "PANEL", "palet_ici_adet": "32", "tir_yukleme_adeti": "704",
+              "tir_palet": "22", "agirlik": "34,5", "palet_en": "105",
+              "palet_boy": "123", "aktif": "E"},
+    )
+    assert "güncellendi" in sorgu(cevap)
+    with fabrika() as db:
+        urun = db.query(Urun).filter_by(urun_kodu="P1").one()
+        assert (urun.palet_ici_adet, urun.tir_palet, urun.palet_en) == (32, 22, 105)
+        assert str(urun.agirlik) == "34.500"
+
+
+def test_sistem_ayari_planlama_kurallarina_gecer(istemci, fabrika):
+    from app.services import masterdata_servisi
+
+    cevap = istemci.post("/masterdata/sistem", data={"kargo_desi_siniri": "25"})
+    assert "Kargo desi sınırı: 10 → 25" in sorgu(cevap)
+    with fabrika() as db:
+        assert masterdata_servisi.kurallari_kur(db).kargo_desi_siniri == Decimal(25)
+
+    istemci.post("/masterdata/sistem", data={"varsayilana_don": "1"})
+    with fabrika() as db:
+        assert masterdata_servisi.kurallari_kur(db).kargo_desi_siniri == Decimal(10)

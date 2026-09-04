@@ -106,6 +106,22 @@ def _kontrol_et(dosya: Any, alanlar, alias) -> None:
         )
 
 
+def _doluyu_yaz(kayit, alan: str, deger) -> None:
+    """Yalnızca **dolu** değeri yazar; boş gelen sütun mevcut veriyi silmez.
+
+    Master data dosyaları çoğu zaman kısmidir: kullanıcı listeyi indirip yalnızca
+    eksik ölçüleri dolduruyor, ya da elindeki dosyada sütunların bir kısmı yok. Boş
+    hücreyi "sil" diye okursak tek bir kısmi yükleme bütün ölçüleri siler ve
+    planlama durur.
+
+    Bir alanı **kasten** boşaltmak Master Data ekranındaki tekil düzenleme formuyla
+    yapılır; orada boş bırakmak silme anlamına gelir.
+    """
+    if deger is None or deger == "":
+        return
+    setattr(kayit, alan, deger)
+
+
 def urunleri_aktar(
     db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
 ) -> IceAktarimSonucu:
@@ -142,20 +158,23 @@ def urunleri_aktar(
             sonuc.guncellenen += 1
 
         urun.urun_adi = urun_adi
-        urun.urun_grubu = (excel.metin(kayit.get("urun_grubu")) or "").upper() or None
-        urun.palet_ici_adet = palet_ici
-        urun.kamyon_yukleme_adeti = kamyon_adet
-        urun.kamyon_palet = excel.tam_sayi_ya_da(kayit.get("kamyon_palet"))
-        urun.tir_yukleme_adeti = tir_adet
-        urun.tir_palet = excel.tam_sayi_ya_da(kayit.get("tir_palet"))
-        urun.agirlik = excel.sayi_ya_da(kayit.get("agirlik"))
-        urun.desi = excel.sayi_ya_da(kayit.get("desi"))
-        urun.m3 = excel.sayi_ya_da(kayit.get("m3"))
-        urun.palet_en = excel.tam_sayi_ya_da(kayit.get("palet_en"))
-        urun.palet_boy = excel.tam_sayi_ya_da(kayit.get("palet_boy"))
-        urun.palet_yukseklik = excel.tam_sayi_ya_da(kayit.get("palet_yukseklik"))
-        urun.header_kod = excel.metin(kayit.get("header_kod"))
-        urun.aktif = excel.evet_hayir(kayit.get("aktif"), True)
+        _doluyu_yaz(urun, "urun_grubu",
+                    (excel.metin(kayit.get("urun_grubu")) or "").upper() or None)
+        _doluyu_yaz(urun, "palet_ici_adet", palet_ici)
+        _doluyu_yaz(urun, "kamyon_yukleme_adeti", kamyon_adet)
+        _doluyu_yaz(urun, "kamyon_palet", excel.tam_sayi_ya_da(kayit.get("kamyon_palet")))
+        _doluyu_yaz(urun, "tir_yukleme_adeti", tir_adet)
+        _doluyu_yaz(urun, "tir_palet", excel.tam_sayi_ya_da(kayit.get("tir_palet")))
+        _doluyu_yaz(urun, "agirlik", excel.sayi_ya_da(kayit.get("agirlik")))
+        _doluyu_yaz(urun, "desi", excel.sayi_ya_da(kayit.get("desi")))
+        _doluyu_yaz(urun, "m3", excel.sayi_ya_da(kayit.get("m3")))
+        _doluyu_yaz(urun, "palet_en", excel.tam_sayi_ya_da(kayit.get("palet_en")))
+        _doluyu_yaz(urun, "palet_boy", excel.tam_sayi_ya_da(kayit.get("palet_boy")))
+        _doluyu_yaz(urun, "palet_yukseklik",
+                    excel.tam_sayi_ya_da(kayit.get("palet_yukseklik")))
+        _doluyu_yaz(urun, "header_kod", excel.metin(kayit.get("header_kod")))
+        if not excel.bos_mu(kayit.get("aktif")):
+            urun.aktif = excel.evet_hayir(kayit.get("aktif"), True)
 
         if not urun.planlanabilir_mi:
             # Kayıt yine de alınır; planlamaya girdiğinde gerekçesiyle uyarılır.
@@ -446,19 +465,28 @@ def musterileri_aktar(
         else:
             sonuc.guncellenen += 1
 
+        # Ürün master datasındaki kural burada da geçerli: boş gelen sütun mevcut
+        # bilgiyi silmez (bkz. _doluyu_yaz).
         musteri.bayi_adi = bayi_adi
-        musteri.bayi_kodu = excel.metin(kayit.get("bayi_kodu")) or None
-        musteri.alici_firma = excel.metin(kayit.get("alici_firma")) or None
-        musteri.il = yer_adi(kayit.get("il")) or None
-        musteri.ilce = yer_adi(kayit.get("ilce")) or None
-        musteri.sevk_adresi = excel.metin(kayit.get("sevk_adresi")) or None
-        musteri.telefon = excel.metin(kayit.get("telefon")) or None
-        musteri.incoterms = (excel.metin(kayit.get("incoterms")) or "").upper() or None
-        tir = (excel.metin(kayit.get("tir_girisi")) or "?").strip().upper()[:1]
-        musteri.tir_girisi = tir if tir in {"E", "H"} else "?"
-        musteri.bolge_kodu = excel.metin(kayit.get("bolge_kodu")) or None
-        musteri.notlar = excel.metin(kayit.get("notlar")) or None
-        musteri.aktif = excel.evet_hayir(kayit.get("aktif"), True)
+        _doluyu_yaz(musteri, "bayi_kodu", excel.metin(kayit.get("bayi_kodu")))
+        _doluyu_yaz(musteri, "alici_firma", excel.metin(kayit.get("alici_firma")))
+        _doluyu_yaz(musteri, "il", yer_adi(kayit.get("il")))
+        _doluyu_yaz(musteri, "ilce", yer_adi(kayit.get("ilce")))
+        _doluyu_yaz(musteri, "sevk_adresi", excel.metin(kayit.get("sevk_adresi")))
+        _doluyu_yaz(musteri, "telefon", excel.metin(kayit.get("telefon")))
+        _doluyu_yaz(
+            musteri, "incoterms",
+            (excel.metin(kayit.get("incoterms")) or "").upper() or None,
+        )
+        tir = (excel.metin(kayit.get("tir_girisi")) or "").strip().upper()[:1]
+        if tir in {"E", "H", "?"}:
+            musteri.tir_girisi = tir
+        elif musteri.tir_girisi is None:
+            musteri.tir_girisi = "?"
+        _doluyu_yaz(musteri, "bolge_kodu", excel.metin(kayit.get("bolge_kodu")))
+        _doluyu_yaz(musteri, "notlar", excel.metin(kayit.get("notlar")))
+        if not excel.bos_mu(kayit.get("aktif")):
+            musteri.aktif = excel.evet_hayir(kayit.get("aktif"), True)
 
         if not musteri.il:
             sonuc.uyarilar.append(

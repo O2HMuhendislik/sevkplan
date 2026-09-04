@@ -225,3 +225,6 @@ header.ust .modul-cikis {
 td.secim, th.secim { width: 34px; text-align: center; }
 td.secim input, th.secim input { width: 16px; height: 16px; cursor: pointer; }
 tr.secili { background: var(--vg-yesil-10); }
+
+/* Master data: eksik alan gözle taransın diye işaretlenir. */
+td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600; }

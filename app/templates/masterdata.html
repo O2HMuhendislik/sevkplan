@@ -1,0 +1,48 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'ozet' %}
+{% block icerik %}
+<h1>Master Data</h1>
+
+<p class="soluk" style="max-width:900px">
+  Bütün modüllerin ortak verisi burada durur: ürün ölçüleri, müşteri bilgileri, depo
+  tanımları ve planlama sayıları. Siparişler ve planlar modüllerine aittir, master data
+  değildir.
+</p>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  {% for kart in kartlar %}
+  <a class="metrik" href="{{ kart.yol }}" style="text-decoration:none">
+    <div class="etiket">{{ kart.etiket }}</div>
+    <div class="deger">{{ kart.sayi | sayi }}</div>
+    <div class="soluk">{{ kart.aciklama }}</div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <h2>Eksik ürün master datası</h2>
+  <p class="soluk">
+    Ölçüsü eksik ürün planlamaya giremez; teslimatı <b>HATALI</b> statüsüne düşer.
+    Satıra tıklayınca yalnızca o eksiği olan ürünler listelenir; listeyi indirip
+    doldurup geri yükleyebilirsiniz.
+  </p>
+  {% if eksikler %}
+  <table>
+    <thead><tr><th>Eksik alan</th><th class="sag">Ürün</th><th class="sag">Oran</th><th></th></tr></thead>
+    <tbody>
+    {% for e in eksikler %}
+      <tr>
+        <td>{{ e.etiket }}</td>
+        <td class="sag">{{ e.sayi | sayi }}</td>
+        <td class="sag">%{{ (e.oran * 100) | round(1) }}</td>
+        <td><a class="dugme ikincil" href="/masterdata/urunler?eksik={{ e.kod }}">Listele</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">Ürün master datasında eksik alan yok.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -68,4 +68,12 @@ def eksikleri_yukle(db: Session) -> list[str]:
             mesajlar.append(f"{gomulu.ad}: yüklenemedi ({hata})")
             continue
         mesajlar.append(f"{gomulu.ad}: {sonuc.eklenen} kayıt")
+
+    # Depo tanımları Excel'den değil, koddaki varsayılan listeden gelir; bugüne kadar
+    # sabit olarak taşınan değerlerin aynısıdır (bkz. masterdata_servisi).
+    from app.services.masterdata_servisi import depolari_yukle
+
+    eklenen_depo = depolari_yukle(db)
+    if eklenen_depo:
+        mesajlar.append(f"Depo tanımları: {eklenen_depo} kayıt")
     return mesajlar

@@ -1,0 +1,92 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'depolar' %}
+{% block icerik %}
+<h1>Depo Tanımları</h1>
+
+<div class="kart">
+  <p class="soluk" style="margin:0">
+    Depolar bugüne kadar koda gömülüydü; yeni depo açıldığında yükleme formunun
+    depo/AXATA kutusuna satır eklemek için kod değiştirmek gerekiyordu.
+    <b>Form etiketi</b> o kutuda görünecek satırın adıdır, <b>sıra</b> satırın yeridir.
+    <b>Tesis</b> deponun fiziken bulunduğu yerdir: farklı tesisten yükleme yapan araç
+    iki şehre uğrar, plan bunu "ortak yükleme" diye işaretler.
+  </p>
+  <p class="soluk">
+    <b>Sınır:</b> hangi deponun hangi kapasite ölçüsüyle planlanacağı buradan değil,
+    <code>app/config.py</code> içindeki kapasite profillerinden gelir. O bir iş kuralı
+    ve gerçek sevk verisiyle doğrulandı; ekrandan değiştirilmesi doğru olmaz.
+  </p>
+</div>
+
+<div class="kart">
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Kod</th><th>Ad</th><th>Tesis</th><th>Form etiketi</th>
+      <th class="sag">Sıra</th><th>Axata</th><th>Parsiyel</th><th>Durum</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for d in depolar %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><b>{{ d.kod }}</b></td>
+        <td>{{ d.ad }}{% if d.aciklama %}<div class="soluk">{{ d.aciklama }}</div>{% endif %}</td>
+        <td>{{ d.tesis or '—' }}</td>
+        <td>{{ d.form_etiketi or '—' }}</td>
+        <td class="sag">{{ d.sira }}</td>
+        <td>{% if d.axata_var %}<span class="rozet TAMAMLANDI">var</span>
+            {% else %}<span class="rozet IPTAL">yok</span>{% endif %}</td>
+        <td>{% if d.parsiyel_yapilir %}<span class="rozet PLANLANDI">yapılır</span>
+            {% else %}<span class="soluk">—</span>{% endif %}</td>
+        <td>{% if d.aktif %}<span class="rozet TAMAMLANDI">Aktif</span>
+            {% else %}<span class="rozet IPTAL">Pasif</span>{% endif %}</td>
+        <td><a class="dugme ikincil" href="/masterdata/depolar?kod={{ d.kod }}">Düzenle</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart">
+  <h2>{{ 'Depoyu düzenle: ' + secili.kod if secili else 'Yeni depo' }}</h2>
+  <form method="post" action="/masterdata/depolar/kaydet">
+    <div class="izgara dort" style="margin-bottom:14px">
+      <div><label for="kod">Depo kodu</label>
+        <input id="kod" name="kod" value="{{ secili.kod if secili else '' }}"
+               {{ 'readonly' if secili }} required style="width:100%"></div>
+      <div><label for="ad">Ad</label>
+        <input id="ad" name="ad" value="{{ secili.ad if secili else '' }}" required style="width:100%"></div>
+      <div><label for="tesis">Tesis</label>
+        <input id="tesis" name="tesis" list="tesisler"
+               value="{{ secili.tesis if secili and secili.tesis else '' }}" style="width:100%">
+        <datalist id="tesisler"><option value="ESKİŞEHİR"><option value="BOZÜYÜK"></datalist></div>
+      <div><label for="form_etiketi">Form etiketi</label>
+        <input id="form_etiketi" name="form_etiketi" placeholder="64-D DEPO"
+               value="{{ secili.form_etiketi if secili and secili.form_etiketi else '' }}" style="width:100%"></div>
+      <div><label for="sira">Form sırası</label>
+        <input id="sira" name="sira" inputmode="numeric"
+               value="{{ secili.sira if secili else 100 }}" style="width:100%"></div>
+      <div><label for="axata_var">Axata iş emri</label>
+        <select id="axata_var" name="axata_var">
+          <option value="E" {{ 'selected' if not secili or secili.axata_var }}>Açılır</option>
+          <option value="H" {{ 'selected' if secili and not secili.axata_var }}>Açılmaz</option>
+        </select></div>
+      <div><label for="parsiyel_yapilir">Parsiyel sevkiyat</label>
+        <select id="parsiyel_yapilir" name="parsiyel_yapilir">
+          <option value="E" {{ 'selected' if secili and secili.parsiyel_yapilir }}>Yapılır</option>
+          <option value="H" {{ 'selected' if not secili or not secili.parsiyel_yapilir }}>Yapılmaz</option>
+        </select></div>
+      <div><label for="aktif">Durum</label>
+        <select id="aktif" name="aktif">
+          <option value="E" {{ 'selected' if not secili or secili.aktif }}>Aktif</option>
+          <option value="H" {{ 'selected' if secili and not secili.aktif }}>Pasif</option>
+        </select></div>
+    </div>
+    <div style="margin-bottom:14px"><label for="aciklama">Açıklama</label>
+      <input id="aciklama" name="aciklama" style="width:100%"
+             value="{{ secili.aciklama if secili and secili.aciklama else '' }}"></div>
+    <button type="submit">Kaydet</button>
+    {% if secili %}<a class="dugme ikincil" href="/masterdata/depolar">Yeni depo</a>{% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -138,7 +138,7 @@ def _ust_blok(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sefer.alignment = ORTALI
     sayfa.merge_cells(start_row=ust + 2, start_column=3, end_row=ust + 3, end_column=4)
 
-    depo_satirlari, hedef_etiket = _depo_satirlari(plan.yukleme_deposu or plan.depo_kodu)
+    depo_satirlari, hedef_etiket = _depo_satirlari(plan.yukleme_deposu or plan.depo_kodu, plan)
     kutu = axata_kutusu(plan, depo_satirlari, hedef_etiket)
     for sira, depo_adi in enumerate(depo_satirlari):
         satir = ust + 2 + sira

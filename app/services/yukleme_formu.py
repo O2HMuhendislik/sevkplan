@@ -25,7 +25,30 @@ UYARI_METNI = (
     "RİCA OLUNUR. HİT SİSTEMİNE YAPILAN GİRİŞ EMİRLERİNİN DÜZELTİLMESİ GEREKMEKTEDİR"
 )
 DEPO_SATIRLARI = ("34-DEPO", "44-DEPO", "64-D DEPO", "64-V DEPO", "74-DEPO")
-"""Form üzerindeki depo/AXATA kutusunun satırları. Sıra formdakiyle aynı olmalıdır."""
+"""Form üzerindeki depo/AXATA kutusunun varsayılan satırları.
+
+Asıl kaynak **depo tanımlarıdır** (Master Data > Depolar): oradaki `form_etiketi`
+alanı bu kutunun satırlarını belirler, `sira` da yerlerini. Buradaki demet yalnızca
+depo tablosu boş olduğunda (kurulum öncesi, testler) devreye girer; sıra ve içerik
+varsayılan depo tanımlarıyla birebir aynıdır.
+"""
+
+
+def depo_satirlari_kaynagi(plan=None) -> tuple[str, ...]:
+    """Depo tanımlarındaki form etiketleri; tanım yoksa varsayılan demet.
+
+    Oturum plandan alınır (`object_session`): plan zaten veritabanından okunmuş bir
+    nesnedir, form üreticilerine ayrıca oturum geçirmeye gerek kalmaz.
+    """
+    from sqlalchemy.orm import object_session
+
+    db = object_session(plan) if plan is not None else None
+    if db is None:
+        return DEPO_SATIRLARI
+    from app.services.masterdata_servisi import form_depo_satirlari
+
+    etiketler = form_depo_satirlari(db)
+    return tuple(etiketler) if etiketler else DEPO_SATIRLARI
 
 BASLIKLAR = [
     "No", "İl Adi", "Sipariş No", "Belge No", "Depo ", "Ürün Kodu", "Ürün Adi",
@@ -93,7 +116,7 @@ def gridleri_gizle(sayfa) -> None:
     sayfa.print_options.gridLines = False
 
 
-def depo_etiketi(depo_kodu: str) -> str | None:
+def depo_etiketi(depo_kodu: str, satirlar: list[str] | None = None) -> str | None:
     """Plan deposunu formdaki depo kutusunun satırlarından biriyle eşler.
 
     Eşleşme bulunamazsa None döner; o durumda kutuya deponun kendi kodu için ek bir
@@ -101,24 +124,32 @@ def depo_etiketi(depo_kodu: str) -> str | None:
     kaybolmaz.
     """
     kod = (depo_kodu or "").strip().upper()
-    for etiket in DEPO_SATIRLARI:
+    satirlar = list(satirlar or DEPO_SATIRLARI)
+    for etiket in satirlar:
         if etiket.replace(" DEPO", "").replace("-DEPO", "") == kod:
             return etiket
     if kod.startswith("64"):
-        return "64-V DEPO" if kod.endswith("V") else "64-D DEPO"
-    for etiket in DEPO_SATIRLARI:
+        aday = "64-V DEPO" if kod.endswith("V") else "64-D DEPO"
+        if aday in satirlar:
+            return aday
+    for etiket in satirlar:
         if etiket.split("-")[0] == kod.split("-")[0]:
             return etiket
     return None
 
 
-def _depo_satirlari(depo_kodu: str) -> tuple[list[str], str]:
-    """Formun depo/AXATA kutusundaki satırlar ve planın kendi deposunun satırı."""
-    etiket = depo_etiketi(depo_kodu)
+def _depo_satirlari(depo_kodu: str, plan=None) -> tuple[list[str], str]:
+    """Formun depo/AXATA kutusundaki satırlar ve planın kendi deposunun satırı.
+
+    Satırlar depo tanımlarından gelir; planın deposu listede yoksa ona da bir satır
+    açılır, böylece Axata numarası hiçbir depoda kaybolmaz.
+    """
+    satirlar = list(depo_satirlari_kaynagi(plan))
+    etiket = depo_etiketi(depo_kodu, satirlar)
     if etiket is not None:
-        return list(DEPO_SATIRLARI), etiket
+        return satirlar, etiket
     ek = f"{(depo_kodu or '').strip().upper()}-DEPO"
-    return [*DEPO_SATIRLARI, ek], ek
+    return [*satirlar, ek], ek
 
 
 def axata_kutusu(plan, depo_satirlari: list[str], hedef_etiket: str) -> dict[str, str]:
@@ -179,7 +210,7 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sefer.alignment = ORTALI
     sayfa.merge_cells(start_row=ust + 2, start_column=3, end_row=ust + 3, end_column=4)
 
-    depo_satirlari, hedef_etiket = _depo_satirlari(plan.depo_kodu)
+    depo_satirlari, hedef_etiket = _depo_satirlari(plan.depo_kodu, plan)
     kutu = axata_kutusu(plan, depo_satirlari, hedef_etiket)
     for sira, depo_adi in enumerate(depo_satirlari):
         satir = ust + 2 + sira

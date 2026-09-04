@@ -1,0 +1,70 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'sistem' %}
+{% block icerik %}
+<h1>Sistem Tanımları</h1>
+
+<div class="kart">
+  <p class="soluk" style="margin:0">
+    Sahadan gelen ve değişebilen planlama sayıları. Kayıt yoksa koddaki varsayılan
+    geçerlidir; <b>Varsayılana dön</b> alanı boşaltmakla aynı şeydir.
+    Değiştirdiğiniz sayı <b>bundan sonraki planlamalarda</b> geçerli olur, mevcut
+    planlar etkilenmez.
+  </p>
+</div>
+
+<form method="post" action="/masterdata/sistem">
+<div class="kart">
+  <table>
+    <thead><tr><th>Ayar</th><th>Açıklama</th><th class="sag">Değer</th>
+      <th class="sag">Varsayılan</th></tr></thead>
+    <tbody>
+    {% for satir in ayarlar %}
+      <tr>
+        <td><b>{{ satir.tanim.etiket }}</b>
+          {% if satir.degistirilmis %}<div><span class="rozet TASLAK">değiştirildi</span></div>{% endif %}</td>
+        <td class="soluk" style="max-width:520px">{{ satir.tanim.aciklama }}</td>
+        <td class="sag">
+          {% if satir.tanim.tip == 'evet_hayir' %}
+            <select name="{{ satir.tanim.anahtar }}">
+              <option value="E" {{ 'selected' if satir.deger == 'E' }}>Evet</option>
+              <option value="H" {{ 'selected' if satir.deger == 'H' }}>Hayır</option>
+            </select>
+          {% else %}
+            <input name="{{ satir.tanim.anahtar }}" value="{{ satir.deger }}"
+                   inputmode="decimal" style="width:110px;text-align:right">
+            {% if satir.tanim.birim %}<span class="soluk">{{ satir.tanim.birim }}</span>{% endif %}
+          {% endif %}
+        </td>
+        <td class="sag soluk">{{ satir.tanim.varsayilan }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="margin-top:14px">
+    <button type="submit">Kaydet</button>
+    <button type="submit" name="varsayilana_don" value="1" class="ikincil"
+            onclick="return confirm('Bütün ayarlar varsayılana dönecek. Onaylıyor musunuz?')">
+      Varsayılana dön</button>
+  </div>
+</div>
+</form>
+
+<div class="kart">
+  <h2>Değiştirilemeyen kurallar</h2>
+  <p class="soluk">
+    Aşağıdakiler gerçek sevk verisiyle doğrulanmış iş kurallarıdır; ekrandan
+    değiştirilmesi doğru olmaz. Değişmeleri gerekirse kod ve doğrulama birlikte
+    güncellenmelidir.
+  </p>
+  <table>
+    <thead><tr><th>Kural</th><th>Değer</th><th>Dayanağı</th></tr></thead>
+    <tbody>
+    {% for k in sabit_kurallar %}
+      <tr><td><b>{{ k.ad }}</b></td><td>{{ k.deger }}</td>
+        <td class="soluk" style="max-width:640px">{{ k.dayanak }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

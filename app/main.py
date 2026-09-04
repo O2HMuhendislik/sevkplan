@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -68,11 +68,13 @@ from app.services import (
     ihracat_yukleme_formu,
     kullanici_servisi,
     marka,
+    masterdata_servisi,
     plan_raporu,
     plan_servisi,
     rapor_servisi,
     sablonlar,
     temizleme,
+    veri_formatlari,
     yukleme_formu,
 )
 from app.services.excel import ExcelHatasi
@@ -933,6 +935,9 @@ def rota_planlari_uret(
             tipler=_tipleri_coz(tipler),
             kullanici=kullanici.kullanici_adi,
             kalanlari_zorla=kalanlari_zorla,
+            # Sınırlar Master Data > Sistem Tanımları ekranından gelir; kayıt yoksa
+            # koddaki varsayılanlar geçerlidir.
+            kurallar=masterdata_servisi.kurallari_kur(db),
         )
         db.commit()
     except PlanHatasi as hata:
@@ -1191,12 +1196,12 @@ def rota_plan_excel(
 
 
 # -------------------------------------------------------- iç piyasa müşteri master data
-@uygulama.get("/rota/musteriler")
+@uygulama.get("/masterdata/musteriler")
 def rota_musteriler(
     istek: Request,
     arama: str = "",
     tir: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA")),
     db: Session = Depends(oturum_bagimliligi),
 ):
     return sayfa(
@@ -1211,10 +1216,10 @@ def rota_musteriler(
     )
 
 
-@uygulama.post("/rota/musteriler/yukle")
+@uygulama.post("/masterdata/musteriler/yukle")
 async def rota_musterileri_yukle(
     dosya: UploadFile = File(...),
-    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     try:
@@ -1224,17 +1229,17 @@ async def rota_musterileri_yukle(
         db.commit()
     except ExcelHatasi as hata:
         db.rollback()
-        return yonlendir("/rota/musteriler", hata=str(hata))
-    return yonlendir("/rota/musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
+        return yonlendir("/masterdata/musteriler", hata=str(hata))
+    return yonlendir("/masterdata/musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
 
 
-@uygulama.get("/rota/musteriler/sablon")
-def rota_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("ROTA"))):
+@uygulama.get("/masterdata/musteriler/sablon")
+def rota_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA"))):
     hedef = sablonlar.musteri_sablonu(CIKTI_DIZIN / "musteri_sablonu.xlsx")
     return FileResponse(hedef, filename=hedef.name)
 
 
-@uygulama.post("/rota/musteriler/{musteri_id}")
+@uygulama.post("/masterdata/musteriler/{musteri_id}")
 def rota_musteri_guncelle(
     musteri_id: int,
     tir_girisi: str = Form("?"),
@@ -1243,7 +1248,7 @@ def rota_musteri_guncelle(
     ilce: str = Form(""),
     notlar: str = Form(""),
     aktif: bool = Form(False),
-    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     from app.domain.iller import yer_adi
@@ -1259,7 +1264,7 @@ def rota_musteri_guncelle(
     musteri.aktif = aktif
     db.commit()
     return yonlendir(
-        "/rota/musteriler", mesaj=f"{musteri.bayi_adi} güncellendi."
+        "/masterdata/musteriler", mesaj=f"{musteri.bayi_adi} güncellendi."
     )
 
 
@@ -1585,11 +1590,11 @@ def ihracat_plan_excel(
 
 
 # ---------------------------------------------------- ihracat müşteri master datası
-@uygulama.get("/ihracat/musteriler")
+@uygulama.get("/masterdata/ihracat-musteriler")
 def ihracat_musteriler(
     istek: Request,
     arama: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA")),
     db: Session = Depends(oturum_bagimliligi),
 ):
     sorgu = select(IhracatMusterisi).order_by(
@@ -1612,10 +1617,10 @@ def ihracat_musteriler(
     )
 
 
-@uygulama.post("/ihracat/musteriler/yukle")
+@uygulama.post("/masterdata/ihracat-musteriler/yukle")
 async def ihracat_musterileri_yukle(
     dosya: UploadFile = File(...),
-    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     try:
@@ -1625,23 +1630,23 @@ async def ihracat_musterileri_yukle(
         db.commit()
     except ExcelHatasi as hata:
         db.rollback()
-        return yonlendir("/ihracat/musteriler", hata=str(hata))
-    return yonlendir("/ihracat/musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
+        return yonlendir("/masterdata/ihracat-musteriler", hata=str(hata))
+    return yonlendir("/masterdata/ihracat-musteriler", mesaj=f"Müşteri aktarımı: {sonuc.ozet()}")
 
 
-@uygulama.get("/ihracat/musteriler/sablon")
-def ihracat_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
+@uygulama.get("/masterdata/ihracat-musteriler/sablon")
+def ihracat_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA"))):
     hedef = sablonlar.ihracat_musteri_sablonu(CIKTI_DIZIN / "ihracat_musteri_sablonu.xlsx")
     return FileResponse(hedef, filename=hedef.name)
 
 
 # ---------------------------------------------------- ihracat ürün master datası
-@uygulama.get("/ihracat/urunler")
+@uygulama.get("/masterdata/ihracat-urunler")
 def ihracat_urunler(
     istek: Request,
     arama: str = "",
     eksik: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA")),
     db: Session = Depends(oturum_bagimliligi),
 ):
     """Şirketin hesaplama dosyasındaki ürün ölçüleri."""
@@ -1676,10 +1681,10 @@ def ihracat_urunler(
     )
 
 
-@uygulama.post("/ihracat/urunler/yukle")
+@uygulama.post("/masterdata/ihracat-urunler/yukle")
 async def ihracat_urunleri_yukle(
     dosya: UploadFile = File(...),
-    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     try:
@@ -1689,17 +1694,17 @@ async def ihracat_urunleri_yukle(
         db.commit()
     except ExcelHatasi as hata:
         db.rollback()
-        return yonlendir("/ihracat/urunler", hata=str(hata))
-    return yonlendir("/ihracat/urunler", mesaj=f"Ürün aktarımı: {sonuc.ozet()}")
+        return yonlendir("/masterdata/ihracat-urunler", hata=str(hata))
+    return yonlendir("/masterdata/ihracat-urunler", mesaj=f"Ürün aktarımı: {sonuc.ozet()}")
 
 
-@uygulama.get("/ihracat/urunler/sablon")
-def ihracat_urun_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT"))):
+@uygulama.get("/masterdata/ihracat-urunler/sablon")
+def ihracat_urun_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA"))):
     hedef = sablonlar.ihracat_urun_sablonu(CIKTI_DIZIN / "ihracat_urun_sablonu.xlsx")
     return FileResponse(hedef, filename=hedef.name)
 
 
-@uygulama.post("/ihracat/musteriler/{musteri_id}")
+@uygulama.post("/masterdata/ihracat-musteriler/{musteri_id}")
 def ihracat_musteri_guncelle(
     musteri_id: int,
     arac_tipi: str = Form("TIR"),
@@ -1708,7 +1713,7 @@ def ihracat_musteri_guncelle(
     azami_agirlik: str = Form(""),
     aciklama: str = Form(""),
     aktif: bool = Form(False),
-    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     from app.domain.ihracat import arac_tipi_coz
@@ -1724,7 +1729,7 @@ def ihracat_musteri_guncelle(
     musteri.aciklama = aciklama.strip() or None
     musteri.aktif = aktif
     db.commit()
-    return yonlendir("/ihracat/musteriler", mesaj=f"{musteri.musteri_adi} güncellendi.")
+    return yonlendir("/masterdata/ihracat-musteriler", mesaj=f"{musteri.musteri_adi} güncellendi.")
 
 
 # --------------------------------------------------------------- Raporlama modülü
@@ -1795,84 +1800,6 @@ def raporlama_planlar(
 
 
 # ---------------------------------------------------------------------- master data
-@uygulama.get("/urunler")
-def urunler(
-    istek: Request,
-    arama: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA")),
-    db: Session = Depends(oturum_bagimliligi),
-):
-    sorgu = select(Urun).order_by(Urun.urun_grubu, Urun.urun_kodu)
-    if arama:
-        desen = f"%{arama.strip()}%"
-        sorgu = sorgu.where(Urun.urun_kodu.ilike(desen) | Urun.urun_adi.ilike(desen))
-    return sayfa(
-        istek, "urunler.html", kullanici, urunler=db.scalars(sorgu).all(), arama=arama
-    )
-
-
-@uygulama.post("/urunler/yeni")
-def urun_kaydet(
-    urun_kodu: str = Form(...),
-    urun_adi: str = Form(...),
-    urun_grubu: str = Form(...),
-    palet_ici_adet: int = Form(0),
-    kamyon_yukleme_adeti: int = Form(0),
-    tir_yukleme_adeti: int = Form(0),
-    agirlik: str = Form(""),
-    header_kod: str = Form(""),
-    aktif: bool = Form(True),
-    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
-    db: Session = Depends(oturum_bagimliligi),
-):
-    if palet_ici_adet <= 0 and kamyon_yukleme_adeti <= 0 and tir_yukleme_adeti <= 0:
-        return yonlendir(
-            "/urunler",
-            hata="Palet içi adet, kamyon yükleme adeti ve tır yükleme adetinden "
-                 "en az biri girilmelidir; yoksa ürün planlanamaz.",
-        )
-    urun = db.scalar(select(Urun).where(Urun.urun_kodu == urun_kodu.strip()))
-    yeni_mi = urun is None
-    if urun is None:
-        urun = Urun(urun_kodu=urun_kodu.strip())
-        db.add(urun)
-    urun.urun_adi = urun_adi.strip()
-    urun.urun_grubu = urun_grubu.strip().upper() or None
-    urun.palet_ici_adet = palet_ici_adet or None
-    urun.kamyon_yukleme_adeti = kamyon_yukleme_adeti or None
-    urun.tir_yukleme_adeti = tir_yukleme_adeti or None
-    urun.agirlik = Decimal(agirlik.replace(",", ".")) if agirlik.strip() else None
-    urun.header_kod = header_kod.strip() or None
-    urun.aktif = aktif
-    db.commit()
-    return yonlendir(
-        "/urunler", mesaj=f"{urun.urun_kodu} {'eklendi' if yeni_mi else 'güncellendi'}."
-    )
-
-
-@uygulama.post("/urunler/yukle")
-async def urunleri_yukle(
-    dosya: UploadFile = File(...),
-    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA", duzenleme=True)),
-    db: Session = Depends(oturum_bagimliligi),
-):
-    try:
-        sonuc = ice_aktarim.urunleri_aktar(
-            db, dosya.file, dosya.filename or "urunler.xlsx", kullanici.kullanici_adi
-        )
-        db.commit()
-    except ExcelHatasi as hata:
-        db.rollback()
-        return yonlendir("/urunler", hata=str(hata))
-    return yonlendir("/urunler", mesaj=f"Ürün aktarımı: {sonuc.ozet()}")
-
-
-@uygulama.get("/urunler/sablon")
-def urun_sablonu_indir(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA"))):
-    hedef = sablonlar.urun_sablonu(CIKTI_DIZIN / "urun_masterdata_sablonu.xlsx")
-    return FileResponse(hedef, filename=hedef.name)
-
-
 # ------------------------------------------------------------------- veri yönetimi
 @uygulama.get("/veri-yonetimi")
 def veri_yonetimi(
@@ -2202,6 +2129,7 @@ def rota_manuel_plan_uret(
             kullanici=kullanici.kullanici_adi,
             kalanlari_zorla=kalanlari_zorla,
             teslimat_nolar=secilenler,
+            kurallar=masterdata_servisi.kurallari_kur(db),
         )
         db.commit()
     except PlanHatasi as hata:
@@ -2261,3 +2189,373 @@ def ihracat_manuel_plan_uret(
             ),
         )
     return yonlendir("/ihracat/planlar", mesaj=f"Manuel planlama — {sonuc.ozet()}")
+
+
+# ------------------------------------------------------------------- master data
+EKRAN_LIMITI = 500
+"""Master Data listelerinde ekranda gösterilen en fazla kayıt; indirme sınırsızdır."""
+
+MD_YETKI = modul_yetkisi("MASTERDATA")
+MD_DUZENLEME = modul_yetkisi("MASTERDATA", duzenleme=True)
+
+
+def _sorgu_metni(**alanlar: str) -> str:
+    """Filtreyi indirme bağlantısına taşır: ekranda görülen liste = inen dosya."""
+    from urllib.parse import urlencode
+
+    return urlencode({ad: deger for ad, deger in alanlar.items() if deger})
+
+
+@uygulama.get("/masterdata")
+def masterdata_ozet(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import Depo, IhracatMusterisi, IhracatUrunu, Musteri
+
+    kartlar = [
+        {"etiket": "Ürün", "sayi": db.scalar(select(func.count(Urun.id))) or 0,
+         "aciklama": "Palet ve araç kapasiteleri", "yol": "/masterdata/urunler"},
+        {"etiket": "İç piyasa müşterisi", "sayi": db.scalar(select(func.count(Musteri.id))) or 0,
+         "aciklama": "İl, ilçe, bölge, tır girişi", "yol": "/masterdata/musteriler"},
+        {"etiket": "İhracat müşterisi",
+         "sayi": db.scalar(select(func.count(IhracatMusterisi.id))) or 0,
+         "aciklama": "Araç tipi, yükleme tipi, tonaj", "yol": "/masterdata/ihracat-musteriler"},
+        {"etiket": "İhracat ürünü",
+         "sayi": db.scalar(select(func.count(IhracatUrunu.id))) or 0,
+         "aciklama": "Tır / konteyner yükleme adetleri", "yol": "/masterdata/ihracat-urunler"},
+        {"etiket": "Depo", "sayi": db.scalar(select(func.count(Depo.id))) or 0,
+         "aciklama": "Kod, tesis, form etiketi", "yol": "/masterdata/depolar"},
+    ]
+    return sayfa(
+        istek,
+        "masterdata.html",
+        kullanici,
+        kartlar=kartlar,
+        eksikler=masterdata_servisi.urun_eksik_ozeti(db),
+    )
+
+
+@uygulama.get("/masterdata/urunler")
+def md_urunler(
+    istek: Request,
+    arama: str = "",
+    urun_grubu: str = "",
+    eksik: str = "",
+    durum: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    filtre = masterdata_servisi.UrunFiltresi(
+        arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
+    )
+    tumu = masterdata_servisi.urunleri_getir(db, filtre)
+    # Ekran ilk 500 kaydı gösterir; indirilen dosya filtrenin tamamını içerir.
+    # 2.585 ürünün hepsini basmak sayfayı megabaytlarca büyütüyor ve tarayıcıyı
+    # yoruyor, üstelik kimse 2.585 satırı ekranda taramıyor.
+    return sayfa(
+        istek,
+        "md_urunler.html",
+        kullanici,
+        urunler=tumu[:EKRAN_LIMITI],
+        toplam=len(tumu),
+        ekran_limiti=EKRAN_LIMITI,
+        filtre=filtre,
+        gruplar=sorted(masterdata_servisi.urun_gruplari(db)),
+        eksik_secenekleri=[
+            (kod, etiket)
+            for kod, (etiket, _) in masterdata_servisi.EKSIK_KOSULLARI.items()
+        ],
+        sorgu=_sorgu_metni(
+            arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
+        ),
+    )
+
+
+@uygulama.get("/masterdata/urunler/excel")
+def md_urunler_excel(
+    arama: str = "",
+    urun_grubu: str = "",
+    eksik: str = "",
+    durum: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Ekrandaki filtrenin **aynısını** uygular; inen dosya görülen listedir."""
+    filtre = masterdata_servisi.UrunFiltresi(
+        arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
+    )
+    hedef = masterdata_servisi.disari_aktar(
+        masterdata_servisi.urunleri_getir(db, filtre),
+        veri_formatlari.URUN_ALANLARI,
+        masterdata_servisi.URUN_DEGERLERI,
+        CIKTI_DIZIN / "urun_masterdata.xlsx",
+        "Ürünler",
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/masterdata/urunler/sablon")
+def md_urun_sablonu(kullanici: Kullanici = Depends(MD_YETKI)):
+    hedef = sablonlar.urun_sablonu(CIKTI_DIZIN / "urun_masterdata_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post("/masterdata/urunler/yukle")
+async def md_urunleri_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.urunleri_aktar(
+            db, dosya.file, dosya.filename or "urunler.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir("/masterdata/urunler", hata=str(hata))
+    return yonlendir("/masterdata/urunler", mesaj=f"Ürün aktarımı: {sonuc.ozet()}")
+
+
+@uygulama.get("/masterdata/urunler/yeni")
+def md_urun_yeni(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "md_urun_duzenle.html",
+        kullanici,
+        urun=None,
+        gruplar=sorted(masterdata_servisi.urun_gruplari(db)),
+        geri="/masterdata/urunler",
+    )
+
+
+@uygulama.post("/masterdata/urunler/kaydet")
+async def md_urun_kaydet(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    form = await istek.form()
+    geri = str(form.get("geri") or "/masterdata/urunler")
+    urun_kodu = str(form.get("urun_kodu") or "")
+    alanlar = {ad: str(deger) for ad, deger in form.items() if ad not in {"geri", "urun_kodu"}}
+    try:
+        urun = masterdata_servisi.urunu_guncelle(db, urun_kodu, alanlar)
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/masterdata/urunler/{urun_kodu}", hata=str(hata))
+    return yonlendir(geri, mesaj=f"{urun.urun_kodu} güncellendi.")
+
+
+@uygulama.get("/masterdata/urunler/{urun_kodu:path}")
+def md_urun_duzenle(
+    istek: Request,
+    urun_kodu: str,
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    urun = db.scalar(select(Urun).where(Urun.urun_kodu == urun_kodu))
+    if urun is None:
+        raise HTTPException(404, "Ürün bulunamadı")
+    return sayfa(
+        istek,
+        "md_urun_duzenle.html",
+        kullanici,
+        urun=urun,
+        gruplar=sorted(masterdata_servisi.urun_gruplari(db)),
+        geri="/masterdata/urunler",
+    )
+
+
+@uygulama.get("/masterdata/musteriler/excel")
+def md_musteriler_excel(
+    arama: str = "",
+    tir: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = masterdata_servisi.disari_aktar(
+        rapor_servisi.musterileri_getir(db, arama or None, tir or None, limit=20000),
+        veri_formatlari.MUSTERI_ALANLARI,
+        masterdata_servisi.MUSTERI_DEGERLERI,
+        CIKTI_DIZIN / "ic_piyasa_masterdata.xlsx",
+        "Müşteriler",
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/masterdata/ihracat-musteriler/excel")
+def md_ihracat_musteriler_excel(
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import IhracatMusterisi
+
+    hedef = masterdata_servisi.disari_aktar(
+        list(db.scalars(select(IhracatMusterisi).order_by(IhracatMusterisi.musteri_adi)).all()),
+        veri_formatlari.IHRACAT_MUSTERI_ALANLARI,
+        masterdata_servisi.IHRACAT_MUSTERI_DEGERLERI,
+        CIKTI_DIZIN / "ihracat_masterdata.xlsx",
+        "İhracat müşterileri",
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/masterdata/ihracat-urunler/excel")
+def md_ihracat_urunler_excel(
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import IhracatUrunu
+
+    hedef = masterdata_servisi.disari_aktar(
+        list(db.scalars(select(IhracatUrunu).order_by(IhracatUrunu.urun_kodu)).all()),
+        veri_formatlari.IHRACAT_URUN_ALANLARI,
+        masterdata_servisi.IHRACAT_URUN_DEGERLERI,
+        CIKTI_DIZIN / "ihracat_urun_masterdata.xlsx",
+        "İhracat ürünleri",
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/masterdata/depolar")
+def md_depolar(
+    istek: Request,
+    kod: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import Depo
+
+    masterdata_servisi.depolari_yukle(db)
+    db.commit()
+    secili = db.scalar(select(Depo).where(Depo.kod == kod)) if kod else None
+    return sayfa(
+        istek,
+        "md_depolar.html",
+        kullanici,
+        depolar=masterdata_servisi.depolari_getir(db),
+        secili=secili,
+    )
+
+
+@uygulama.post("/masterdata/depolar/kaydet")
+async def md_depo_kaydet(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    form = await istek.form()
+    kod = str(form.get("kod") or "")
+    alanlar = {ad: str(deger) for ad, deger in form.items() if ad != "kod"}
+    try:
+        depo = masterdata_servisi.depoyu_kaydet(db, kod, alanlar)
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir("/masterdata/depolar", hata=str(hata))
+    return yonlendir("/masterdata/depolar", mesaj=f"{depo.kod} deposu kaydedildi.")
+
+
+SABIT_KURALLAR = [
+    {
+        "ad": "Anahtar değer palete yuvarlanmaz",
+        "deger": "Σ miktar / yükleme adeti",
+        "dayanak": "2025'in 2.048 gerçek tırında ham ölçünün medyanı 1,000; palete "
+                   "yuvarlanmış ölçününki 1,263 ve araçların %94,6'sı 1,00 üstünde.",
+    },
+    {
+        "ad": "Araç doluluk üst limiti",
+        "deger": "1,00 anahtar",
+        "dayanak": "Gerçek tırların medyanı tam 1,00. Alt limit depo profilinde tanımlı.",
+    },
+    {
+        "ad": "Parsiyel yapılabilen depolar",
+        "deger": "64, -1 ve 74 (64 ile -1 birlikte, 74 ayrı)",
+        "dayanak": "2025'in 691 parsiyel aracındaki satırların %99,95'i bu depolardan.",
+    },
+    {
+        "ad": "Parsiyel aktarma merkezleri",
+        "deger": "Ankara / İstanbul / Bursa / Eskişehir",
+        "dayanak": "İl tablosu app/domain/aktarma.py; 2025 parsiyel araçlarındaki il "
+                   "birlikteliğiyle uyumlu.",
+    },
+    {
+        "ad": "İller arası mesafe",
+        "deger": "81 il merkez koordinatı × 1,25 karayolu katsayısı",
+        "dayanak": "Elde mevcut Eskişehir mesafe tablosunu medyan %6 hatayla üretiyor.",
+    },
+    {
+        "ad": "Depo kapasite profilleri",
+        "deger": "Bütün depolar tır bazında, anahtar değerle",
+        "dayanak": "app/config.py DEPO_PROFILLERI.",
+    },
+]
+"""Ekrandan değiştirilmeyen kurallar ve dayanakları; sistem ekranında listelenir."""
+
+
+@uygulama.get("/masterdata/sistem")
+def md_sistem(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "md_sistem.html",
+        kullanici,
+        ayarlar=masterdata_servisi.ayar_satirlari(db),
+        sabit_kurallar=SABIT_KURALLAR,
+    )
+
+
+@uygulama.post("/masterdata/sistem")
+async def md_sistem_kaydet(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import Ayar
+
+    form = await istek.form()
+    if form.get("varsayilana_don"):
+        db.execute(delete(Ayar))
+        db.commit()
+        return yonlendir("/masterdata/sistem", mesaj="Bütün ayarlar varsayılana döndü.")
+    try:
+        degisenler = masterdata_servisi.ayarlari_kaydet(
+            db, {ad: str(deger) for ad, deger in form.items()}, kullanici.kullanici_adi
+        )
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir("/masterdata/sistem", hata=str(hata))
+    if not degisenler:
+        return yonlendir("/masterdata/sistem", mesaj="Değişiklik yok.")
+    return yonlendir(
+        "/masterdata/sistem", mesaj="Kaydedildi — " + " · ".join(degisenler)
+    )
+
+
+# Eski adresler: yer imi ve kayıtlı bağlantılar kırılmasın diye yönlendirilir.
+ESKI_MASTERDATA_ADRESLERI = {
+    "/urunler": "/masterdata/urunler",
+    "/rota/musteriler": "/masterdata/musteriler",
+    "/ihracat/musteriler": "/masterdata/ihracat-musteriler",
+    "/ihracat/urunler": "/masterdata/ihracat-urunler",
+}
+
+for _eski, _yeni in ESKI_MASTERDATA_ADRESLERI.items():
+    uygulama.add_api_route(
+        _eski,
+        (lambda hedef: lambda: RedirectResponse(hedef, status_code=308))(_yeni),
+        methods=["GET"],
+        include_in_schema=False,
+    )

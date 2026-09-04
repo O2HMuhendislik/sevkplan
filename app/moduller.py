@@ -76,8 +76,12 @@ MODULLER: tuple[Modul, ...] = (
     Modul(
         kod="MASTERDATA",
         ad="Master Data",
-        aciklama="Ürün tanımları, palet ve araç kapasite bilgileri. Modüllerin ortak verisi.",
-        yol="/urunler",
+        aciklama=(
+            "Modüllerin ortak verisi tek yerde: ürün ölçüleri, iç piyasa ve ihracat "
+            "müşterileri, depo tanımları ve planlama sayıları. Listeler sütundan "
+            "süzülür, süzülen liste indirilip doldurulup geri yüklenir."
+        ),
+        yol="/masterdata",
         simge="📦",
     ),
     Modul(

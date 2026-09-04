@@ -1010,3 +1010,60 @@ class PlanHareketi(Temel):
     kullanici: Mapped[str] = mapped_column(String(100), default="sistem")
 
     plan: Mapped[SevkiyatPlani] = relationship(back_populates="hareketler")
+
+
+class Depo(Temel):
+    """Depo tanımı: kod, ad, bulunduğu tesis ve yükleme formundaki karşılığı.
+
+    Depolar bugüne kadar koda gömülüydü; yeni bir depo açıldığında yükleme formunun
+    depo/AXATA kutusuna satır eklemek için kod değiştirmek gerekiyordu. Tanımlar
+    artık Master Data'dan yönetilir.
+
+    **Sınır:** planlama kapasitesi (hangi depo hangi ölçüyle planlanır) bu tabloda
+    değil, `app/config.py` içindeki DEPO_PROFILLERI'ndedir. O bir iş kuralıdır ve
+    gerçek sevk verisiyle doğrulanmıştır; ekrandan değiştirilmesi doğru olmaz.
+    """
+
+    __tablename__ = "depolar"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kod: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    ad: Mapped[str] = mapped_column(String(120))
+    tesis: Mapped[str | None] = mapped_column(String(80), default=None)
+    """Deponun fiziken bulunduğu yer (Eskişehir / Bozüyük). Ortak yükleme kararı
+    buna bakar: farklı tesisten yükleme aracı iki şehre uğratır."""
+    form_etiketi: Mapped[str | None] = mapped_column(String(40), default=None)
+    """Yükleme formunun depo/AXATA kutusunda görünecek satır adı (ör. '64-D DEPO')."""
+    sira: Mapped[int] = mapped_column(Integer, default=100)
+    """Formdaki satır sırası."""
+    axata_var: Mapped[bool] = mapped_column(Boolean, default=True)
+    """Bu depoda Axata iş emri açılıyor mu? Bayi ortak deposu (-1) için hayır."""
+    parsiyel_yapilir: Mapped[bool] = mapped_column(Boolean, default=False)
+    """Parsiyel (rutin) sevkiyat bu depodan yapılabiliyor mu?"""
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Depo {self.kod}>"
+
+
+class Ayar(Temel):
+    """Ekrandan değiştirilebilen sistem ayarı (anahtar/değer).
+
+    Kargo desi sınırı, rutin palet sınırı, azami durak gibi **sahadan gelen ve
+    değişebilen** sayılar burada tutulur. Kayıt yoksa koddaki varsayılan geçerlidir;
+    böylece boş bir veritabanı da doğru çalışır.
+    """
+
+    __tablename__ = "ayarlar"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anahtar: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    deger: Mapped[str] = mapped_column(String(200))
+    guncelleme_tarihi: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
+    kullanici: Mapped[str] = mapped_column(String(100), default="sistem")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Ayar {self.anahtar}={self.deger}>"

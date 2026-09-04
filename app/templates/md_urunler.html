@@ -1,0 +1,101 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'urunler' %}
+{% block icerik %}
+<h1>Ürün Master Datası</h1>
+
+<div class="kart">
+  <h2>Excel</h2>
+  <p class="soluk">
+    <b>İndirilen dosya doğrudan geri yüklenebilir.</b> Dışa aktarım, içe aktarımın
+    tanıdığı başlıkları kullanır: eksik alanları doldurup aynı dosyayı "Yükle"
+    dediğinizde eşleşen ürünler güncellenir. Dosyada <b>boş bırakılan sütun mevcut
+    veriyi silmez</b> — sildirmek için ürünü ekrandan açıp alanı boşaltın.
+  </p>
+  <form class="satir" method="post" action="/masterdata/urunler/yukle" enctype="multipart/form-data">
+    <div><label for="dosya">Excel dosyası</label>
+      <input type="file" id="dosya" name="dosya" accept=".xlsx,.xlsm" required></div>
+    <button type="submit">Yükle</button>
+    <a class="dugme ikincil" href="/masterdata/urunler/excel?{{ sorgu }}">
+      Filtrelenmiş listeyi indir ({{ toplam | sayi }} ürün)</a>
+    <a class="dugme ikincil" href="/masterdata/urunler/sablon">Boş şablon</a>
+    <a class="dugme ikincil" href="/masterdata/urunler/yeni">Yeni ürün</a>
+  </form>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/masterdata/urunler" style="margin-bottom:0">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ filtre.arama }}"
+             placeholder="Ürün kodu, adı, header kod" style="width:260px"></div>
+    <div><label for="urun_grubu">Ürün grubu</label>
+      <select id="urun_grubu" name="urun_grubu">
+        <option value="">Tümü</option>
+        {% for g in gruplar %}
+          <option value="{{ g }}" {{ 'selected' if filtre.urun_grubu == g }}>{{ g }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="eksik">Eksik alan</label>
+      <select id="eksik" name="eksik">
+        <option value="">Filtre yok</option>
+        <option value="HERHANGI" {{ 'selected' if filtre.eksik == 'HERHANGI' }}>Herhangi bir alanı eksik</option>
+        {% for kod, etiket in eksik_secenekleri %}
+          <option value="{{ kod }}" {{ 'selected' if filtre.eksik == kod }}>{{ etiket }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="durum">Durum</label>
+      <select id="durum" name="durum">
+        <option value="">Tümü</option>
+        <option value="AKTIF" {{ 'selected' if filtre.durum == 'AKTIF' }}>Aktif</option>
+        <option value="PASIF" {{ 'selected' if filtre.durum == 'PASIF' }}>Pasif</option>
+      </select></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/masterdata/urunler">Temizle</a>
+  </form>
+</div>
+
+<div class="kart">
+  {% if urunler %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Kod</th><th>Ürün</th><th>Grup</th>
+      <th class="sag">Palet içi</th><th class="sag">Kamyon</th><th class="sag">K.palet</th>
+      <th class="sag">Tır</th><th class="sag">T.palet</th>
+      <th class="sag">Ağırlık</th><th class="sag">Desi</th><th>Palet ölçüsü</th>
+      <th>Durum</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for u in urunler %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><b>{{ u.urun_kodu }}</b></td>
+        <td>{{ u.urun_adi }}</td>
+        <td>{{ u.urun_grubu or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.palet_ici_adet }}">{{ u.palet_ici_adet or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.kamyon_yukleme_adeti }}">{{ u.kamyon_yukleme_adeti or '—' }}</td>
+        <td class="sag">{{ u.kamyon_palet or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.tir_yukleme_adeti }}">{{ u.tir_yukleme_adeti or '—' }}</td>
+        <td class="sag">{{ u.tir_palet or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.agirlik }}">{{ u.agirlik or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.desi }}">{{ u.desi or '—' }}</td>
+        <td class="{{ 'eksik' if not (u.palet_en and u.palet_boy) }}">
+          {% if u.palet_en and u.palet_boy %}{{ u.palet_en }}×{{ u.palet_boy }}{% if u.palet_yukseklik %}×{{ u.palet_yukseklik }}{% endif %}
+          {% else %}—{% endif %}</td>
+        <td>{% if u.aktif %}<span class="rozet TAMAMLANDI">Aktif</span>
+            {% else %}<span class="rozet IPTAL">Pasif</span>{% endif %}</td>
+        <td><a class="dugme ikincil" href="/masterdata/urunler/{{ u.urun_kodu }}">Düzenle</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk" style="margin-top:12px">
+    {% if toplam > ekran_limiti %}
+      Filtreye {{ toplam | sayi }} ürün uyuyor; ekranda ilk {{ ekran_limiti | sayi }} tanesi
+      var. <b>İndirilen dosya {{ toplam | sayi }} ürünün tamamını içerir.</b>
+    {% else %}
+      Listenin sonu — {{ toplam | sayi }} ürün gösterildi.
+    {% endif %}
+  </p>
+  {% else %}<div class="bos">Filtreye uyan ürün yok.</div>{% endif %}
+</div>
+{% endblock %}
