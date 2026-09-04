@@ -66,6 +66,7 @@ from app.services import (
     ice_aktarim,
     ihracat_servisi,
     ihracat_yukleme_formu,
+    istif_servisi,
     kullanici_servisi,
     marka,
     masterdata_servisi,
@@ -2559,3 +2560,62 @@ for _eski, _yeni in ESKI_MASTERDATA_ADRESLERI.items():
         methods=["GET"],
         include_in_schema=False,
     )
+
+
+# ------------------------------------------------------- araç içi yerleşim (istif)
+ISTIF_MODULLERI = {"RING": "/ring", "ROTA": "/rota", "IHRACAT": "/ihracat"}
+
+
+def _istif_sayfasi(
+    istek: Request, kullanici: Kullanici, db: Session, plan_id: int, modul_kodu: str
+):
+    plan = plan_getir(db, plan_id)
+    istif = istif_servisi.istif_plani(db, plan)
+    duraklar = istif_servisi.durak_ozeti(istif)
+    for durak in duraklar:
+        durak["renk"] = istif_servisi.durak_rengi(durak["sira"])
+    on, arka = istif.agirlik_dagilimi()
+    toplam = on + arka
+    return sayfa(
+        istek,
+        "istif.html",
+        kullanici,
+        plan=plan,
+        istif=istif,
+        duraklar=duraklar,
+        cizim=istif_servisi.cizim_verisi(istif),
+        kirik_palet=sum(1 for y in istif.yerlesimler if y.yuk.kirik_mi),
+        on_oran=int(on / toplam * 100) if toplam else 0,
+        modul_kodu=modul_kodu,
+        taban=ISTIF_MODULLERI[modul_kodu],
+    )
+
+
+@uygulama.get("/ring/planlar/{plan_id}/yerlesim")
+def ring_istif(
+    istek: Request,
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _istif_sayfasi(istek, kullanici, db, plan_id, "RING")
+
+
+@uygulama.get("/rota/planlar/{plan_id}/yerlesim")
+def rota_istif(
+    istek: Request,
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _istif_sayfasi(istek, kullanici, db, plan_id, "ROTA")
+
+
+@uygulama.get("/ihracat/planlar/{plan_id}/yerlesim")
+def ihracat_istif(
+    istek: Request,
+    plan_id: int,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _istif_sayfasi(istek, kullanici, db, plan_id, "IHRACAT")

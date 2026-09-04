@@ -228,3 +228,11 @@ tr.secili { background: var(--vg-yesil-10); }
 
 /* Master data: eksik alan gözle taransın diye işaretlenir. */
 td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600; }
+
+/* Yerleşim planı depoda kâğıda basılıyor: gereksiz her şey baskıdan çıkar. */
+@media print {
+  header.ust, .yazdirma-gizle, .uyari { display: none !important; }
+  main { padding: 0; max-width: none; }
+  .kart { border: 0; padding: 0; margin-bottom: 12px; break-inside: avoid; }
+  .izgara.dort { grid-template-columns: repeat(4, 1fr); }
+}

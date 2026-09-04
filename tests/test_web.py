@@ -1010,3 +1010,42 @@ def test_sistem_ayari_planlama_kurallarina_gecer(istemci, fabrika):
     istemci.post("/masterdata/sistem", data={"varsayilana_don": "1"})
     with fabrika() as db:
         assert masterdata_servisi.kurallari_kur(db).kargo_desi_siniri == Decimal(10)
+
+
+def test_yerlesim_plani_ekrani_acilir(istemci, fabrika):
+    """Plan detayından yerleşim planına geçilir; ekran duraklarla birlikte gelir."""
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"tipler": ["FTL"]})
+    with fabrika() as db:
+        plan_id = db.query(SevkiyatPlani).filter_by(modul="ROTA").one().id
+
+    detay = istemci.get(f"/rota/planlar/{plan_id}")
+    assert f"/rota/planlar/{plan_id}/yerlesim" in detay.text
+
+    cevap = istemci.get(f"/rota/planlar/{plan_id}/yerlesim")
+    assert cevap.status_code == 200
+    assert "Araç İçi Yerleşim" in cevap.text
+    assert "KABİN — önce yüklenir" in cevap.text
+    # İki müşteri de durak tablosunda görünür.
+    assert "EGE ISITMA" in cevap.text and "MANİSA TESİSAT" in cevap.text
+    # Çizim üretildi.
+    assert "<svg" in cevap.text and "<rect" in cevap.text
+
+
+def test_yerlesimde_son_durak_once_yuklenir(istemci, fabrika):
+    """İç piyasa planında son uğrak dibe konur; yükleme sırası 1 ona ait olur."""
+    from app.models import SevkiyatPlani
+    from app.services import istif_servisi
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"tipler": ["FTL"]})
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
+        # Rota: MANISA (350 km) sonra IZMIR (400 km) — son uğrak İzmir.
+        assert plan.son_ugrak == "IZMIR"
+        istif = istif_servisi.istif_plani(db, plan)
+        dipteki = min(istif.yerlesimler, key=lambda y: (y.x, y.y))
+        assert dipteki.yuk.durak.il == "IZMIR"
+        assert dipteki.yukleme_sirasi == 1

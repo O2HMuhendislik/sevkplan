@@ -542,6 +542,9 @@ def plan_musterileri(db: Session, plan: SevkiyatPlani) -> list[dict]:
         durak = gruplar.setdefault(
             anahtar,
             {
+                # Gruplama anahtarı kayda da yazılır: yerleşim planı satırı durağa
+                # bu anahtarla bağlar, iki ekran aynı sırayı gösterir.
+                "anahtar": anahtar,
                 "bayi_adi": _durak_adi(satir),
                 "il": yer_adi(satir.sehir),
                 "ilce": yer_adi(satir.ilce),

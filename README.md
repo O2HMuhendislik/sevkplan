@@ -223,7 +223,7 @@ birlikte güncellenmelidir.
 | **Gösterge Paneli** (`/rota`) | Sevkiyat tipi, **araç (kamyon/tır)** ve bölge dağılımı, planlamayı çalıştırma |
 | **Siparişler** | Sipariş dosyası yükleme; her müşterinin hangi tiple gideceği ve **gerekçesi**; alınamayan satırlar sebebiyle. Ring ile aynı sipariş havuzu |
 | **Planlar** | Tip (FTL/rutin/kargo), **araç (kamyon/tır)**, bölge ve durum filtresi; günlük yükleme formu. Liste "FTL" yerine aracın adını yazar |
-| **Plan Detayı** | **Araç (kamyon/tır)**, **yükleme tesisi**, parsiyelde **aktarma merkezi**, rota ve duraklar, son uğrak oranı, ortak yükleme uyarısı, araç/şoför bilgisi, Axata, marka payı |
+| **Plan Detayı** | **Araç (kamyon/tır)**, **yükleme tesisi**, parsiyelde **aktarma merkezi**, rota ve duraklar, son uğrak oranı, ortak yükleme uyarısı, araç/şoför bilgisi, Axata, marka payı , **yerleşim planı**|
 | **Manuel Planlama** (`/rota/manuel-plan`) | Teslimat seçerek planlama |
 | **Raporlar** | Tip ve bölge bazında plan/durak/doluluk özeti, Excel'e aktarma |
 
@@ -410,6 +410,52 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 * **Uzun metinler kendi kutusuna sarılır.** Kırmızı hasar/HİT uyarısı ile ihracat
   formundaki müşteri notu birleştirilmiş, `wrap_text` verilmiş kutulardır; satır
   yüksekliği metne göre ayarlanır, böylece yazı komşu hücrelerin altında kalmaz.
+
+## Araç içi yerleşim (istif) planı
+
+Her plan detayındaki **Yerleşim planı** düğmesi aracın üstten görünüşünü çizer:
+hangi palet nereye, hangi sırayla yüklenecek. Depo bugüne kadar yalnızca satır
+listesini görüyordu; malın araca hangi sırayla konulacağı yükleyicinin kafasındaydı.
+
+**Ters rota sırası.** En son uğranacak durağın malı en dibe (kabin tarafına), ilk
+durağın malı kapıya konur. Aksi hâlde ilk durakta bütün aracı boşaltmak gerekir.
+Ekrandaki numaralar yükleme sırasıdır; durak sırası plan detayındakinin aynısıdır.
+
+**Zemin, anahtar değerin kendisidir.** Bir paletin kapladığı yer
+`araç zemini / o ürünün tır (ya da kamyon) palet sayısı` kadardır. O sayı ürün
+master datasından, yani şirketin kendi ölçüsünden gelir; anahtar değer de
+`Σ palet / tır palet` olduğu için **çizim ile planın doluluk yüzdesi çelişmez**.
+
+Araç iç ölçüleri de tahmin değil, aynı veriden türetildi:
+
+| Araç | Zemin | Doğrulama |
+|---|---|---|
+| Tır | 1360 × 245 cm | 80×120 palet → 33, 100×120 → 26 (master datanın "tır palet" sütunu) |
+| Kamyon | 700 × 245 cm | Aynı ürünlerde 17 ve 14 — tırın tam yarısı |
+
+Model, palet ölçüsü tanımlı **2.124 ürünün tamamında** şirketin palet sayısını
+birebir veriyor.
+
+### Üst kat (istif)
+
+Doluluğu 1,00 olan bir araçta palet gözü sayısı zeminden fazla çıkar: 3 adetlik bir
+kalem de bir palet yapar ama depo onu yere ayrı bir göz olarak koymaz, başka paletin
+üstüne alır. Yerleştirme iki kuralla çalışır:
+
+* **Yükseklik.** Yığın aracın iç yüksekliğini aşamaz. Kırık palet **tam boy
+  sayılmaz**: 16'lık palette 3 ürün varsa yığın 3/16'sı kadar yükselir (alt sınır
+  palet tahtası, 15 cm). Tam boy sayılsaydı hiçbir kırık palet istiflenemez ve dolu
+  bir araçta paletlerin beşte biri "yerleştirilemedi" görünürdü.
+* **Boşaltma sırası.** Üstteki palet, tabanından **önce ya da onunla aynı** durakta
+  inmelidir. Aksi hâlde alttaki malı almak için üstündekini indirip tekrar yüklemek
+  gerekir.
+
+30.09.2025'in gerçek verisinde 33 planın 1.478 paletinden **37'si** (%2,5)
+yerleştirilemiyor; 4'ü palet yüksekliği master datada tanımsız olduğu için, 33'ü
+gerçekten yer kalmadığı için. Model bilerek temkinlidir: iki kırık paleti yan yana
+tek göze koymaz, yalnızca üst üste bindirir.
+
+Ekran ağırlığın ön/arka dağılımını da gösterir (dingil yükü) ve yazdırılabilir.
 
 ## Anahtar değer neden palete yuvarlanmaz
 

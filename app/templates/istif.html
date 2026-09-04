@@ -1,0 +1,146 @@
+{% extends "temel.html" %}
+{% set aktif_modul = modul_kodu %}
+{% set aktif_menu = 'planlar' %}
+{% block icerik %}
+<h1>{{ plan.sefer_no }} — Araç İçi Yerleşim
+  <span class="soluk" style="font-size:14px">{{ istif.arac.ad }} ·
+    {{ istif.arac.uzunluk / 100 }} × {{ istif.arac.genislik / 100 }} m</span></h1>
+
+<div class="uyari basari" style="background:var(--vg-lacivert-20);color:var(--ana);
+     border:1px solid var(--vg-lacivert-40)">
+  <b>Yükleme ters rota sırasıyla yapılır.</b> En son uğranacak durağın malı en dibe
+  (kabin tarafına), ilk durağın malı kapıya konur; her durakta yalnızca kapıdaki mal
+  iner. Aşağıdaki numaralar yükleme sırasıdır.
+</div>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Palet</div>
+    <div class="deger">{{ istif.palet_sayisi }}</div>
+    <div class="soluk">{{ istif.zemin_paleti }} zeminde ·
+      {{ istif.istiflenen }} üst kat · {{ kirik_palet }} kırık</div></div>
+  <div class="metrik"><div class="etiket">Zemin doluluğu</div>
+    <div class="deger">%{{ (istif.zemin_doluluk * 100) | round(1) }}</div>
+    <div class="soluk">{{ (istif.kullanilan_uzunluk / 100) | round(2) }} /
+      {{ istif.arac.uzunluk / 100 }} m</div></div>
+  <div class="metrik"><div class="etiket">Ağırlık</div>
+    <div class="deger">{{ istif.toplam_agirlik | sayi }} kg</div>
+    <div class="soluk">ön %{{ on_oran }} · arka %{{ 100 - on_oran }}</div></div>
+  <div class="metrik"><div class="etiket">Durak</div>
+    <div class="deger">{{ duraklar | length }}</div>
+    <div class="soluk">{{ plan.iller_metni or plan.bolge_adi }}</div></div>
+</div>
+
+{% if istif.istiflenen %}
+<div class="uyari" style="background:var(--vg-sari-20);color:var(--metin);
+     border:1px solid var(--vg-sari)">
+  <b>{{ istif.istiflenen }} palet üst kata konur.</b> Dolu bir araçta palet gözü
+  sayısı zeminden fazla olur; küçük kalemler yere ayrı göz açmaz, başka paletin
+  üstüne alınır. Çizimde tabanın üstünde <b>+kod</b> rozetiyle görünürler.
+  Üstteki palet her zaman tabanından <b>önce ya da onunla aynı</b> durakta iner.
+</div>
+{% endif %}
+
+{% if istif.sigmayanlar %}
+<div class="uyari hata">
+  <b>{{ istif.sigmayanlar | length }} palet yerleştirilemedi.</b> Ne zemine sığdı ne
+  de bir paletin üstüne kondu — ürünün palet yüksekliği master datada eksikse istif
+  önerilmez, iki kat araç iç yüksekliğini aşıyorsa istif mümkün değildir.
+  {% for p in istif.sigmayanlar[:8] %}<div class="soluk">{{ p.tip.urun_kodu }} ·
+    {{ p.adet | sayi }} adet · {{ p.durak.ad }}{% if not p.tip.yukseklik %} —
+    palet yüksekliği tanımsız{% endif %}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="kart">
+  <h2>Üstten görünüş</h2>
+  <p class="soluk">
+    Sol taraf <b>kabin</b> (dip), sağ taraf <b>kapı</b>. Renkler durakları gösterir.
+    Bir paletin kapladığı yer, o ürünün master datasındaki <b>tır/kamyon palet</b>
+    sayısından gelir — çizim planın doluluk yüzdesiyle aynı ölçüyü kullanır.
+  </p>
+  <div style="overflow-x:auto">
+    <svg viewBox="0 0 {{ cizim.genislik }} {{ cizim.yukseklik }}" width="100%"
+         style="min-width:900px;max-width:1400px" role="img"
+         aria-label="Araç zemininin üstten görünüşü">
+      <rect x="0" y="0" width="{{ cizim.genislik }}" height="{{ cizim.yukseklik }}"
+            fill="#ffffff"/>
+      <!-- dorse gövdesi -->
+      <rect x="{{ cizim.sol }}" y="{{ cizim.ust }}" width="{{ cizim.zemin_genislik }}"
+            height="{{ cizim.zemin_yukseklik }}" fill="var(--vg-gri-20)"
+            stroke="var(--ana)" stroke-width="2"/>
+      {% for p in cizim.paletler %}
+        <g>
+          <rect x="{{ p.x }}" y="{{ p.y }}" width="{{ p.w }}" height="{{ p.h }}"
+                fill="{{ p.renk }}" stroke="#ffffff" stroke-width="1.5"
+                opacity="{{ 0.55 if p.kirik else 0.9 }}"/>
+          {% if p.w > 46 %}
+            <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + p.h / 2 - 4 }}"
+                  text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">
+              {{ p.kod }}</text>
+            <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + p.h / 2 + 9 }}"
+                  text-anchor="middle" font-size="9" fill="#ffffff">
+              {{ p.adet }}{{ ' *' if p.kirik }}</text>
+          {% endif %}
+          {% for ust in p.ustundekiler %}
+            <rect x="{{ p.x + 3 }}" y="{{ p.y + 3 + loop.index0 * 13 }}"
+                  width="{{ p.w - 6 }}" height="11" rx="3" fill="{{ ust.renk }}"
+                  stroke="#ffffff" stroke-width="1"/>
+            {% if p.w > 46 %}
+              <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + 12 + loop.index0 * 13 }}"
+                    text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">
+                +{{ ust.kod }} {{ ust.adet }}</text>
+            {% endif %}
+          {% endfor %}
+        </g>
+      {% endfor %}
+      <!-- yükleme sırası şeridi -->
+      {% for s in cizim.siralar %}
+        <text x="{{ s.x }}" y="{{ cizim.ust - 6 }}" text-anchor="middle" font-size="10"
+              fill="var(--soluk)">{{ s.no }}</text>
+      {% endfor %}
+      <text x="{{ cizim.sol }}" y="{{ cizim.ust + cizim.zemin_yukseklik + 18 }}"
+            font-size="11" font-weight="700" fill="var(--ana)">KABİN — önce yüklenir</text>
+      <text x="{{ cizim.sol + cizim.zemin_genislik }}"
+            y="{{ cizim.ust + cizim.zemin_yukseklik + 18 }}" text-anchor="end"
+            font-size="11" font-weight="700" fill="var(--ana)">KAPI — ilk durak</text>
+    </svg>
+  </div>
+  <p class="soluk">Yıldızlı (*) paletler kırıktır: üzerinde tam palet adedinden az ürün var.</p>
+</div>
+
+<div class="kart">
+  <h2>Durak sırası ve yükleme</h2>
+  <table>
+    <thead><tr>
+      <th>Yükleme</th><th>Rota</th><th>Bayi</th><th>İl / İlçe</th>
+      <th class="sag">Palet</th><th class="sag">Üst kat</th>
+      <th class="sag">Adet</th><th class="sag">Ağırlık</th>
+      <th>Ürünler</th>
+    </tr></thead>
+    <tbody>
+    {% for d in duraklar %}
+      <tr>
+        <td><span class="rozet" style="background:{{ d.renk }};color:#fff;border-color:{{ d.renk }}">
+          {{ d.ilk_yukleme }}{% if d.son_yukleme != d.ilk_yukleme %}–{{ d.son_yukleme }}{% endif %}
+        </span></td>
+        <td>{{ d.sira }}. durak</td>
+        <td><b>{{ d.ad }}</b></td>
+        <td>{{ d.il }}{% if d.ilce %} / {{ d.ilce }}{% endif %}</td>
+        <td class="sag">{{ d.palet }}</td>
+        <td class="sag">{{ d.istif or '—' }}</td>
+        <td class="sag">{{ d.adet | sayi }}</td>
+        <td class="sag">{{ d.agirlik | sayi }} kg</td>
+        <td class="soluk">
+          {% for kod, adet in d.urunler.items() %}{{ kod }} ({{ adet | sayi }}){% if not loop.last %} · {% endif %}{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="kart yazdirma-gizle">
+  <a class="dugme ikincil" href="{{ taban }}/planlar/{{ plan.id }}">Plana dön</a>
+  <button type="button" onclick="window.print()">Yazdır</button>
+</div>
+{% endblock %}
