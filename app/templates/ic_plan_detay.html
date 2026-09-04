@@ -52,8 +52,15 @@
       {% if plan.son_ugrak_orani and plan.son_ugrak_orani < 0.15 %}
         · <b class="dikkat">%15 sınırının altında</b>{% endif %}</div></div>
   <div class="metrik"><div class="etiket">Yükleme deposu</div>
-    <div class="deger" style="font-size:21px">{{ plan.yukleme_deposu or plan.depo_kodu }}</div>
+    <div class="deger" style="font-size:21px">{{ plan.yukleme_deposu_metni }}</div>
     <div class="soluk">{{ plan.yukleme_tesisleri | join(' + ') }}</div></div>
+  {% set rota = plan.rota_ozeti %}
+  {% if rota %}
+  <div class="metrik"><div class="etiket">Rota uzunluğu</div>
+    <div class="deger" style="font-size:21px">{{ rota.rota }} km</div>
+    <div class="soluk">doğrudan {{ rota.dogrudan }} km · sapma
+      <b{{ ' class="dikkat"' | safe if rota.sapma > 100 }}>{{ rota.sapma }} km</b></div></div>
+  {% endif %}
   <div class="metrik"><div class="etiket">Varış illeri</div>
     <div class="deger" style="font-size:17px">{{ plan.iller_metni or '—' }}</div>
     {% if plan.aktarma_merkezi_adi %}
@@ -221,7 +228,7 @@
       <tr>
         <td><b>{{ satir.teslimat_no }}</b></td>
         <td>{{ satir.siparis_no }} / {{ satir.siparis_satir_no }}</td>
-        <td>{{ satir.bayi_adi or '—' }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
+        <td>{{ satir.bayi_gosterimi }}<div class="soluk">{{ satir.sehir or '' }}</div></td>
         <td>{{ satir.depo_kodu }}</td>
         <td>{{ satir.urun_kodu }}</td>
         <td>{{ satir.gosterilecek_urun_adi }}</td>
@@ -270,6 +277,46 @@
           <td class="sag"><b>{{ plan.toplam_adet | sayi }}</b></td></tr>
     </tbody>
   </table>
+</div>
+
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Yükleme notu</h2>
+    <p class="soluk">
+      Yükleme formuna basılır — depo operasyonun görmesi gereken serbest not.
+    </p>
+    <form method="post" action="/plan/{{ plan.id }}/yukleme-notu">
+      <textarea name="yukleme_notu" rows="3" style="width:100%"
+                placeholder="Örn. paletler yükseltilecek, kapı dar — küçük araç">{{ plan.yukleme_notu or '' }}</textarea>
+      <button type="submit" style="margin-top:8px">Kaydet</button>
+    </form>
+  </div>
+  <div class="kart">
+    <h2>Axata için teslimat numaraları</h2>
+    <p class="soluk">
+      Kopyalayıp Axata'ya yapıştırın. <b>Bayi ortak deposu (-1) satırları listede
+      yoktur</b> — o depo ayrı bir ERP'dedir, Axata iş emri açılmaz.
+    </p>
+    {% set axata_teslimatlar = plan.axata_teslimat_numaralari %}
+    {% if axata_teslimatlar %}
+    <textarea id="axata-teslimat" rows="4" readonly
+              style="width:100%; font-family:monospace">{{ axata_teslimatlar | join('\n') }}</textarea>
+    <div class="satir" style="margin-top:8px; align-items:center">
+      <button type="button" class="ikincil" onclick="
+        var a=document.getElementById('axata-teslimat');
+        a.select(); a.setSelectionRange(0, 99999);
+        navigator.clipboard.writeText(a.value).then(
+          function(){ document.getElementById('axata-kopya-bilgi').textContent='Kopyalandı.'; },
+          function(){ document.execCommand('copy');
+                      document.getElementById('axata-kopya-bilgi').textContent='Kopyalandı.'; });
+        return false;">Panoya kopyala</button>
+      <span id="axata-kopya-bilgi" class="soluk">{{ axata_teslimatlar | length }} teslimat</span>
+    </div>
+    {% else %}
+    <div class="bos">Axata'ya girilecek teslimat yok (planın tamamı -1 deposundan).</div>
+    {% endif %}
+  </div>
 </div>
 
 {% endblock %}

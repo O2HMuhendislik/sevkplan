@@ -205,8 +205,9 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
         Font(bold=True, size=10, color="C00000"),
     )
     # Müşteriye özel yükleme notu: hava yastığı, silika jel, paletsiz dökme ...
+    notlar = [n for n in (plan.musteri_notu, plan.yukleme_notu) if n]
     _metin_kutusu(
-        sayfa, plan.musteri_notu, kutu_basi, kutu_sonu, 9, SUTUN_SAYISI,
+        sayfa, "\n".join(notlar), kutu_basi, kutu_sonu, 9, SUTUN_SAYISI,
         Font(bold=True, size=11),
         baslik="MÜŞTERİ NOTU",
     )

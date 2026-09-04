@@ -239,6 +239,15 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    ekranından değiştirilebilir.
 5. **Durak sırası** yükleme tesisine uzaklığa göredir; en uzak il **son uğraktır** ve
    aracın en az **%15**'ini kaplamalıdır, aksi hâlde o durak araçtan çıkarılır.
+   **Rota en fazla 100 km sapabilir:** uzaklığa göre sıralamak tek başına yetmiyordu —
+   Adana, Hatay, Elazığ ve Mardin hepsi "uzak" olduğu için aynı araca giriyor ama
+   araç bir aşağı bir yukarı dolaşıyordu (rota 1.530 km, doğrudan Mardin'e gidiş
+   1.162 km). Kural: **rotanın toplam uzunluğu, tesisten son noktaya doğrudan
+   gidişten en fazla 100 km uzun olabilir.** Hacim yetse bile sapmayı aşan müşteri o
+   araca binmez. İller arası mesafe `app/domain/koordinatlar.py` içindeki il merkezi
+   koordinatlarından hesaplanır (kuş uçuşu × 1,25); tahmin, sahadan derlenen
+   Eskişehir mesafe tablosunu medyan %6 hatayla yeniden üretiyor. Plan detayında
+   rota uzunluğu, doğrudan gidiş ve sapma ayrı ayrı görünür.
 6. FTL araçta en fazla **5 durak**; rutinde durak sınırı yoktur (sahada 25-30 durak).
 7. **Önce tek tesisten dolu araç; ortak yükleme ikinci tercihtir.** 64 ve bayi ortak
    deposu (-1) **Eskişehir**'dedir, 74/34/44 **Bozüyük**'te — iki ayrı şehir.
@@ -252,10 +261,11 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
    planlanmaz; o teslimatlar gerekçesiyle beklemede kalır. *Doğrulama:* 2025'in 691
    parsiyel aracındaki satırların %99,95'i bu üç depodan çıkmış.
 9. **Parsiyelin son noktası aktarma merkezidir.** Yük müşteriye tek tek uğramaz;
-   **Ankara, İstanbul ya da Bursa** merkezine indirilir, dağıtımı oradan yapılır.
-   Araçlar bu üç merkeze göre kurulur ve plan üzerinde son uğrak merkez ilidir:
-   *İstanbul* Marmara/Trakya/Batı Karadeniz, *Bursa* Bursa ve batısı/güneyi (Güney
-   Marmara, Ege, Batı Akdeniz), *Ankara* Ankara ve doğusu — kalan her yer. Tablo
+   bir aktarma merkezine indirilir, dağıtımı oradan yapılır. Araçlar merkezlere göre
+   kurulur ve plan üzerinde son uğrak merkez ilidir: *İstanbul* Marmara/Trakya/Batı
+   Karadeniz, *Bursa* Bursa ve batısı/güneyi (Güney Marmara, Ege, Batı Akdeniz),
+   *Eskişehir* Eskişehir ve Bilecik (depoların bulunduğu iller — yük taşınmaz,
+   yerinde dağıtılır), *Ankara* Ankara ve doğusu, yani kalan her yer. Tablo
    `app/domain/aktarma.py` içindedir; tarife değişirse yalnızca orası güncellenir.
 10. **Rutin araç %50-60 dolulukta bırakılır.** Ölçüsü palete yuvarlanmaz: parsiyel
    araçta paletler karışık istiflenir, kırık palet tam palet gözü saymaz. FTL'de
@@ -265,9 +275,18 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 12. **Bölünmez olan teslimattır, müşteri değil.** Bir aracı aşan müşterinin teslimatları
    birden çok araca dağıtılır; tek başına aracı aşan teslimat istisna planına gider.
 13. **Ortak yüklemede aktarma notu:** araç, hacmin çoğunu taşıyan depodan yüklenir;
-    diğer depodaki malın satırına yükleme formunda *"… depoya gönderilmelidir"* notu
-    düşülür. Aktarma için ayrı plan üretilmez.
-14. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
+    diğer **tesisteki** malın satırına yükleme formunda *"… depoya gönderilmelidir"*
+    notu düşülür. Not yalnızca Eskişehir (64, -1) ile Bozüyük (74, 34 ...) arasında
+    yazılır — 64 ile -1 aynı lokasyondadır, aralarında aktarma yoktur. Yükleme
+    deposu kutusu da o tesisteki depoların hepsini gösterir (*"64 + -1"*).
+14. **Kargo günde tek plandır.** 10 desinin altındaki bütün siparişler tek kargo
+    listesinde toplanır; her müşteriye ayrı sefer numarası açılmaz.
+15. **Bölünebilir (-1) teslimat oransal bölünür.** Her araca teslimattaki bütün
+    ürünlerden aynı oranda konur; şofben bir araca, bacası başka araca düşmez. (Ürün
+    master datasında header kod alanı boş olduğu için aksesuarı ana ürüne bağlayan
+    başka bir bilgi yok; oransal bölme bu bağı kendiliğinden korur.) Her SKU'nun payı
+    tam palete yuvarlanır, payı bir paletin altında kalan küçük kalemler bölünmez.
+16. **Tır girişi bilinmeyen müşteri** (alan boş) tır varsayılır; plan detayında ve
     sipariş önizlemesinde uyarı çıkar.
 
 ## İhracat planlama kuralları (özet)

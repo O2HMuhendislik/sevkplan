@@ -10,6 +10,8 @@ rota kurulmaz — aracın son noktası her zaman bu üç ilden biridir.
 * **Bursa** — Bursa ve batısı/güneyi: Güney Marmara, Ege, Batı Akdeniz.
 * **Ankara** — Ankara ve doğusu: İç Anadolu, Karadeniz'in doğusu, Doğu ve
   Güneydoğu Anadolu, Doğu Akdeniz.
+* **Eskişehir** — Eskişehir ve Bilecik. Depoların bulunduğu iller; yük başka bir
+  merkeze taşınmaz, yerinde dağıtılır.
 
 Tablo 2025'in 691 parsiyel aracındaki il birlikteliğiyle uyumlu: İstanbul en çok
 Kocaeli/Sakarya/Tekirdağ/Zonguldak/Düzce/Bolu ile, Bursa Balıkesir/İzmir/Muğla/
@@ -26,13 +28,15 @@ from app.domain.iller import yer_adi
 ISTANBUL = "ISTANBUL"
 BURSA = "BURSA"
 ANKARA = "ANKARA"
+ESKISEHIR = "ESKISEHIR"
 
-AKTARMA_MERKEZLERI = (ISTANBUL, BURSA, ANKARA)
+AKTARMA_MERKEZLERI = (ISTANBUL, BURSA, ANKARA, ESKISEHIR)
 
 MERKEZ_ADLARI = {
     ISTANBUL: "İstanbul",
     BURSA: "Bursa",
     ANKARA: "Ankara",
+    ESKISEHIR: "Eskişehir",
 }
 
 _ISTANBUL_ILLERI = (
@@ -40,8 +44,11 @@ _ISTANBUL_ILLERI = (
     "YALOVA", "DUZCE", "BOLU", "ZONGULDAK", "BARTIN", "KARABUK",
 )
 
+_ESKISEHIR_ILLERI = ("ESKISEHIR", "BILECIK")
+"""Depoların bulunduğu iller; yük merkeze taşınmaz, yerinde dağıtılır."""
+
 _BURSA_ILLERI = (
-    "BURSA", "BILECIK", "BALIKESIR", "CANAKKALE", "IZMIR", "MANISA", "AYDIN",
+    "BURSA", "BALIKESIR", "CANAKKALE", "IZMIR", "MANISA", "AYDIN",
     "MUGLA", "DENIZLI", "USAK", "KUTAHYA", "AFYONKARAHISAR", "ISPARTA",
     "BURDUR", "ANTALYA",
 )
@@ -49,6 +56,7 @@ _BURSA_ILLERI = (
 IL_MERKEZLERI: dict[str, str] = {
     **{il: ISTANBUL for il in _ISTANBUL_ILLERI},
     **{il: BURSA for il in _BURSA_ILLERI},
+    **{il: ESKISEHIR for il in _ESKISEHIR_ILLERI},
 }
 """İl -> aktarma merkezi. Listede olmayan her il Ankara'ya bağlanır."""
 

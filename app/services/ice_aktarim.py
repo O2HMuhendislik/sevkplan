@@ -279,7 +279,10 @@ def siparisleri_aktar(
         mevcut.miktar = miktar
         mevcut.depo_kodu = depo_kodu.strip().upper()
         mevcut.sehir = sehir
-        mevcut.bayi_adi = excel.metin(kayit.get("bayi_adi"))
+        # BayiAdi bazı dosyalarda boş geliyor; gerçek ad ikinci `Not` sütununda.
+        mevcut.bayi_adi = excel.metin(kayit.get("bayi_adi")) or excel.metin(
+            kayit.get("ikinci_not")
+        )
         mevcut.teslim_sekli = excel.metin(kayit.get("teslim_sekli"))
         # Alıcı firma / adres / ilçe sütunlarının anlamı satır tipine göre kayıyor;
         # hangisinin ne olduğu içeriğe bakılarak çözülür (bkz. yer_alanlarini_coz).

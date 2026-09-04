@@ -1,0 +1,80 @@
+{% extends "temel.html" %}
+{% set aktif_modul = modul_kodu %}
+{% set aktif_menu = 'bekleyenler' %}
+{% block icerik %}
+<h1>Bekleyen siparişler <span class="soluk">({{ satirlar | length }} satır)</span></h1>
+
+<p class="soluk">
+  Plana giremeyen bütün sipariş satırları. İki ayrı sebep var ve ikisi farklı iş
+  gerektirir:
+</p>
+<div class="izgara iki" style="margin-bottom:14px">
+  <div class="kart">
+    <h2>Beklemede</h2>
+    <p class="soluk">
+      Hacim yetmediği için bekliyor. Sipariş biriktikçe bir sonraki planlamada
+      kendiliğinden plana girer; beklemeden almak için planlama ekranındaki
+      <b>“Kalanları da planla”</b> seçeneğini kullanın.
+    </p>
+  </div>
+  <div class="kart">
+    <h2>Hatalı</h2>
+    <p class="soluk">
+      Master datası eksik olduğu için planlamaya <b>hiç giremiyor</b>; esnetme de
+      kurtarmaz. Eksik alan <a href="/urunler">Master Data</a> ekranından tamamlanıp
+      sipariş dosyası yeniden yüklenmeli. Bir teslimattaki tek bir ürünün eksiği
+      bütün teslimatı dışarıda bırakır.
+    </p>
+  </div>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" style="margin-bottom:14px">
+    <div><label for="durum">Durum</label>
+      <select id="durum" name="durum">
+        <option value="">Tümü</option>
+        <option value="BEKLEMEDE" {{ 'selected' if durum == 'BEKLEMEDE' }}>Beklemede</option>
+        <option value="HATALI" {{ 'selected' if durum == 'HATALI' }}>Hatalı</option>
+      </select></div>
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}"
+             placeholder="Bayi, il, ürün, teslimat" style="width:280px"></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="{{ excel_yolu }}?durum={{ durum }}&arama={{ arama }}">
+      Excel'e aktar</a>
+  </form>
+
+  {% if satirlar %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Durum</th><th>Teslimat</th><th>Sipariş</th>
+      <th>Bayi</th><th>İl / İlçe</th><th>Depo</th><th>Ürün</th>
+      <th class="sag">Adet</th><th>Termin</th><th>Bekleme</th><th>Sebep</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in satirlar %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><span class="rozet {{ satir.durum.value }}">{{ satir.durum.value }}</span></td>
+        <td>{{ satir.teslimat_no }}</td>
+        <td class="soluk">{{ satir.siparis_no }}</td>
+        <td>{{ satir.bayi_gosterimi }}</td>
+        <td>{{ satir.sehir or '—' }}<div class="soluk">{{ satir.ilce or '' }}</div></td>
+        <td>{{ satir.depo_kodu }}</td>
+        <td>{{ satir.urun_kodu }}<div class="soluk">{{ satir.gosterilecek_urun_adi }}</div></td>
+        <td class="sag">{{ satir.miktar | sayi }}</td>
+        <td>{{ satir.termin_tarihi | tarih }}</td>
+        <td class="sag">{{ satir.bekleme_gunu }} gün</td>
+        <td class="soluk">{{ satir.hata_aciklamasi or 'Hacim bekliyor' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk" style="margin:10px 0 0">
+    Listenin sonu — <b>{{ satirlar | length }}</b> satır gösterildi.
+  </p>
+  {% else %}
+  <div class="bos">Bekleyen sipariş yok.</div>
+  {% endif %}
+</div>
+{% endblock %}

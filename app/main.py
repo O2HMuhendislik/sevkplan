@@ -547,6 +547,129 @@ def yukleme_formu_indir(
     return FileResponse(hedef, filename=hedef.name)
 
 
+BEKLEYEN_MODULLERI = {
+    "RING": "/ring/bekleyenler",
+    "ROTA": "/rota/bekleyenler",
+    "IHRACAT": "/ihracat/bekleyenler",
+}
+
+
+def _bekleyen_sayfasi(
+    istek: Request, kullanici: Kullanici, db: Session, modul: str,
+    durum: str, arama: str,
+):
+    """Plana giremeyen sipariş satırlarının detay ekranı (üç modülde de aynı)."""
+    satirlar = rapor_servisi.bekleyen_detaylari(db, modul=modul)
+    if durum:
+        satirlar = [s for s in satirlar if s.durum.value == durum]
+    if arama:
+        desen = arama.strip().lower()
+        satirlar = [
+            s for s in satirlar
+            if desen in " ".join(
+                str(deger or "").lower()
+                for deger in (
+                    s.bayi_adi, s.alici_firma, s.sehir, s.ilce, s.urun_kodu,
+                    s.urun_adi, s.teslimat_no, s.siparis_no, s.depo_kodu,
+                )
+            )
+        ]
+    return sayfa(
+        istek,
+        "bekleyenler.html",
+        kullanici,
+        satirlar=satirlar,
+        durum=durum,
+        arama=arama,
+        modul_kodu=modul,
+        excel_yolu=f"{BEKLEYEN_MODULLERI[modul]}/excel",
+    )
+
+
+@uygulama.get("/ring/bekleyenler")
+def ring_bekleyenler(
+    istek: Request, durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_sayfasi(istek, kullanici, db, "RING", durum, arama)
+
+
+@uygulama.get("/rota/bekleyenler")
+def rota_bekleyenler(
+    istek: Request, durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_sayfasi(istek, kullanici, db, "ROTA", durum, arama)
+
+
+@uygulama.get("/ihracat/bekleyenler")
+def ihracat_bekleyenler(
+    istek: Request, durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_sayfasi(istek, kullanici, db, "IHRACAT", durum, arama)
+
+
+def _bekleyen_excel(db: Session, modul: str, durum: str, arama: str):
+    satirlar = rapor_servisi.bekleyen_detaylari(db, modul=modul)
+    if durum:
+        satirlar = [s for s in satirlar if s.durum.value == durum]
+    hedef = plan_raporu.bekleyen_raporu(
+        satirlar, CIKTI_DIZIN / f"bekleyen_siparisler_{modul.lower()}.xlsx", modul
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get("/ring/bekleyenler/excel")
+def ring_bekleyen_excel(
+    durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_excel(db, "RING", durum, arama)
+
+
+@uygulama.get("/rota/bekleyenler/excel")
+def rota_bekleyen_excel(
+    durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_excel(db, "ROTA", durum, arama)
+
+
+@uygulama.get("/ihracat/bekleyenler/excel")
+def ihracat_bekleyen_excel(
+    durum: str = "", arama: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return _bekleyen_excel(db, "IHRACAT", durum, arama)
+
+
+@uygulama.post("/plan/{plan_id}/yukleme-notu")
+def yukleme_notu_kaydet(
+    plan_id: int,
+    yukleme_notu: str = Form(""),
+    kullanici: Kullanici = Depends(oturumdaki_kullanici),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Yükleme formuna basılacak serbest notu kaydeder (üç modül için de aynı)."""
+    plan = db.get(SevkiyatPlani, plan_id)
+    if plan is None:
+        raise HTTPException(404, "Plan bulunamadı")
+    if not kullanici.duzenleyebilir_mi(plan.modul or "RING"):
+        raise HTTPException(403, "Bu işlem için düzenleme yetkiniz yok.")
+    plan.yukleme_notu = (yukleme_notu or "").strip() or None
+    db.commit()
+    return yonlendir(
+        f"{plan.modul_yolu}/{plan.id}", mesaj="Yükleme notu kaydedildi."
+    )
+
+
 @uygulama.get("/marka/logo")
 def marka_logosu():
     """Başlıktaki logo. Yüklenmemişse depodaki yer tutucu döner.

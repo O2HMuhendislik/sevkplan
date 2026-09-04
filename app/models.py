@@ -470,6 +470,8 @@ class SevkiyatPlani(Temel):
     mail_gonderim_tarihi: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     tamamlanma_tarihi: Mapped[datetime | None] = mapped_column(DateTime, default=None)
     iptal_aciklamasi: Mapped[str | None] = mapped_column(Text, default=None)
+    yukleme_notu: Mapped[str | None] = mapped_column(Text, default=None)
+    """Yükleme formuna basılacak serbest not; planlamacı depoya buradan yazar."""
     olusturan: Mapped[str] = mapped_column(String(100), default="sistem")
 
     satirlar: Mapped[list[SiparisSatiri]] = relationship(back_populates="plan")
@@ -615,6 +617,70 @@ class SevkiyatPlani(Temel):
         from app.domain.iller import yukleme_tesisi
 
         return sorted({yukleme_tesisi(satir.depo_kodu) for satir in self.satirlar})
+
+    @property
+    def rota_ozeti(self) -> dict | None:
+        """Rotanın uzunluğu ve doğrudan gidişten sapması (km).
+
+        Duraklar uzaklığa göre sıralandığı için sapma, aracın ne kadar zikzak
+        yaptığını gösterir. Planlama sapmayı 100 km ile sınırlar.
+        """
+        from app.domain.koordinatlar import mesafe_km, rota_km
+
+        iller = [
+            parca.strip()
+            for parca in (self.iller_metni or "").split(",")
+            if parca.strip()
+        ]
+        if len(iller) < 1 or self.modul != "ROTA" or self.sevkiyat_tipi != "FTL":
+            return None
+        cikis = "BILECIK" if self.yukleme_tesisleri == ["BOZÜYÜK"] else "ESKISEHIR"
+        rota = rota_km(cikis, iller)
+        dogrudan = mesafe_km(cikis, iller[-1])
+        if rota is None or dogrudan is None:
+            return None
+        return {"cikis": cikis, "rota": rota, "dogrudan": dogrudan,
+                "sapma": rota - dogrudan}
+
+    @property
+    def axata_teslimat_numaralari(self) -> list[str]:
+        """Axata'ya yapıştırılacak teslimat numaraları.
+
+        Bayi ortak deposu (-1) satırları hariç tutulur: o depo ayrı bir ERP'dedir ve
+        Axata iş emri açılmaz. Numaralar tekrarsız ve sıralıdır.
+        """
+        from app.domain.iller import ana_depo
+
+        numaralar = {
+            satir.teslimat_no
+            for satir in self.satirlar
+            if satir.teslimat_no and ana_depo(satir.depo_kodu) != "-1"
+        }
+        return sorted(numaralar)
+
+    @property
+    def yukleme_depolari(self) -> list[str]:
+        """Aracın yüklendiği tesisteki depolar: 64 ile -1 aynı lokasyondadır.
+
+        Yükleme deposu kutusunda tek kod yazmak yanıltıyordu; planda hem 64 hem -1
+        varsa ikisi de görünmeli.
+        """
+        from app.domain.iller import ana_depo, yukleme_tesisi
+
+        if not self.yukleme_deposu:
+            return []
+        hedef = yukleme_tesisi(self.yukleme_deposu)
+        depolar = {
+            ana_depo(satir.depo_kodu)
+            for satir in self.satirlar
+            if yukleme_tesisi(satir.depo_kodu) == hedef
+        }
+        return sorted(depolar) or [ana_depo(self.yukleme_deposu)]
+
+    @property
+    def yukleme_deposu_metni(self) -> str:
+        depolar = self.yukleme_depolari
+        return " + ".join(depolar) if depolar else (self.yukleme_deposu or self.depo_kodu)
 
     @property
     def ortak_yukleme_mi(self) -> bool:
@@ -810,6 +876,11 @@ class SiparisSatiri(Temel):
     @property
     def oncelik_tarihi(self) -> date:
         return self.termin_tarihi or self.siparis_tarihi or date.today()
+
+    @property
+    def bekleme_gunu(self) -> int:
+        """Sipariş kaç gündür plana giremeden bekliyor?"""
+        return (date.today() - self.olusturma_tarihi.date()).days
 
     @property
     def plana_alinma_gunu(self) -> int | None:

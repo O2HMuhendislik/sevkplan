@@ -271,6 +271,31 @@ def bekleyen_ozeti(db: Session, modul: str | None = None) -> list[dict]:
     ]
 
 
+def bekleyen_detaylari(
+    db: Session, modul: str | None = None, limit: int = 2000
+) -> list[SiparisSatiri]:
+    """Plana giremeyen sipariş satırlarının tamamı — beklemede **ve** hatalı.
+
+    Özet tablo "hangi üründen kaç teslimat" diyor ama planlamacının görmesi gereken
+    şey satırın kendisi: hangi bayi, hangi il, hangi depo, ne zamandır bekliyor.
+    """
+    sorgu = (
+        select(SiparisSatiri)
+        .where(
+            SiparisSatiri.durum.in_([SiparisDurumu.BEKLEMEDE, SiparisDurumu.HATALI]),
+            SiparisSatiri.plan_id.is_(None),
+        )
+        .order_by(
+            SiparisSatiri.durum,
+            SiparisSatiri.termin_tarihi.asc().nullslast(),
+            SiparisSatiri.teslimat_no,
+        )
+    )
+    if modul:
+        sorgu = sorgu.where(SiparisSatiri.modul == modul)
+    return list(db.scalars(sorgu.limit(limit)).all())
+
+
 def hatali_ozeti(db: Session, modul: str | None = None) -> list[dict]:
     """Planlamaya hiç giremeyen (HATALI) siparişler ve gerekçeleri.
 

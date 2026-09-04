@@ -24,10 +24,11 @@ import enum
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain.aktarma import aktarma_merkezi, merkez_bolge_kodu
 from app.domain.bolgeler import il_bolgesi
+from app.domain.koordinatlar import mesafe_km, rota_km
 from app.domain.iller import (
     BOLUNEBILIR_DEPOLAR,
     ana_depo,
@@ -72,6 +73,14 @@ class Kurallar:
     gunluk_ftl_siniri: int = 35
     gunluk_rutin_siniri: int = 4
     """Günlük araç sınırları; aşan hacim sonraki güne kalır."""
+    azami_sapma_km: int = 100
+    """Rotanın doğrudan gidişten ne kadar uzun olabileceği.
+
+    Uzaklığa göre sıralamak tek başına yetmiyor: Adana, Hatay, Elazığ ve Mardin
+    hepsi "uzak" olduğu için aynı araca giriyor ama araç bir aşağı bir yukarı
+    dolaşıyor (1.530 km rota, doğrudan Mardin 1.162 km). Kural: rotanın toplam
+    uzunluğu, tesisten son noktaya doğrudan gidişten en fazla bu kadar uzun olabilir.
+    """
 
 
 VARSAYILAN_KURALLAR = Kurallar()
@@ -89,6 +98,9 @@ depo dışında parsiyel planlama yapılmaz — 2025'in 691 parsiyel aracında s
 """
 
 PARSIYEL_DEPOLARI = frozenset().union(*PARSIYEL_DEPO_GRUPLARI.values())
+
+GUNLUK_KARGO_KODU = "KARGO"
+"""Günlük kargo listesinin bölge kodu; kargoda rota ve bölge yoktur."""
 
 
 @dataclass(frozen=True)
@@ -247,19 +259,22 @@ def teslimati_bol(
 ) -> list[Teslimat]:
     """Araç kapasitesini aşan **bölünebilir** teslimatı araç boyutunda parçalara ayırır.
 
-    `kamyon` verilirse ölçüler ve `yukleme_adeti` haritası kamyona aittir; kesim
-    kamyon kapasitesine göre yapılır.
+    Bölme **oransaldır:** her araca teslimattaki bütün ürünlerden aynı oranda konur.
+    Böylece şofben bir araca, bacası başka bir araca düşmez — aksesuar her zaman ana
+    ürünüyle aynı araçta gider. (Ürün master datasında header kod alanı boş olduğu
+    için aksesuarı ana ürüne bağlayan başka bir bilgi yok; oransal bölme bu bağı
+    kendiliğinden korur.)
 
-    Önce satırlar bütün hâlde yerleştirilir; bir satır tek başına sığmıyorsa miktarı
-    kesilir. Kesim **tam palet** sınırında yapılır: 1000 adetlik bir siparişten araca
-    800 adet (tam palet karşılığı) alınır, kalan 200 adet aynı teslimat numarasıyla
-    beklemede kalır.
+    Her SKU'nun payı **tam palete** yuvarlanır: kırık palet araçta tam palet gözü
+    kaplar. Payı bir paletin altında kalan küçük kalemler bölünmez, ilk araca konur.
 
+    `kamyon` verilirse ölçüler ve `yukleme_adeti` haritası kamyona aittir.
     Bölünemeyen ya da zaten sığan teslimat olduğu gibi döner.
     """
     if not teslimat.bolunebilir_mi or not teslimat.satir_miktarlari:
         return [teslimat]
-    if _teslimat_olcusu(teslimat, tip, kamyon) <= kapasite:
+    toplam_olcu = _teslimat_olcusu(teslimat, tip, kamyon)
+    if toplam_olcu <= kapasite or toplam_olcu <= 0:
         return [teslimat]
 
     palet_ici = palet_ici or {}
@@ -277,43 +292,53 @@ def teslimati_bol(
         )
         return Decimal(islenen) / Decimal(adet)
 
-    def sigan_miktar(sku: str, kalan_kapasite: Decimal) -> Decimal:
-        """Kalan boşluğa bu üründen kaç adet sığar? Tam palete yuvarlanır."""
-        adet = yukleme_adeti.get(sku)
-        if not adet or kalan_kapasite <= 0:
-            return Decimal(0)
-        ham = int(kalan_kapasite * Decimal(adet))
+    def palete_indir(sku: str, miktar: Decimal) -> Decimal:
+        """Miktarı aşağı doğru tam palete yuvarlar; palet bilgisi yoksa tam sayıya.
+
+        Oran bölmesi 99,999999 gibi değerler üretebiliyor; aşağı yuvarlamadan önce
+        altıncı haneye yuvarlanır, yoksa 100 adetlik pay 90'a düşerdi.
+        """
+        ham = Decimal(miktar).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
         ici = palet_ici.get(sku)
         if ici:
-            return Decimal((ham // ici) * ici)
-        return Decimal(ham)
+            return Decimal((int(ham) // ici) * ici)
+        return Decimal(int(ham))
 
-    # Büyük satır önce: aracın çoğunu dolduran satır kesilmeye aday olsun.
-    kalanlar = sorted(
-        ((sid, sku, Decimal(miktar)) for sid, (sku, miktar) in teslimat.satir_miktarlari.items()),
-        key=lambda k: (-satir_olcusu(k[1], k[2]), k[0]),
-    )
+    def kume_olcusu(satirlar: Mapping[int, tuple[str, Decimal]]) -> Decimal:
+        return sum(
+            (satir_olcusu(sku, miktar) for sku, miktar in satirlar.values()),
+            Decimal(0),
+        )
 
+    kalanlar = {
+        sid: (sku, Decimal(miktar))
+        for sid, (sku, miktar) in teslimat.satir_miktarlari.items()
+    }
     parcalar: list[dict[int, tuple[str, Decimal]]] = []
     while kalanlar:
+        kalan_olcu = kume_olcusu(kalanlar)
+        if kalan_olcu <= kapasite:
+            parcalar.append(kalanlar)
+            break
+
+        # Kalanın kaçta kaçı bu araca sığıyor? Bütün satırlar aynı oranla kesilir.
+        oran = kapasite / kalan_olcu
         kutu: dict[int, tuple[str, Decimal]] = {}
-        bos = kapasite
-        yeni_kalanlar: list[tuple[int, str, Decimal]] = []
-        for sid, sku, miktar in kalanlar:
-            deger = satir_olcusu(sku, miktar)
-            if deger <= bos:
+        yeni_kalanlar: dict[int, tuple[str, Decimal]] = {}
+        for sid, (sku, miktar) in sorted(kalanlar.items()):
+            alinan = palete_indir(sku, miktar * oran)
+            if alinan <= 0:
+                # Payı bir paletin altında: bölmek yerine bütün hâlde bu araca konur,
+                # aksesuar ana ürününden kopmasın.
+                alinan = miktar
+            if alinan >= miktar:
                 kutu[sid] = (sku, miktar)
-                bos -= deger
                 continue
-            alinan = sigan_miktar(sku, bos)
-            if alinan > 0:
-                kutu[sid] = (sku, alinan)
-                bos -= satir_olcusu(sku, alinan)
-                yeni_kalanlar.append((sid, sku, miktar - alinan))
-            else:
-                yeni_kalanlar.append((sid, sku, miktar))
-        if not kutu:
-            # Tek palet bile sığmıyor: bölmek çözmüyor, teslimat olduğu gibi kalsın.
+            kutu[sid] = (sku, alinan)
+            yeni_kalanlar[sid] = (sku, miktar - alinan)
+
+        if not kutu or yeni_kalanlar == kalanlar:
+            # Bölmek çözmüyor: teslimat olduğu gibi kalsın.
             return [teslimat]
         parcalar.append(kutu)
         kalanlar = yeni_kalanlar
@@ -647,6 +672,52 @@ class RotaPlani:
         return sorted({t for m in self.musteriler for t in m.yukleme_tesisleri})
 
     @property
+    def cikis_ili(self) -> str:
+        """Rotanın başladığı il: Eskişehir (64, -1) ya da Bilecik (Bozüyük tesisi)."""
+        return "BILECIK" if self.yukleme_tesisleri == ["BOZÜYÜK"] else "ESKISEHIR"
+
+    def _rota_olculeri(
+        self, musteriler: list[MusteriSiparisi]
+    ) -> tuple[int | None, int | None]:
+        """(rota uzunluğu, doğrudan gidiş) km. Koordinatı olmayan il varsa (None, None)."""
+        iller: list[str] = []
+        for musteri in sorted(musteriler, key=lambda m: (m.uzaklik, m.il, m.bayi_adi)):
+            if musteri.il and musteri.il not in iller:
+                iller.append(musteri.il)
+        if not iller:
+            return None, None
+        return rota_km(self.cikis_ili, iller), mesafe_km(self.cikis_ili, iller[-1])
+
+    @property
+    def rota_uzunlugu_km(self) -> int | None:
+        return self._rota_olculeri(self.musteriler)[0]
+
+    @property
+    def dogrudan_km(self) -> int | None:
+        return self._rota_olculeri(self.musteriler)[1]
+
+    @property
+    def sapma_km(self) -> int | None:
+        """Rota, doğrudan gidişten kaç km uzun? Duraklar arası zikzağın ölçüsü."""
+        rota, dogrudan = self._rota_olculeri(self.musteriler)
+        if rota is None or dogrudan is None:
+            return None
+        return rota - dogrudan
+
+    def sapma_uygun_mu(self, musteri: MusteriSiparisi, kurallar: Kurallar) -> bool:
+        """Bu müşteri eklenirse rota kabul edilebilir uzunlukta kalır mı?
+
+        Parsiyelde aranmaz: araç tek noktaya (aktarma merkezine) gider.
+        Koordinatı bilinmeyen il varsa kural uygulanamaz, engel çıkarılmaz.
+        """
+        if self.tip is not SevkiyatTipi.FTL or self.aktarma_merkezi:
+            return True
+        rota, dogrudan = self._rota_olculeri([*self.musteriler, musteri])
+        if rota is None or dogrudan is None:
+            return True
+        return rota - dogrudan <= kurallar.azami_sapma_km
+
+    @property
     def ortak_yukleme_mi(self) -> bool:
         """Araç birden çok tesisten yükleniyor mu?
 
@@ -674,9 +745,10 @@ class RotaPlani:
             return False
         if self.tip is SevkiyatTipi.FTL and self.durak_sayisi >= kurallar.azami_durak:
             return False
-        return (
-            self.toplam_birim + self.musteri_olcusu(musteri) <= self.profil.ust_limit
-        )
+        if self.toplam_birim + self.musteri_olcusu(musteri) > self.profil.ust_limit:
+            return False
+        # Hacim yetse bile rota zikzak yapıyorsa bu araca binmez.
+        return self.sapma_uygun_mu(musteri, kurallar)
 
 
 @dataclass
@@ -904,12 +976,17 @@ def planla(
         return sonuc
 
     if tip is SevkiyatTipi.KARGO:
-        for bolge_kodu, grup in _bolgelere_ayir(musteriler):
-            sonuc.planlar.append(
-                RotaPlani(
-                    bolge_kodu=bolge_kodu, tip=tip, profil=profil, musteriler=list(grup)
-                )
+        # Kargo bir araç planlaması değildir: 10 desinin altındaki bütün siparişler
+        # günün **tek** kargo listesinde toplanır. Her müşteriye ayrı plan açmak
+        # onlarca anlamsız sefer numarası üretiyordu.
+        sonuc.planlar.append(
+            RotaPlani(
+                bolge_kodu=GUNLUK_KARGO_KODU,
+                tip=tip,
+                profil=profil,
+                musteriler=list(musteriler),
             )
+        )
         return sonuc
 
     # Tır giremeyen müşteriler ayrı planlanır: onların aracı baştan kamyondur,
@@ -1052,9 +1129,14 @@ def yukleme_deposu(plan: RotaPlani) -> str:
 
 
 def aktarma_notu(satir_depo_kodu: str, yukleme_depo_kodu: str) -> str:
-    """Satırın malı başka bir depodaysa yükleme formuna yazılacak not."""
+    """Satırın malı başka bir **tesiste** ise yükleme formuna yazılacak not.
+
+    Karşılaştırma depo koduna değil tesise bakar: 64 ile bayi ortak deposu (-1)
+    aynı lokasyondadır, aralarında aktarma yoktur. Not yalnızca Eskişehir (64, -1)
+    ile Bozüyük (74, 34 ...) arasında anlamlıdır.
+    """
     if not yukleme_depo_kodu or not satir_depo_kodu:
         return ""
-    if ana_depo(satir_depo_kodu) == ana_depo(yukleme_depo_kodu):
+    if yukleme_tesisi(satir_depo_kodu) == yukleme_tesisi(yukleme_depo_kodu):
         return ""
     return f"{ana_depo(yukleme_depo_kodu)} depoya gönderilmelidir"

@@ -234,6 +234,15 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
         )
 
     toplam_satiri = veri_sonu + 1
+    if plan.yukleme_notu:
+        # Planlamacının depoya yazdığı serbest not; tablonun hemen altında durur.
+        notu = sayfa.cell(row=toplam_satiri, column=1, value=f"NOT: {plan.yukleme_notu}")
+        notu.font = Font(bold=True, size=10, color="2A507C")
+        notu.alignment = SOLA
+        sayfa.merge_cells(
+            start_row=toplam_satiri, start_column=1,
+            end_row=toplam_satiri, end_column=3,
+        )
     sayfa.cell(row=toplam_satiri, column=4, value="PLANLAYAN").font = KALIN
     sayfa.cell(row=toplam_satiri, column=5, value=plan.olusturan)
     sayfa.cell(row=toplam_satiri, column=7, value="TOPLAM ADET").font = KALIN

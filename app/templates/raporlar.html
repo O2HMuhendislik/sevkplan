@@ -4,6 +4,20 @@
 {% block icerik %}
 <h1>Raporlar</h1>
 
+<div class="kart">
+  <h2>Excel'e aktar</h2>
+  <p class="soluk">
+    <b>Plan raporu</b> dört sayfadan oluşur: özet (durum bazında plan, teslimat, adet,
+    doluluk), ürün grubu kırılımı, plan künyeleri ve sevk durumu (Axata, araç, plaka,
+    mail). <b>Bekleyen siparişler</b> plana giremeyen satırları sebebiyle listeler.
+  </p>
+  <div class="satir">
+    <a class="dugme" href="/rapor/plan-raporu?modul=RING">Plan raporu (özet + sevk durumu)</a>
+    <a class="dugme ikincil" href="/ring/bekleyenler/excel">Bekleyen siparişler</a>
+  </div>
+</div>
+
+
 <div class="izgara dort" style="margin-bottom:18px">
   <div class="metrik"><div class="etiket">Toplam plan</div><div class="deger">{{ ozet.toplam_plan }}</div></div>
   <div class="metrik"><div class="etiket">Ortalama doluluk</div><div class="deger">%{{ ozet.ortalama_doluluk }}</div></div>

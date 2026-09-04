@@ -133,16 +133,17 @@ def test_son_ugrak_yuzde_onbesin_altindaysa_aractan_cikarilir():
     """Uzak ildeki küçük müşteri için o mesafeye araç göndermek navlunu bozar.
 
     İki il aynı bölgede (B05) olmasa zaten aynı araca binmezlerdi; kuralın tek başına
-    çalıştığını görmek için aynı bölgeden yakın/uzak bir çift seçildi.
+    çalıştığını görmek için aynı bölgeden, aynı güzergâhta yakın/uzak bir çift
+    seçildi (Kayseri üzerinden Van'a sapma 14 km, rota kuralına takılmaz).
     """
-    yakin = musteri("YAKIN", "ADANA", 0.9)
+    yakin = musteri("YAKIN", "KAYSERI", 0.9)
     uzak = musteri("UZAK", "VAN", 0.05)
-    assert il_bolgesi("ADANA") == il_bolgesi("VAN")
+    assert il_bolgesi("KAYSERI") == il_bolgesi("VAN")
 
     sonuc = planla([yakin, uzak], SevkiyatTipi.FTL, IC_FTL)
 
     assert len(sonuc.planlar) == 1
-    assert sonuc.planlar[0].son_ugrak == "ADANA"
+    assert sonuc.planlar[0].son_ugrak == "KAYSERI"
     assert [b.musteri.bayi_adi for b in sonuc.bekleyenler] == ["UZAK"]
     assert "Son uğrak" in sonuc.bekleyenler[0].sebep
 
@@ -785,3 +786,104 @@ def test_farkli_aktarma_merkezleri_ayni_araca_binmez():
     )
     assert len(sonuc.planlar) == 2
     assert {p.aktarma_merkezi for p in sonuc.planlar} == {"BURSA", "ANKARA"}
+
+
+def test_bolunen_teslimatta_aksesuar_ana_urunden_ayrilmaz():
+    """Şofben bir araca, bacası başka araca düşmemeli.
+
+    Ürün master datasında header kod boş olduğu için aksesuarı ana ürüne bağlayan
+    bir alan yok; bölme oransal yapılarak bağ korunur.
+    """
+    from app.domain.ic_piyasa import teslimati_bol
+
+    # 600 şofben (palet içi 10, tıra 100) + 600 baca (palet içi 20, tıra 200).
+    palet_ici = {"SOFBEN": 10, "BACA": 20}
+    yukleme = {"SOFBEN": 100, "BACA": 200}
+    t = replace(
+        teslimat("BD-MIX", 9, depo="-1", miktar=1200),
+        bolunebilir_mi=True,
+        sku_miktarlari={"SOFBEN": Decimal(600), "BACA": Decimal(600)},
+        sku_kodlari=("BACA", "SOFBEN"),
+        satir_miktarlari={1: ("SOFBEN", Decimal(600)), 2: ("BACA", Decimal(600))},
+    )
+
+    parcalar = teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, palet_ici, yukleme)
+
+    assert len(parcalar) > 1
+    for parca in parcalar:
+        kodlar = {sku for sku, _ in parca.satir_miktarlari.values()}
+        assert kodlar == {"SOFBEN", "BACA"}, "aksesuar ana üründen koptu"
+    assert sum(p.sku_miktarlari["SOFBEN"] for p in parcalar) == 600
+    assert sum(p.sku_miktarlari["BACA"] for p in parcalar) == 600
+
+
+def test_zikzak_rota_ayni_araca_binmez():
+    """Adana, Hatay, Elazığ, Mardin uzaklığa göre sıralandığında araç dolaşıyor.
+
+    Rota 1.530 km, doğrudan Mardin'e gidiş 1.162 km — 368 km sapma. Kural: rota
+    doğrudan gidişten en fazla 100 km uzun olabilir.
+    """
+    musteriler = [
+        musteri("A", "ADANA", 0.25),
+        musteri("B", "HATAY", 0.25, ilce="ISKENDERUN"),
+        musteri("C", "ELAZIG", 0.25, ilce="MERKEZ"),
+        musteri("D", "MARDIN", 0.25, ilce="MIDYAT"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+
+    assert len(sonuc.planlar) > 1, "hepsi tek araca binmemeli"
+    for plan in sonuc.planlar:
+        assert plan.sapma_km is None or plan.sapma_km <= 100
+
+
+def test_ayni_guzergahtaki_duraklar_birlikte_gider():
+    """Kayseri ve Van aynı yolun üzerinde: sapma 14 km, tek araca binerler."""
+    sonuc = planla(
+        [musteri("A", "KAYSERI", 0.5), musteri("B", "VAN", 0.45, ilce="IPEKYOLU")],
+        SevkiyatTipi.FTL,
+        IC_FTL,
+    )
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 2
+    assert sonuc.planlar[0].sapma_km <= 100
+
+
+def test_parsiyelde_rota_sapmasi_aranmaz():
+    """Parsiyel araç tek noktaya (aktarma merkezine) gider; zikzak kuralı işlemez."""
+    sonuc = planla(
+        [
+            _depolu_musteri("A", "ADANA", 0.2, ("64",)),
+            _depolu_musteri("B", "MARDIN", 0.2, ("64",), ilce="MIDYAT"),
+        ],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    # İkisi de Ankara aktarmasına bağlı; tek araca binerler.
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].aktarma_merkezi == "ANKARA"
+
+
+def test_kargo_gunde_tek_plandir():
+    """10 desi altındaki siparişler için her müşteriye ayrı sefer numarası açılmaz."""
+    musteriler = [
+        musteri("A", "IZMIR", 0.01, desi=5),
+        musteri("B", "TRABZON", 0.01, desi=5, ilce="ORTAHISAR"),
+        musteri("C", "ISTANBUL", 0.01, desi=5, ilce="KADIKOY"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.KARGO, IC_KARGO)
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 3
+    assert bolge_adi(sonuc.planlar[0].bolge_kodu) == "Günlük kargo listesi"
+
+
+def test_64_ile_bayi_deposu_arasinda_aktarma_notu_yazilmaz():
+    """64 ile -1 aynı lokasyonda; aralarında mal gönderme diye bir şey yok."""
+    from app.domain.ic_piyasa import aktarma_notu
+
+    assert aktarma_notu("-1", "64") == ""
+    assert aktarma_notu("64", "-1") == ""
+    assert aktarma_notu("64-V", "-1") == ""
+    # Bozüyük ile Eskişehir arasında not yazılır.
+    assert aktarma_notu("74", "64") == "64 depoya gönderilmelidir"
+    assert aktarma_notu("64", "74") == "74 depoya gönderilmelidir"

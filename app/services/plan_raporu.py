@@ -219,3 +219,41 @@ def rapor_uret(
     hedef.parent.mkdir(parents=True, exist_ok=True)
     kitap.save(hedef)
     return hedef
+
+
+def bekleyen_raporu(satirlar, hedef: Path, modul: str | None = None) -> Path:
+    """Plana giremeyen sipariş satırlarını Excel'e aktarır.
+
+    Beklemede (hacim bekliyor) ve hatalı (master datası eksik) satırlar bir arada,
+    sebep sütunuyla; planlamacı hangi eksiği tamamlayacağını buradan görür.
+    """
+    kitap = yeni_kitap()
+    _sayfa_yaz(
+        kitap, "Bekleyen Siparişler",
+        ["#", "Modül", "Durum", "Teslimat", "Sipariş", "Bayi", "İl", "İlçe", "Depo",
+         "Ürün Kodu", "Ürün Adı", "Adet", "Termin", "Bekleme (gün)", "Sebep"],
+        [
+            [
+                sira,
+                MODUL_ADLARI.get(satir.modul or "-", satir.modul or "-"),
+                satir.durum.value,
+                satir.teslimat_no,
+                satir.siparis_no,
+                satir.bayi_gosterimi,
+                satir.sehir or "",
+                satir.ilce or "",
+                satir.depo_kodu,
+                satir.urun_kodu,
+                satir.gosterilecek_urun_adi,
+                _sayi(satir.miktar),
+                _tarih(satir.termin_tarihi),
+                satir.bekleme_gunu,
+                satir.hata_aciklamasi or "Hacim bekliyor",
+            ]
+            for sira, satir in enumerate(satirlar, start=1)
+        ],
+        genislikler=[5, 12, 12, 16, 16, 30, 14, 14, 8, 14, 34, 10, 12, 13, 46],
+    )
+    hedef.parent.mkdir(parents=True, exist_ok=True)
+    kitap.save(hedef)
+    return hedef

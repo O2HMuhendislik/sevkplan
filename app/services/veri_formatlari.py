@@ -53,8 +53,14 @@ def _ilce_ya_da_bos(deger: object) -> str:
 
 ADRES_ISARETLERI = (
     "MAH", "CAD", " CD", "SOK", " SK", "NO:", "NO :", "BULV", "APT", "OSB",
-    "SANAYI", "SANAYİ", "SİTE", "BLOK", "PLAZA", "ÇARŞI", "KÜME", "KÖY",
+    "SANAYI", "SANAYİ", "SİTE", "BLOK", "PLAZA", "ÇARŞI", "KÜME", " KÖY", "KÖYÜ",
 )
+"""Adres olduğunu gösteren işaretler.
+
+"KÖY" başına boşluk almadan aranmaz: Arnavutköy, Bakırköy, Yeşilköy gibi **ilçe**
+adları da "köy" ile biter; işaret gevşek tutulunca ilçe adres sanılıyor ve yükleme
+formunda ilçe boş kalıyordu.
+"""
 
 
 def adres_gibi_mi(deger: object) -> bool:
@@ -193,6 +199,10 @@ SIPARIS_ALANLARI: tuple[Alan, ...] = (
          "GG.AA.YYYY. Planlama önceliğini belirler: eski termin önce planlanır. "
          "Boşsa sipariş tarihi kullanılır.", None,
          ("Teslim Tarihi", "Sevk Tarihi", "Planlama Tarihi", "PLANLAMA TARİHİ")),
+    Alan("ikinci_not", "Not", False,
+         "Kaynak dosyalarda **ikinci** bir `Not` sütunu daha var ve orada çoğu zaman "
+         "gerçek bayi/alıcı adı duruyor. `BayiAdi` boş geldiğinde yükleme formunda "
+         "bayi adı olarak bu kullanılır.", "SÜHA MAKİNA TES.PAZ.", ()),
     Alan("siparis_satir_no", "Sipariş Satır No", False,
          "Verilmezse ürün kodu satır anahtarı olarak kullanılır.", None,
          ("Satır No", "Kalem No")),

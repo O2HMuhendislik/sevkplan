@@ -319,6 +319,13 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
             ).font = KUCUK
 
     alt = max(y + len(alanlar), sag_satiri) + 2
+    if plan.yukleme_notu:
+        notu = sayfa.cell(row=alt - 1, column=2, value=f"NOT: {plan.yukleme_notu}")
+        notu.font = Font(bold=True, size=10, color="2A507C")
+        notu.alignment = SOLA
+        sayfa.merge_cells(
+            start_row=alt - 1, start_column=2, end_row=alt - 1, end_column=6
+        )
     sayfa.cell(row=alt, column=2, value="Planlayan").font = KALIN
     sayfa.cell(row=alt, column=3, value=plan.olusturan)
     for sira, etiket in enumerate(("Sevk Kontrol", "Adı Soyadı:", "İmzası:")):

@@ -152,3 +152,68 @@ def test_negatif_miktar_reddedilir(db):
         db, kitap(SIPARIS_BASLIK, [["SIP-1", "TSL-1", "KMB-24", -5, "64", "05.09.2026"]]), "s.xlsx"
     )
     assert sonuc.hatali == 1 and "sıfırdan büyük" in sonuc.hatalar[0].mesaj
+
+
+def test_bayi_adi_bossa_ikinci_not_sutunundan_alinir(db, tmp_path):
+    """Kaynak dosyalarda iki `Not` sütunu var; ikincisi çoğu zaman bayi adını taşıyor.
+
+    BayiAdi boş geldiğinde yükleme formunda bayi adı boş kalıyordu.
+    """
+    from openpyxl import Workbook
+
+    from app.models import SiparisSatiri
+    from app.services import ice_aktarim
+    from tests.conftest import urun_ekle
+
+    urun_ekle(db, "U1", palet_ici_adet=10, tir_yukleme_adeti=100)
+
+    kitap = Workbook()
+    sayfa = kitap.active
+    sayfa.append(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu",
+         "BayiAdi", "AliciFirma", "SevkAdresi", "Not", "Tarih", "Not"]
+    )
+    sayfa.append(
+        ["S1", "T1", "U1", 10, "64", "", "20. CADDE NO:36", "ODUNPAZARI",
+         "CIF", None, "SÜHA MAKİNA TES.PAZ."]
+    )
+    dosya = tmp_path / "siparis.xlsx"
+    kitap.save(dosya)
+
+    ice_aktarim.siparisleri_aktar(db, dosya, "siparis.xlsx")
+
+    satir = db.query(SiparisSatiri).filter_by(teslimat_no="T1").one()
+    assert satir.bayi_adi == "SÜHA MAKİNA TES.PAZ."
+    assert satir.bayi_gosterimi == "SÜHA MAKİNA TES.PAZ."
+    # Birinci `Not` teslim şekli olarak okunmaya devam eder.
+    assert satir.incoterms == "CIF"
+
+
+def test_ilce_adi_koy_ile_bitiyorsa_adres_sanilmaz(db, tmp_path):
+    """Arnavutköy, Bakırköy gibi ilçeler adres sanılıp ilçe boş kalıyordu."""
+    from openpyxl import Workbook
+
+    from app.models import SiparisSatiri
+    from app.services import ice_aktarim
+    from tests.conftest import urun_ekle
+
+    urun_ekle(db, "U1", palet_ici_adet=10, tir_yukleme_adeti=100)
+
+    kitap = Workbook()
+    sayfa = kitap.active
+    sayfa.append(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu",
+         "AliciFirma", "SevkAdresi", "Not"]
+    )
+    sayfa.append(
+        ["S1", "T1", "U1", 10, "64",
+         "SAZLIBOSNA MAH. HACIMASLI CAD. 1. BÖLGE 3. ETAP", "ARNAVUTKÖY", "CIF"]
+    )
+    dosya = tmp_path / "siparis.xlsx"
+    kitap.save(dosya)
+
+    ice_aktarim.siparisleri_aktar(db, dosya, "siparis.xlsx")
+
+    satir = db.query(SiparisSatiri).filter_by(teslimat_no="T1").one()
+    assert satir.ilce == "ARNAVUTKOY"
+    assert "SAZLIBOSNA" in (satir.sevk_adresi or "")

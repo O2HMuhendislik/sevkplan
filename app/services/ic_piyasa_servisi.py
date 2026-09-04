@@ -85,8 +85,18 @@ class IcPlanSonucu:
     tip_dagilimi: dict[str, int] = field(default_factory=dict)
 
     def ozet(self) -> str:
+        """Planlama sonucu. Tip dağılımı hem müşteri hem araç sayısını gösterir.
+
+        Eskiden yalnızca müşteri sayısı yazıyordu; "Rutin / parsiyel: 18" görüp
+        18 araç sanılıyordu, oysa o 18 müşteri tek araca binmiş olabilir.
+        """
+        arac_sayilari: dict[str, int] = {}
+        for plan in self.planlar:
+            anahtar = plan.sevkiyat_tipi or ""
+            arac_sayilari[anahtar] = arac_sayilari.get(anahtar, 0) + 1
         dagilim = " · ".join(
-            f"{SevkiyatTipi(tip).ad}: {adet}"
+            f"{SevkiyatTipi(tip).ad}: {adet} müşteri / "
+            f"{arac_sayilari.get(tip, 0)} araç"
             for tip, adet in sorted(self.tip_dagilimi.items())
         )
         metin = (
