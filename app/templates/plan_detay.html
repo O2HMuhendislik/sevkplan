@@ -50,13 +50,29 @@
       gruplanıp aynı plana birden fazla numara verilebilir. Virgülle ayırarak birden
       çok numara girebilirsiniz. En az bir numara girilmeden plan depoya gönderilemez.
     </p>
+    {% if plan.axata_depolari | length > 1 %}
+    <p class="soluk">
+      <b>Bu planda {{ plan.axata_depolari | join(' ve ') }} depoları var.</b> Her depo
+      kendi Axata iş emrini açtığı için numarayı hangi depoya girdiğinizi seçin;
+      yükleme formunda numara yalnızca o deponun satırına yazılır.
+    </p>
+    {% endif %}
+    {% if plan.axatasiz_depolar %}
+    <div class="uyari hata" style="margin-bottom:12px">
+      Şu depoya henüz Axata numarası girilmedi:
+      <b>{{ plan.axatasiz_depolar | join(', ') }}</b>. Yükleme formunda o deponun
+      satırı boş çıkar.
+    </div>
+    {% endif %}
     {% if plan.axata_numaralari %}
     <table style="margin-bottom:12px">
-      <thead><tr><th>Numara</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr></thead>
+      <thead><tr><th>Numara</th><th>Depo</th><th>Açıklama</th><th>Ekleyen</th><th></th></tr></thead>
       <tbody>
       {% for axata in plan.axata_numaralari %}
         <tr>
           <td><b>{{ axata.numara }}</b></td>
+          <td>{% if axata.depo_kodu %}<span class="rozet PLANLANDI">{{ axata.depo_kodu }}</span>
+              {% else %}<span class="soluk">tüm depolar</span>{% endif %}</td>
           <td>{{ axata.aciklama or '—' }}</td>
           <td class="soluk">{{ axata.kullanici }} · {{ axata.olusturma_tarihi | zaman }}</td>
           <td><form method="post"
@@ -72,6 +88,15 @@
     <form class="satir" method="post" action="/ring/planlar/{{ plan.id }}/axata">
       <div><label for="axata_no">Axata No</label>
         <input id="axata_no" name="axata_no" placeholder="5322 veya 5322, 5323" required></div>
+      {% if plan.axata_depolari | length > 1 %}
+      <div><label for="axata_depo">Depo</label>
+        <select id="axata_depo" name="depo_kodu" required>
+          <option value="">Seçin…</option>
+          {% for depo in plan.axata_depolari %}
+            <option value="{{ depo }}">{{ depo }} deposu</option>
+          {% endfor %}
+        </select></div>
+      {% endif %}
       <div><label for="aciklama">Açıklama (opsiyonel)</label>
         <input id="aciklama" name="aciklama" placeholder="Panel grubu" style="width:200px"></div>
       <button type="submit">Ekle</button>

@@ -502,7 +502,62 @@ class SevkiyatPlani(Temel):
 
     @property
     def axata_ozeti(self) -> str:
-        return ", ".join(a.numara for a in self.axata_numaralari)
+        """Bütün Axata numaraları tek satırda; deposu olan '74: 5321' diye yazılır."""
+        return ", ".join(
+            f"{a.depo_kodu}: {a.numara}" if a.depo_kodu else a.numara
+            for a in self.axata_numaralari
+        )
+
+    @property
+    def axata_depolari(self) -> list[str]:
+        """Plandaki Axata iş emri açılabilecek depolar.
+
+        Bayi ortak deposu (-1) hariç tutulur: orası ayrı bir ERP, Axata açılmıyor.
+        Birden fazla depo çıkarsa her depo kendi iş emrini açar ve numara depoya
+        bağlanmalıdır.
+        """
+        from app.domain.iller import ana_depo
+
+        depolar = {
+            ana_depo(satir.depo_kodu)
+            for satir in self.satirlar
+            if satir.depo_kodu and ana_depo(satir.depo_kodu) != "-1"
+        }
+        return sorted(depolar)
+
+    @property
+    def cok_depolu_mu(self) -> bool:
+        """Planda birden fazla Axata deposu var mı? Varsa numara depoya bağlanmalı."""
+        return len(self.axata_depolari) > 1
+
+    def depo_axatalari(self, depo_kodu: str) -> list["AxataNumarasi"]:
+        """Bir depoya yazılacak Axata numaraları.
+
+        Deposu belirtilmemiş numaralar bütün depolar için geçerli sayılır: tek depolu
+        planlarda kullanıcı depo seçmek zorunda kalmasın diye. Böylece eski kayıtlar
+        da (depo alanı boş) formda görünmeye devam eder.
+        """
+        from app.domain.iller import ana_depo
+
+        hedef = ana_depo(depo_kodu)
+        if hedef == "-1":
+            # Bayi ortak deposu ayrı bir ERP'de; orada Axata iş emri açılmıyor.
+            return []
+        return [
+            a
+            for a in self.axata_numaralari
+            if not a.depo_kodu or ana_depo(a.depo_kodu) == hedef
+        ]
+
+    def depo_axata_ozeti(self, depo_kodu: str) -> str:
+        return ", ".join(a.numara for a in self.depo_axatalari(depo_kodu))
+
+    @property
+    def axatasiz_depolar(self) -> list[str]:
+        """Henüz Axata numarası girilmemiş depolar; plan detayında uyarı olarak çıkar."""
+        if not self.axata_numaralari:
+            return []
+        return [d for d in self.axata_depolari if not self.depo_axatalari(d)]
 
     @property
     def profil(self):
@@ -762,6 +817,13 @@ class AxataNumarasi(Temel):
     id: Mapped[int] = mapped_column(primary_key=True)
     plan_id: Mapped[int] = mapped_column(ForeignKey("sevkiyat_planlari.id"), index=True)
     numara: Mapped[str] = mapped_column(String(50), index=True)
+    depo_kodu: Mapped[str | None] = mapped_column(String(20), default=None)
+    """Numaranın ait olduğu depo. Boşsa plandaki bütün depolar için geçerlidir.
+
+    Bir planda birden çok depo olabiliyor (ör. 64 + 74) ve her depo kendi Axata iş
+    emrini açıyor. Numara depoya bağlanmazsa yükleme formunda hangi satıra
+    yazılacağı bilinemiyor; depo yanlış iş emriyle toplama yapıyor.
+    """
     aciklama: Mapped[str | None] = mapped_column(String(200), default=None)
     """Numaranın hangi ürün grubunu kapsadığı (depo operasyonunun notu)."""
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())

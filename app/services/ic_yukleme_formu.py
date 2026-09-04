@@ -37,6 +37,7 @@ from app.services.yukleme_formu import (
     UYARI_METNI,
     UYARI_SATIR_YUKSEKLIGI,
     _depo_satirlari,
+    axata_kutusu,
     cerceve_ciz,
     gridleri_gizle,
 )
@@ -138,6 +139,7 @@ def _ust_blok(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sayfa.merge_cells(start_row=ust + 2, start_column=3, end_row=ust + 3, end_column=4)
 
     depo_satirlari, hedef_etiket = _depo_satirlari(plan.yukleme_deposu or plan.depo_kodu)
+    kutu = axata_kutusu(plan, depo_satirlari, hedef_etiket)
     for sira, depo_adi in enumerate(depo_satirlari):
         satir = ust + 2 + sira
         hucre = sayfa.cell(row=satir, column=5, value=depo_adi)
@@ -147,8 +149,8 @@ def _ust_blok(sayfa, plan: SevkiyatPlani, ust: int) -> int:
         axata = sayfa.cell(row=satir, column=6)
         axata.border = KENAR
         axata.alignment = ORTALI
-        if depo_adi == hedef_etiket:
-            axata.value = plan.axata_ozeti or ""
+        if kutu.get(depo_adi):
+            axata.value = kutu[depo_adi]
             axata.font = KALIN
 
     sayfa.cell(row=ust + 2, column=7, value="AXATA NO").font = KALIN
@@ -213,7 +215,9 @@ def _satir_tablosu(sayfa, plan: SevkiyatPlani, baslik_satiri: int) -> int:
             satir.adres_metni,
             satir.ilce,
             satir.teslimat_no,
-            plan.axata_ozeti or "",
+            # Satırın kendi deposunun iş emri; planda iki depo varsa her satır
+            # kendi numarasını görür (-1 satırlarında Axata yok).
+            plan.depo_axata_ozeti(satir.depo_kodu),
             plan.aktarma_notu(satir),
         ]
         for sutun, deger in enumerate(degerler, start=1):
@@ -311,6 +315,11 @@ def _alt_blok(sayfa, plan: SevkiyatPlani, ilk_satir: int) -> int:
         sayfa.cell(row=sag_satiri, column=6, value="AXATA NUMARALARI").font = KALIN
         for axata in plan.axata_numaralari:
             sag_satiri += 1
+            sayfa.cell(
+                row=sag_satiri,
+                column=6,
+                value=f"{axata.depo_kodu} deposu" if axata.depo_kodu else "",
+            ).font = KUCUK
             sayfa.cell(
                 row=sag_satiri,
                 column=7,

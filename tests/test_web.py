@@ -241,6 +241,22 @@ def test_veri_silme_onayla_calisir(istemci):
 # --------------------------------------------------- İç piyasa modülü uçtan uca
 
 
+def ring_verisi_yukle(istemci):
+    """Ring havuzuna tek depolu (64) bir plan üretir."""
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["U1", "Kombi A", "KOMBİ", 10, 100]],
+    )
+    istemci.post("/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+    siparisler = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi"],
+        [[f"S{i}", f"T{i}", "U1", 20, "64", "ESKİŞEHİR", "BAYİ A"] for i in range(5)],
+    )
+    istemci.post("/ring/siparisler/yukle", files={"dosya": ("s.xlsx", siparisler)})
+    istemci.post("/ring/planlar/uret", data={"depo_kodu": "64"})
+
+
 def ic_piyasa_verisi_yukle(istemci):
     """Ürün + müşteri master datası ve iki müşterili bir sipariş dosyası yükler."""
     urunler = kitap(
@@ -312,7 +328,11 @@ def test_ic_piyasa_plani_uretilir_ve_formu_indirilir(istemci, fabrika):
     assert "64 depoya gönderilmelidir" in detay.text
     assert "Tır girişi olmayan müşteri var" in detay.text
 
-    istemci.post(f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299, 3300"})
+    # Planda 64 ve 74 depoları birlikte; numara depoya bağlanmalı.
+    istemci.post(
+        f"/rota/planlar/{plan_id}/axata",
+        data={"axata_no": "3299, 3300", "depo_kodu": "64"},
+    )
     istemci.post(
         f"/rota/planlar/{plan_id}/arac",
         data={"nakliyeci": "OMSAN", "plaka": "34 ABC 12", "surucu": "Ali Veli",
@@ -804,3 +824,93 @@ def test_manuel_planlama_aramayla_daraltilir(istemci):
     cevap = istemci.get("/rota/manuel-plan", params={"arama": "MANİSA"})
     assert 'value="T2"' in cevap.text
     assert 'value="T1"' not in cevap.text
+
+
+def test_cok_depolu_planda_axata_deposu_secilmeden_girilemez(istemci, fabrika):
+    """64 + 74 planında numara hangi depoya ait belli olmalı.
+
+    Aksi hâlde yükleme formunda numara hangi depo satırına yazılacak bilinmiyor ve
+    depo yanlış iş emriyle toplama yapıyor.
+    """
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"tipler": ["FTL"]})
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
+        assert plan.axata_depolari == ["64", "74"]
+        plan_id = plan.id
+
+    cevap = istemci.post(f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299"})
+    assert "hangi depoya ait olduğu" in sorgu(cevap)
+    with fabrika() as db:
+        assert not db.get(SevkiyatPlani, plan_id).axata_numaralari
+
+    # Planda olmayan depo da reddedilir; numara formda hiçbir satıra düşmezdi.
+    hatali = istemci.post(
+        f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299", "depo_kodu": "34"}
+    )
+    assert "34 deposu bu planda yok" in sorgu(hatali)
+
+    istemci.post(
+        f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299", "depo_kodu": "64"}
+    )
+    istemci.post(
+        f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3400", "depo_kodu": "74"}
+    )
+    with fabrika() as db:
+        plan = db.get(SevkiyatPlani, plan_id)
+        assert plan.depo_axata_ozeti("64") == "3299"
+        assert plan.depo_axata_ozeti("74") == "3400"
+        assert plan.axata_ozeti == "64: 3299, 74: 3400"
+        assert plan.axatasiz_depolar == []
+
+
+def test_yukleme_formunda_her_axata_kendi_depo_satirina_yazilir(istemci, fabrika, tmp_path):
+    from openpyxl import load_workbook
+
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post("/rota/planlar/uret", data={"tipler": ["FTL"]})
+    with fabrika() as db:
+        plan_id = db.query(SevkiyatPlani).filter_by(modul="ROTA").one().id
+    istemci.post(
+        f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3299", "depo_kodu": "64"}
+    )
+    istemci.post(
+        f"/rota/planlar/{plan_id}/axata", data={"axata_no": "3400", "depo_kodu": "74"}
+    )
+
+    dosya = tmp_path / "form.xlsx"
+    dosya.write_bytes(istemci.get(f"/rota/planlar/{plan_id}/form").content)
+    sayfa = load_workbook(dosya).active
+
+    kutu = {}
+    for satir in sayfa.iter_rows(min_col=5, max_col=6, values_only=True):
+        if satir[0] and str(satir[0]).endswith("DEPO"):
+            kutu[str(satir[0])] = satir[1]
+    assert kutu["64-D DEPO"] == "3299"
+    assert kutu["74-DEPO"] == "3400"
+    assert not kutu["34-DEPO"]
+
+
+def test_tek_depolu_planda_axata_deposu_zorunlu_degil(istemci, fabrika):
+    """Ring planlarında tek depo var; kullanıcı her seferinde depo seçmek zorunda kalmaz."""
+    from app.models import SevkiyatPlani
+
+    ring_verisi_yukle(istemci)
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="RING").first()
+        assert plan.axata_depolari == ["64"]
+        assert plan.cok_depolu_mu is False
+        plan_id = plan.id
+
+    cevap = istemci.post(f"/ring/planlar/{plan_id}/axata", data={"axata_no": "AX-1"})
+    assert "Axata numaraları" in sorgu(cevap)
+    with fabrika() as db:
+        plan = db.get(SevkiyatPlani, plan_id)
+        # Deposu boş numara bütün depolar için geçerlidir; formda plan deposuna yazılır.
+        assert plan.axata_numaralari[0].depo_kodu is None
+        assert plan.depo_axata_ozeti("64") == "AX-1"
+

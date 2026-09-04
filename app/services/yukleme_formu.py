@@ -113,12 +113,39 @@ def depo_etiketi(depo_kodu: str) -> str | None:
 
 
 def _depo_satirlari(depo_kodu: str) -> tuple[list[str], str]:
-    """Formun depo/AXATA kutusundaki satırlar ve Axata'nın yazılacağı satır."""
+    """Formun depo/AXATA kutusundaki satırlar ve planın kendi deposunun satırı."""
     etiket = depo_etiketi(depo_kodu)
     if etiket is not None:
         return list(DEPO_SATIRLARI), etiket
     ek = f"{(depo_kodu or '').strip().upper()}-DEPO"
     return [*DEPO_SATIRLARI, ek], ek
+
+
+def axata_kutusu(plan, depo_satirlari: list[str], hedef_etiket: str) -> dict[str, str]:
+    """Depo/AXATA kutusuna basılacak değerler: form satırı -> Axata numaraları.
+
+    Bir planda birden çok depo olabiliyor (ör. 64 + 74) ve her depo kendi Axata iş
+    emrini açıyor. Numara bir depoya bağlıysa **yalnızca o deponun satırına** yazılır;
+    depo yanlış iş emriyle toplama yapmasın diye. Deposu belirtilmemiş numaralar
+    (tek depolu planlar ve eski kayıtlar) planın kendi depo satırına yazılır.
+    """
+    kutu: dict[str, str] = {}
+    baglanmamis = [a.numara for a in plan.axata_numaralari if not a.depo_kodu]
+    for depo in plan.axata_depolari:
+        etiket = depo_etiketi(depo)
+        if etiket is None or etiket not in depo_satirlari:
+            continue
+        numaralar = [
+            a.numara for a in plan.axata_numaralari if a.depo_kodu == depo
+        ]
+        if numaralar:
+            kutu[etiket] = ", ".join(numaralar)
+    if baglanmamis:
+        mevcut = kutu.get(hedef_etiket)
+        kutu[hedef_etiket] = (
+            f"{mevcut}, {', '.join(baglanmamis)}" if mevcut else ", ".join(baglanmamis)
+        )
+    return kutu
 
 
 def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
@@ -153,6 +180,7 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
     sayfa.merge_cells(start_row=ust + 2, start_column=3, end_row=ust + 3, end_column=4)
 
     depo_satirlari, hedef_etiket = _depo_satirlari(plan.depo_kodu)
+    kutu = axata_kutusu(plan, depo_satirlari, hedef_etiket)
     for sira, depo_adi in enumerate(depo_satirlari):
         satir = ust + 2 + sira
         hucre = sayfa.cell(row=satir, column=5, value=depo_adi)
@@ -162,8 +190,8 @@ def _blok_yaz(sayfa, plan: SevkiyatPlani, ust: int) -> int:
         axata = sayfa.cell(row=satir, column=6)
         axata.border = KENAR
         axata.alignment = ORTALI
-        if depo_adi == hedef_etiket:
-            axata.value = plan.axata_ozeti or ""
+        if kutu.get(depo_adi):
+            axata.value = kutu[depo_adi]
             axata.font = KALIN
 
     # Axata numarası kutunun dışında da yazılır: kutuda satırı olmayan bir depo ya da

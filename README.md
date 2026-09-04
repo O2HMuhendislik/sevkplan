@@ -155,7 +155,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Gösterge Paneli** (`/ring`) | Özet metrikler, planlamayı çalıştırma, bekleyen sipariş özeti |
 | **Siparişler** | Excel aktarımı; beklemede / planlandı / tamamlandı / hatalı sekmeleri |
 | **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
-| **Plan Detayı** | Plan içeriği, Axata no girişi, yükleme formu, statü işlemleri, plan geçmişi |
+| **Plan Detayı** | Plan içeriği, Axata no girişi (**depo bazında**), yükleme formu, statü işlemleri, plan geçmişi |
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
@@ -509,9 +509,28 @@ geri kullanılmaz.
 
 Depo operasyonun kullandığı **YÜKLEME FORMLARI (D-RİNG)** düzeni birebir üretilir:
 form no, sefer no, plan sevk tarihi, depo/AXATA kutusu, satır tablosu, toplam adet ve
-imza alanları. Axata iş emri numarası planın deposuna karşılık gelen satıra yazılır ve
-**numara girilmeden plan gönderildi olarak işaretlenemez**. Bir günün bütün planları
-tek dosyaya, her biri ayrı sayfaya basılacak şekilde alt alta yazılabilir.
+imza alanları. **Numara girilmeden plan gönderildi olarak işaretlenemez.** Bir günün
+bütün planları tek dosyaya, her biri ayrı sayfaya basılacak şekilde alt alta
+yazılabilir.
+
+### Axata iş emri hangi depoya ait?
+
+Bir planda birden fazla depo olabiliyor (ör. 64 + 74) ve **her depo kendi Axata iş
+emrini açıyor**. Numara depoya bağlanmazsa yükleme formunda hangi satıra yazılacağı
+bilinemez; depo yanlış iş emriyle toplama yapar.
+
+* Planda birden çok depo varsa Axata girişinde **depo seçimi zorunludur**. Plan
+  detayı depoları listeler, seçilmeden numara kaydedilmez.
+* Planda olmayan bir depo seçilemez — numara formda hiçbir satıra düşmez ve sessizce
+  kaybolurdu.
+* Tek depolu planda (Ring, çoğu ihracat planı) depo seçimi istenmez; numara "tüm
+  depolar" olarak kaydedilir ve planın kendi depo satırına yazılır. Eski kayıtlar da
+  böyle davranır.
+* Yükleme formunda her numara **yalnızca kendi deposunun satırına** basılır. Satır
+  tablosundaki Axata sütunu da satırın kendi deposunun numarasını gösterir.
+* Bir depoya numara girilmemişse plan detayında uyarı çıkar; formda o deponun satırı
+  boş kalır.
+* Bayi ortak deposu (-1) hariçtir: orası ayrı bir ERP, Axata iş emri açılmaz.
 
 ## Proje yapısı
 

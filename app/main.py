@@ -443,13 +443,19 @@ def axata_kaydet(
     plan_id: int,
     axata_no: str = Form(...),
     aciklama: str = Form(""),
+    depo_kodu: str = Form(""),
     kullanici: Kullanici = Depends(modul_yetkisi("RING", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     plan = plan_getir(db, plan_id)
     try:
         plan_servisi.axata_no_gir(
-            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+            db,
+            plan,
+            axata_no,
+            kullanici.kullanici_adi,
+            aciklama.strip() or None,
+            depo_kodu=depo_kodu.strip() or None,
         )
         db.commit()
     except PlanHatasi as hata:
@@ -992,13 +998,19 @@ def rota_axata_kaydet(
     plan_id: int,
     axata_no: str = Form(...),
     aciklama: str = Form(""),
+    depo_kodu: str = Form(""),
     kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     plan = _ic_plan_getir(db, plan_id)
     try:
         plan_servisi.axata_no_gir(
-            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+            db,
+            plan,
+            axata_no,
+            kullanici.kullanici_adi,
+            aciklama.strip() or None,
+            depo_kodu=depo_kodu.strip() or None,
         )
         db.commit()
     except PlanHatasi as hata:
@@ -1405,13 +1417,19 @@ def ihracat_axata_kaydet(
     plan_id: int,
     axata_no: str = Form(...),
     aciklama: str = Form(""),
+    depo_kodu: str = Form(""),
     kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     plan = _ihracat_plan_getir(db, plan_id)
     try:
         plan_servisi.axata_no_gir(
-            db, plan, axata_no, kullanici.kullanici_adi, aciklama.strip() or None
+            db,
+            plan,
+            axata_no,
+            kullanici.kullanici_adi,
+            aciklama.strip() or None,
+            depo_kodu=depo_kodu.strip() or None,
         )
         db.commit()
     except PlanHatasi as hata:

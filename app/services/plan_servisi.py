@@ -605,12 +605,19 @@ def axata_no_gir(
     axata_no: str,
     kullanici: str = "sistem",
     aciklama: str | None = None,
+    depo_kodu: str | None = None,
 ) -> None:
     """Plana bir ya da birden fazla Axata numarası ekler.
 
     Depo operasyonu toplama işini kolaylaştırmak için ürünleri gruplayıp aynı plana
     birden çok numara verebiliyor. Virgül, boşluk ya da noktalı virgülle ayrılmış
     numaralar tek seferde girilebilir.
+
+    `depo_kodu` verilirse numara o depoya bağlanır ve yükleme formunda yalnızca o
+    deponun satırına yazılır. Planda birden çok depo varsa (ör. 64 + 74) her depo
+    kendi iş emrini açtığı için bu şarttır; tek depolu planda boş bırakılabilir.
+    Verilen depo planda yoksa hata döner — yanlış depoya bağlanan numara formda
+    hiçbir satıra düşmez ve sessizce kaybolur.
     """
     if plan.durum in {PlanDurumu.IPTAL, PlanDurumu.TAMAMLANDI}:
         raise PlanHatasi(f"{plan.sefer_no} {plan.durum.value} durumunda, değiştirilemez.")
@@ -620,13 +627,34 @@ def axata_no_gir(
     if not numaralar:
         raise PlanHatasi("Axata numarası boş olamaz.")
 
+    depo = (depo_kodu or "").strip().upper() or None
+    if depo is not None:
+        secenekler = plan.axata_depolari
+        if depo not in secenekler:
+            raise PlanHatasi(
+                f"{depo} deposu bu planda yok. Seçilebilir depolar: "
+                f"{', '.join(secenekler) or 'yok'}."
+            )
+    elif plan.cok_depolu_mu:
+        raise PlanHatasi(
+            f"{plan.sefer_no} planında birden fazla depo var "
+            f"({', '.join(plan.axata_depolari)}). Numaranın hangi depoya ait olduğu "
+            "seçilmelidir; yoksa depo yükleme formunda hangi iş emriyle toplama "
+            "yapacağını bilemez."
+        )
+
     mevcutlar = {a.numara for a in plan.axata_numaralari}
     eklenenler = []
     for numara in numaralar:
         if numara in mevcutlar:
             continue
         plan.axata_numaralari.append(
-            AxataNumarasi(numara=numara, aciklama=aciklama, kullanici=kullanici)
+            AxataNumarasi(
+                numara=numara,
+                depo_kodu=depo,
+                aciklama=aciklama,
+                kullanici=kullanici,
+            )
         )
         mevcutlar.add(numara)
         eklenenler.append(numara)
@@ -635,7 +663,10 @@ def axata_no_gir(
 
     db.flush()
     plan.axata_no = plan.axata_ozeti
-    aciklama_metni = f"Axata no eklendi: {', '.join(eklenenler)}"
+    aciklama_metni = (
+        f"Axata no eklendi: {', '.join(eklenenler)}"
+        + (f" ({depo} deposu)" if depo else "")
+    )
     if plan.durum == PlanDurumu.TASLAK:
         _durum_degistir(db, plan, PlanDurumu.AXATA_BEKLIYOR, aciklama_metni, kullanici)
     else:
