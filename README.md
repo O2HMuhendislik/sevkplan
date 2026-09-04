@@ -73,13 +73,17 @@ gerekçesiyle listeler.
 
 ## Kurumsal kimlik
 
-Başlıktaki logo tek bir dosyadan gelir: **`app/static/logo.svg`**. Depodaki dosya bir
-**yer tutucudur**; marka kılavuzundaki resmî Vaillant Group logosunu bu dosyanın üzerine
-yazmanız yeterlidir, başka hiçbir yeri değiştirmeye gerek yoktur. PNG kullanacaksanız
-`app/static/logo.png` koyup `app/templates/temel.html` ve `app/templates/giris.html`
-içindeki `/static/logo.svg` yollarını `/static/logo.png` yapın. Logo başlıkta beyaz
-zemin üzerinde 34 piksel yüksekliğinde gösterilir; yatay bir logo dosyası en iyi
-sonucu verir.
+Resmî Vaillant Group logosu markadır; depoda yalnızca bir **yer tutucu** durur
+(`app/static/logo.svg`). Gerçek logo **ekrandan yüklenir**:
+
+> **Sistem Yönetimi → Veri Yönetimi → Kurumsal logo → Logoyu yükle**
+
+Yüklenen dosya `veri/marka/` altına yazılır — program klasörüne değil. Yeni sürüm
+kurulduğunda (klasörün üzerine yeni zip açıldığında) logo **silinmez**, kod
+değiştirmek de gerekmez. SVG en iyisidir (her ekranda net görünür); PNG, JPG ve WEBP
+de kabul edilir, en fazla 2 MB. Logo başlıkta ve giriş ekranında beyaz zemin üzerinde
+34 piksel yüksekliğinde gösterilir; yatay bir dosya en iyi sonucu verir. "Logoyu
+kaldır" yer tutucuya döndürür.
 
 ### Renk paleti
 
@@ -155,7 +159,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Master Data** | Ürün tanımlama (tek tek veya Excel ile toplu), palet içi adet |
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
 | **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
-| **Veri Yönetimi** | Seçerek veri silme: planlanmamış siparişler, planlar, tümü |
+| **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
 
 ### İç piyasa modülü (`/rota`)
@@ -348,6 +352,12 @@ planlaması onu almaz. Hepsini bir arada görmenin tek yeri Raporlama modülüd�
 modül sekmeleriyle filtrelenir.
 
 Sipariş dosyası hangi modülün ekranından yüklendiyse o havuza yazılır.
+
+**Sayaçlar ve özetler de modüle bağlıdır.** Gösterge panelindeki "bekleyen sipariş
+satırı", raporlardaki aylık/ürün bazlı özet, sevk-Axata takibi ve bekleyenlerin
+gerekçesi — hepsi yalnızca bulunduğunuz modülün havuzunu sayar. Ring ekranında iç
+piyasa siparişini bekleyen göstermek "planlanması gereken iş var ama listede yok"
+izlenimi veriyordu.
 
 ## Sefer numarası
 

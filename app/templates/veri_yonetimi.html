@@ -21,6 +21,38 @@
     <div class="deger">{{ sayimlar.aktarim }}</div></div>
 </div>
 
+<div class="kart">
+  <h2>Kurumsal logo</h2>
+  <p class="soluk">
+    Başlıkta ve giriş ekranında görünen logo. Depoyla gelen dosya bir
+    <b>yer tutucudur</b>; marka kılavuzundaki resmî Vaillant Group logosunu buradan
+    yükleyin. Yüklenen dosya <code>veri/marka/</code> altında tutulur, program
+    güncellendiğinde silinmez. SVG en iyisidir (her ekranda net görünür); PNG, JPG ve
+    WEBP de kabul edilir, en fazla 2 MB. Logo beyaz zeminde 34 piksel yüksekliğinde
+    gösterilir, yatay bir dosya en iyi sonucu verir.
+  </p>
+  <div class="satir" style="align-items:center; gap:18px">
+    <img src="/marka/logo?s={{ logo_surumu }}" alt="Mevcut logo"
+         style="height:40px; background:#fff; padding:4px; border:1px solid var(--kenar)">
+    <span class="soluk">
+      {% if logo_yuklendi %}Yüklenmiş logo kullanılıyor.
+      {% else %}Şu an <b>yer tutucu</b> gösteriliyor.{% endif %}
+    </span>
+  </div>
+  <form class="satir" method="post" action="/yonetim/logo"
+        enctype="multipart/form-data" style="margin-top:12px">
+    <input type="file" name="dosya" accept=".svg,.png,.jpg,.jpeg,.webp" required>
+    <button type="submit">Logoyu yükle</button>
+  </form>
+  {% if logo_yuklendi %}
+  <form method="post" action="/yonetim/logo/sil" style="margin-top:8px">
+    <button type="submit" class="ikincil"
+            onclick="return confirm('Yüklenen logo silinip yer tutucuya dönülecek. Onaylıyor musunuz?')">
+      Logoyu kaldır</button>
+  </form>
+  {% endif %}
+</div>
+
 <div class="uyari hata">
   <b>Silme işlemleri geri alınamaz.</b> Her işlem için onay kutusuna büyük harfle
   <b>SIL</b> yazmanız gerekir. Emin değilseniz önce <code>veri</code> klasöründeki

@@ -67,6 +67,7 @@ from app.services import (
     ihracat_servisi,
     ihracat_yukleme_formu,
     kullanici_servisi,
+    marka,
     plan_raporu,
     plan_servisi,
     rapor_servisi,
@@ -213,6 +214,8 @@ def sayfa(istek: Request, ad: str, kullanici: Kullanici | None = None, **baglam)
     baglam.setdefault("grup_ici_mix_varsayilan", GRUP_ICI_MIX)
     baglam.setdefault("kullanici", kullanici)
     baglam.setdefault("moduller", MODULLER)
+    # Logo değişince tarayıcı eskisini önbellekten sunmasın.
+    baglam.setdefault("logo_surumu", marka.surum())
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
 
@@ -544,6 +547,35 @@ def yukleme_formu_indir(
     return FileResponse(hedef, filename=hedef.name)
 
 
+@uygulama.get("/marka/logo")
+def marka_logosu():
+    """Başlıktaki logo. Yüklenmemişse depodaki yer tutucu döner.
+
+    Giriş ekranında da gösterildiği için oturum aranmaz.
+    """
+    yol = marka.logo_yolu()
+    return FileResponse(yol, media_type=marka.icerik_turu(yol))
+
+
+@uygulama.post("/yonetim/logo")
+async def marka_logosu_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("YONETIM", duzenleme=True)),
+):
+    try:
+        marka.logo_kaydet(await dosya.read(), dosya.filename or "")
+    except marka.LogoHatasi as hata:
+        return yonlendir("/veri-yonetimi", hata=str(hata))
+    return yonlendir("/veri-yonetimi", mesaj="Logo güncellendi.")
+
+
+@uygulama.post("/yonetim/logo/sil")
+def marka_logosu_sil(kullanici: Kullanici = Depends(modul_yetkisi("YONETIM", duzenleme=True))):
+    if not marka.logo_sil():
+        return yonlendir("/veri-yonetimi", hata="Yüklenmiş logo yok.")
+    return yonlendir("/veri-yonetimi", mesaj="Logo kaldırıldı, yer tutucuya dönüldü.")
+
+
 @uygulama.get("/rapor/plan-raporu")
 def plan_raporu_indir(
     modul: str = "",
@@ -595,13 +627,13 @@ def raporlar(
         istek,
         "raporlar.html",
         kullanici,
-        ozet=rapor_servisi.gosterge_paneli(db),
-        aylik=rapor_servisi.aylik_ozet(db),
-        urun_bazli=rapor_servisi.urun_bazli_ozet(db),
+        ozet=rapor_servisi.gosterge_paneli(db, modul="RING"),
+        aylik=rapor_servisi.aylik_ozet(db, modul="RING"),
+        urun_bazli=rapor_servisi.urun_bazli_ozet(db, modul="RING"),
         bekleyenler=rapor_servisi.bekleyen_ozeti(db, modul="RING"),
         hatalilar=rapor_servisi.hatali_ozeti(db, modul="RING"),
         profil=depo_profili(RING_DEPO_KODU),
-        sevk_durumu=rapor_servisi.sevk_durumu(db),
+        sevk_durumu=rapor_servisi.sevk_durumu(db, modul="RING"),
     )
 
 
@@ -1707,7 +1739,13 @@ def veri_yonetimi(
     kullanici: Kullanici = Depends(modul_yetkisi("YONETIM")),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    return sayfa(istek, "veri_yonetimi.html", kullanici, sayimlar=temizleme.sayimlar(db))
+    return sayfa(
+        istek,
+        "veri_yonetimi.html",
+        kullanici,
+        sayimlar=temizleme.sayimlar(db),
+        logo_yuklendi=marka.yuklenen_logo() is not None,
+    )
 
 
 @uygulama.post("/veri-yonetimi/sil")

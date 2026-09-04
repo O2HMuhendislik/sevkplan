@@ -410,14 +410,57 @@ def test_baslikta_marka_ve_logo_var(istemci):
     cevap = istemci.get("/")
     assert "Vaillant Group" in cevap.text
     assert "Nakliye Yönetim Sistemi" in cevap.text
-    assert '/static/logo.svg' in cevap.text
-    assert istemci.get("/static/logo.svg").status_code == 200
+    assert "/marka/logo" in cevap.text
+    # Logo yüklenmemişken depodaki yer tutucu döner.
+    logo = istemci.get("/marka/logo")
+    assert logo.status_code == 200
+    assert logo.headers["content-type"].startswith("image/svg")
 
 
 def test_giris_ekraninda_da_marka_gorunur(ham_istemci):
     cevap = ham_istemci.get("/giris")
     assert "Nakliye Yönetim Sistemi" in cevap.text
-    assert '/static/logo.svg' in cevap.text
+    assert "/marka/logo" in cevap.text
+    # Giriş ekranında oturum yok; logo yine de açılmalı.
+    assert ham_istemci.get("/marka/logo").status_code == 200
+
+
+def test_resmi_logo_ekrandan_yuklenir(istemci, tmp_path, monkeypatch):
+    """Resmî logo markadır; depoda yer tutucu durur, gerçeği ekrandan yüklenir."""
+    from app.services import marka
+
+    monkeypatch.setattr(marka, "LOGO_DIZINI", tmp_path / "marka")
+
+    tek_piksel = bytes.fromhex(
+        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+        "890000000a49444154789c6360000002000100ffff03000006000557bfabd400"
+        "00000049454e44ae426082"
+    )
+    cevap = istemci.post(
+        "/yonetim/logo", files={"dosya": ("vaillant.png", tek_piksel, "image/png")}
+    )
+    assert "Logo güncellendi" in sorgu(cevap)
+
+    logo = istemci.get("/marka/logo")
+    assert logo.headers["content-type"] == "image/png"
+    assert logo.content == tek_piksel
+
+    # Kaldırılınca yer tutucuya dönülür.
+    cevap = istemci.post("/yonetim/logo/sil")
+    assert "yer tutucuya" in sorgu(cevap)
+    assert istemci.get("/marka/logo").headers["content-type"].startswith("image/svg")
+
+
+def test_gecersiz_logo_dosyasi_reddedilir(istemci, tmp_path, monkeypatch):
+    from app.services import marka
+
+    monkeypatch.setattr(marka, "LOGO_DIZINI", tmp_path / "marka")
+
+    cevap = istemci.post(
+        "/yonetim/logo", files={"dosya": ("logo.txt", b"merhaba", "text/plain")}
+    )
+    assert "Desteklenmeyen dosya türü" in sorgu(cevap)
+    assert marka.yuklenen_logo() is None
 
 
 def test_moduller_ayri_siparis_havuzu_kullanir(istemci, fabrika):
@@ -662,3 +705,36 @@ def test_plan_raporu_ozet_urun_grubu_ve_sevk_durumu_uretir(istemci, fabrika, tmp
     planlar = kitap_["Planlar"]
     assert planlar["A1"].value == "#" and planlar["A2"].value == 1
     assert "Konteyner No" in [h.value for h in kitap_["Sevk Durumu"][1]]
+
+
+def _bekleyen_sayaci(sayfa: str) -> int:
+    """Gösterge panelindeki "Bekleyen sipariş satırı" metriğinin değeri."""
+    import re
+
+    eslesme = re.search(
+        r"Bekleyen sipariş satırı</div>\s*<div class=\"deger\">(\d+)<", sayfa
+    )
+    assert eslesme, "Bekleyen sipariş satırı metriği bulunamadı"
+    return int(eslesme.group(1))
+
+
+def test_baska_modulun_siparisi_ring_sayacinda_gorunmez(istemci, fabrika):
+    """Havuzlar ayrı: iç piyasaya yüklenen sipariş Ring gösterge panelinde sayılmaz.
+
+    Sayılırsa kullanıcı "planlanmayı bekleyen iş var ama listede yok" sanıyor.
+    """
+    from app.models import SiparisSatiri
+    from app.services import rapor_servisi
+
+    ic_piyasa_verisi_yukle(istemci)
+    with fabrika() as db:
+        assert db.query(SiparisSatiri).filter_by(modul="ROTA").count() > 0
+        ring = rapor_servisi.gosterge_paneli(db, modul="RING")
+        rota = rapor_servisi.gosterge_paneli(db, modul="ROTA")
+
+    assert ring["siparis"] == {}
+    assert rota["siparis"].get("BEKLEMEDE", 0) > 0
+
+    # Ekranda da görünmemeli: Ring panelindeki sayaç sıfır, iç piyasada dolu.
+    assert _bekleyen_sayaci(istemci.get("/ring").text) == 0
+    assert _bekleyen_sayaci(istemci.get("/rota").text) > 0

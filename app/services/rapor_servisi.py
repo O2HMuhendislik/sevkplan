@@ -124,14 +124,19 @@ def izleme_sorgusu(db: Session, anahtar: str) -> dict:
 
 
 def gosterge_paneli(db: Session, modul: str | None = None) -> dict:
-    """Ana ekran özet metrikleri. `modul` verilirse yalnızca o modülün planları sayılır."""
-    siparis_durumlari = dict(
-        db.execute(
-            select(SiparisSatiri.durum, func.count(SiparisSatiri.id)).group_by(
-                SiparisSatiri.durum
-            )
-        ).all()
-    )
+    """Ana ekran özet metrikleri.
+
+    `modul` verilirse **hem siparişler hem planlar** yalnızca o modülden sayılır.
+    Havuzlar ayrı olduğu için Ring ekranında iç piyasa siparişini "bekleyen" diye
+    göstermek yanıltıyordu: kullanıcı planlanmayı bekleyen bir iş var sanıyor, oysa
+    o satırı planlayacak modül başka.
+    """
+    siparis_sorgusu = select(
+        SiparisSatiri.durum, func.count(SiparisSatiri.id)
+    ).group_by(SiparisSatiri.durum)
+    if modul:
+        siparis_sorgusu = siparis_sorgusu.where(SiparisSatiri.modul == modul)
+    siparis_durumlari = dict(db.execute(siparis_sorgusu).all())
     plan_sorgusu = select(
         SevkiyatPlani.durum, func.count(SevkiyatPlani.id)
     ).group_by(SevkiyatPlani.durum)
@@ -156,9 +161,9 @@ def gosterge_paneli(db: Session, modul: str | None = None) -> dict:
     }
 
 
-def urun_bazli_ozet(db: Session) -> list[dict]:
-    """Ürün bazında plan / palet / doluluk özeti."""
-    satirlar = db.execute(
+def urun_bazli_ozet(db: Session, modul: str | None = None) -> list[dict]:
+    """Ürün bazında plan / palet / doluluk özeti. `modul` verilirse o modülle sınırlı."""
+    sorgu = (
         select(
             SevkiyatPlani.planlama_anahtari,
             SevkiyatPlani.urun_kodlari,
@@ -169,7 +174,10 @@ def urun_bazli_ozet(db: Session) -> list[dict]:
         .where(SevkiyatPlani.durum != PlanDurumu.IPTAL)
         .group_by(SevkiyatPlani.planlama_anahtari, SevkiyatPlani.urun_kodlari)
         .order_by(func.count(SevkiyatPlani.id).desc())
-    ).all()
+    )
+    if modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == modul)
+    satirlar = db.execute(sorgu).all()
     return [
         {
             "anahtar": anahtar,
@@ -182,8 +190,9 @@ def urun_bazli_ozet(db: Session) -> list[dict]:
     ]
 
 
-def aylik_ozet(db: Session) -> list[dict]:
-    satirlar = db.execute(
+def aylik_ozet(db: Session, modul: str | None = None) -> list[dict]:
+    """Dönem bazında plan özeti. `modul` verilirse o modülle sınırlı."""
+    sorgu = (
         select(
             SevkiyatPlani.donem,
             func.count(SevkiyatPlani.id),
@@ -193,7 +202,10 @@ def aylik_ozet(db: Session) -> list[dict]:
         .where(SevkiyatPlani.durum != PlanDurumu.IPTAL)
         .group_by(SevkiyatPlani.donem)
         .order_by(SevkiyatPlani.donem.desc())
-    ).all()
+    )
+    if modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == modul)
+    satirlar = db.execute(sorgu).all()
     return [
         {
             "donem": f"20{donem[:2]}-{donem[2:]}",
@@ -205,11 +217,13 @@ def aylik_ozet(db: Session) -> list[dict]:
     ]
 
 
-def sevk_durumu(db: Session, limit: int = 200) -> list[SevkiyatPlani]:
+def sevk_durumu(
+    db: Session, limit: int = 200, modul: str | None = None
+) -> list[SevkiyatPlani]:
     """Axata ve gönderim takibi için plan listesi.
 
     Henüz tamamlanmamış planlar önce gelir; böylece Axata numarası girilmeyi bekleyen
-    planlar listenin başında görünür.
+    planlar listenin başında görünür. `modul` verilirse o modülle sınırlı.
     """
     sorgu = (
         select(SevkiyatPlani)
@@ -221,6 +235,8 @@ def sevk_durumu(db: Session, limit: int = 200) -> list[SevkiyatPlani]:
             SevkiyatPlani.sefer_no.desc(),
         )
     )
+    if modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == modul)
     return list(db.scalars(sorgu.limit(limit)).all())
 
 
