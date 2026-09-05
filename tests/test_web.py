@@ -1150,6 +1150,24 @@ def test_uc_planlama_modulu_ayni_ekranlari_sunar(istemci):
         assert istemci.get(f"{kok}/raporlar/plan-excel").status_code == 200
 
 
+def test_ring_planinda_yerlesim_ekrani_yok(istemci, fabrika):
+    """Yerleşim planı iç piyasa ve ihracatta var, ring'de yok.
+
+    Ring planı tek üründen ve tek depo çıkışından oluşur; araç tek noktaya
+    boşaltılır, durak sırası yoktur. Palet palet yerleşim çizmenin depoya
+    kattığı bir bilgi olmuyordu.
+    """
+    yollar = {r.path for r in uygulama.routes if hasattr(r, "path")}
+    assert "/ring/planlar/{plan_id}/yerlesim" not in yollar
+    assert "/rota/planlar/{plan_id}/yerlesim" in yollar
+    assert "/ihracat/planlar/{plan_id}/yerlesim" in yollar
+
+    # Plan detayında da düğmesi kalmamalı.
+    kombi_plan_id, _ = _urun_bagi_ortami(fabrika)
+    detay = istemci.get(f"/ring/planlar/{kombi_plan_id}")
+    assert "Yerleşim planı" not in detay.text
+
+
 def test_ihracat_plan_listesi_eski_adresten_filtresiyle_yonlenir(istemci):
     """Eski /ihracat/plan-excel adresi filtreyi kaybetmeden yeni adrese gider."""
     cevap = istemci.get(

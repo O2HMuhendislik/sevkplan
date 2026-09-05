@@ -2722,7 +2722,13 @@ for _eski, _yeni in ESKI_MASTERDATA_ADRESLERI.items():
 
 
 # ------------------------------------------------------- araç içi yerleşim (istif)
-ISTIF_MODULLERI = {"RING": "/ring", "ROTA": "/rota", "IHRACAT": "/ihracat"}
+ISTIF_MODULLERI = {"ROTA": "/rota", "IHRACAT": "/ihracat"}
+"""Yerleşim planı olan modüller.
+
+**Ring'de yok.** Ring planı tek üründen ve tek depo çıkışından oluşur; araç
+tek noktaya boşaltılır, durak sırası diye bir şey yoktur. Palet palet yerleşim
+çizmenin depoya kattığı bir bilgi olmuyordu — ekran kaldırıldı.
+"""
 
 
 def _istif_sayfasi(
@@ -2749,16 +2755,6 @@ def _istif_sayfasi(
         modul_kodu=modul_kodu,
         taban=ISTIF_MODULLERI[modul_kodu],
     )
-
-
-@uygulama.get("/ring/planlar/{plan_id}/yerlesim")
-def ring_istif(
-    istek: Request,
-    plan_id: int,
-    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
-    db: Session = Depends(oturum_bagimliligi),
-):
-    return _istif_sayfasi(istek, kullanici, db, plan_id, "RING")
 
 
 @uygulama.get("/rota/planlar/{plan_id}/yerlesim")

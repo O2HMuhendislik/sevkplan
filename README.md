@@ -160,7 +160,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar**; üç modülde de var |
 | **Bekleyenler** | Plana giremeyen sipariş satırları, satır satır gerekçesiyle; üç modülde de var |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
-| **Araç İçi Yerleşim** | Planın palet palet yerleşimi: üstten, yandan ve 3B görünüş + yükleme sırası |
+| **Araç İçi Yerleşim** | Planın palet palet yerleşimi: üstten, yandan ve 3B görünüş + yükleme sırası. **İç piyasa ve ihracatta var, ring'de yok** — ring planı tek üründür ve tek noktaya boşaltılır |
 | **Sipariş İzleme** (`/raporlama/izleme`) | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama. Sorgu **bütün modüllerde** aradığı için Raporlama modülünde durur (eski adres `/ring/izleme`) |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
@@ -484,9 +484,14 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 
 ## Araç içi yerleşim (istif) planı
 
-Her plan detayındaki **Yerleşim planı** düğmesi aracın üstten görünüşünü çizer:
-hangi palet nereye, hangi sırayla yüklenecek. Depo bugüne kadar yalnızca satır
-listesini görüyordu; malın araca hangi sırayla konulacağı yükleyicinin kafasındaydı.
+İç piyasa ve ihracat plan detayındaki **Yerleşim planı** düğmesi aracın üstten
+görünüşünü çizer: hangi palet nereye, hangi sırayla yüklenecek. Depo bugüne kadar
+yalnızca satır listesini görüyordu; malın araca hangi sırayla konulacağı yükleyicinin
+kafasındaydı.
+
+**Ring modülünde bu ekran yoktur.** Ring planı tek üründen ve tek depo çıkışından
+oluşur; araç tek noktaya boşaltılır, durak sırası diye bir şey yoktur. Palet palet
+yerleşim çizmenin depoya kattığı bir bilgi olmuyordu.
 
 **Ters rota sırası.** En son uğranacak durağın malı en dibe (kabin tarafına), ilk
 durağın malı kapıya konur. Aksi hâlde ilk durakta bütün aracı boşaltmak gerekir.
