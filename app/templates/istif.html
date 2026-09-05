@@ -52,64 +52,234 @@
 {% endif %}
 
 <div class="kart">
-  <h2>Üstten görünüş</h2>
+  <h2>Araç görünüşleri</h2>
   <p class="soluk">
-    Sol taraf <b>kabin</b> (dip), sağ taraf <b>kapı</b>. Renkler durakları gösterir.
-    Bir paletin kapladığı yer, o ürünün master datasındaki <b>tır/kamyon palet</b>
-    sayısından gelir — çizim planın doluluk yüzdesiyle aynı ölçüyü kullanır.
+    Üçü de aynı yerleşimden çizilir. <b>Üstten</b> zemini, <b>yandan</b> istif
+    katlarını, <b>3B</b> ikisini birden gösterir. Sol taraf <b>kabin</b> (dip), sağ
+    taraf <b>kapı</b>; renkler durakları gösterir. Kutuların üstündeki numara
+    <b>yükleme sırasıdır</b>: 1 önce yüklenir.
   </p>
-  <div style="overflow-x:auto">
+
+  <div class="gorunus-sekmeleri">
+    <button type="button" class="aktif" data-gorunus="ust">Üstten</button>
+    <button type="button" data-gorunus="yan">Yandan</button>
+    <button type="button" data-gorunus="uc">3 boyutlu</button>
+  </div>
+
+  <div class="gorunus" id="gorunus-ust">
     <svg viewBox="0 0 {{ cizim.genislik }} {{ cizim.yukseklik }}" width="100%"
          style="min-width:900px;max-width:1400px" role="img"
          aria-label="Araç zemininin üstten görünüşü">
-      <rect x="0" y="0" width="{{ cizim.genislik }}" height="{{ cizim.yukseklik }}"
-            fill="#ffffff"/>
-      <!-- dorse gövdesi -->
+      <rect x="0" y="0" width="{{ cizim.genislik }}" height="{{ cizim.yukseklik }}" fill="#ffffff"/>
       <rect x="{{ cizim.sol }}" y="{{ cizim.ust }}" width="{{ cizim.zemin_genislik }}"
             height="{{ cizim.zemin_yukseklik }}" fill="var(--vg-gri-20)"
             stroke="var(--ana)" stroke-width="2"/>
-      {% for p in cizim.paletler %}
-        <g>
-          <rect x="{{ p.x }}" y="{{ p.y }}" width="{{ p.w }}" height="{{ p.h }}"
-                fill="{{ p.renk }}" stroke="#ffffff" stroke-width="1.5"
-                opacity="{{ 0.55 if p.kirik else 0.9 }}"/>
-          {% if p.w > 46 %}
-            <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + p.h / 2 - 4 }}"
-                  text-anchor="middle" font-size="10" font-weight="700" fill="#ffffff">
-              {{ p.kod }}</text>
-            <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + p.h / 2 + 9 }}"
-                  text-anchor="middle" font-size="9" fill="#ffffff">
-              {{ p.adet }}{{ ' *' if p.kirik }}</text>
-          {% endif %}
-          {% for ust in p.ustundekiler %}
-            <rect x="{{ p.x + 3 }}" y="{{ p.y + 3 + loop.index0 * 13 }}"
-                  width="{{ p.w - 6 }}" height="11" rx="3" fill="{{ ust.renk }}"
-                  stroke="#ffffff" stroke-width="1"/>
-            {% if p.w > 46 %}
-              <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + 12 + loop.index0 * 13 }}"
-                    text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">
-                +{{ ust.kod }} {{ ust.adet }}</text>
-            {% endif %}
-          {% endfor %}
-        </g>
+      {% for p in cizim.paletler if p.zeminde %}
+        <rect x="{{ p.x }}" y="{{ p.y }}" width="{{ p.w }}" height="{{ p.h }}"
+              fill="{{ p.renk }}" stroke="#ffffff" stroke-width="1.5"
+              opacity="{{ 0.6 if p.kirik else 0.92 }}"/>
+        <text x="{{ p.x + p.w / 2 }}" y="{{ p.y + p.h / 2 }}" text-anchor="middle"
+              fill="#ffffff" font-size="{{ 10 if p.w > 54 else 8 }}" font-weight="700"
+              {% if p.w < 54 %}transform="rotate(-90 {{ p.x + p.w / 2 }} {{ p.y + p.h / 2 }})"{% endif %}>
+          <tspan x="{{ p.x + p.w / 2 }}" dy="-4">{{ p.sira }}. {{ p.kod }}</tspan>
+          <tspan x="{{ p.x + p.w / 2 }}" dy="12">{{ p.adet }}{{ ' *' if p.kirik }}</tspan>
+        </text>
       {% endfor %}
-      <!-- yükleme sırası şeridi -->
-      {% for s in cizim.siralar %}
-        <text x="{{ s.x }}" y="{{ cizim.ust - 6 }}" text-anchor="middle" font-size="10"
-              fill="var(--soluk)">{{ s.no }}</text>
-      {% endfor %}
-      <text x="{{ cizim.sol }}" y="{{ cizim.ust + cizim.zemin_yukseklik + 18 }}"
-            font-size="11" font-weight="700" fill="var(--ana)">KABİN — önce yüklenir</text>
-      <text x="{{ cizim.sol + cizim.zemin_genislik }}"
-            y="{{ cizim.ust + cizim.zemin_yukseklik + 18 }}" text-anchor="end"
-            font-size="11" font-weight="700" fill="var(--ana)">KAPI — ilk durak</text>
+      <text x="{{ cizim.sol }}" y="{{ cizim.ust - 10 }}" font-size="11" font-weight="700"
+            fill="var(--ana)">KABİN — önce yüklenir</text>
+      <text x="{{ cizim.sol + cizim.zemin_genislik }}" y="{{ cizim.ust - 10 }}"
+            text-anchor="end" font-size="11" font-weight="700" fill="var(--ana)">KAPI — ilk durak</text>
     </svg>
   </div>
-  <p class="soluk">Yıldızlı (*) paletler kırıktır: üzerinde tam palet adedinden az ürün var.</p>
+
+  <div class="gorunus" id="gorunus-yan" hidden>
+    <svg viewBox="0 0 {{ cizim.genislik }} {{ cizim.yan_toplam_yukseklik }}" width="100%"
+         style="min-width:900px;max-width:1400px" role="img"
+         aria-label="Araç yükünün yandan görünüşü">
+      <rect x="0" y="0" width="{{ cizim.genislik }}" height="{{ cizim.yan_toplam_yukseklik }}" fill="#ffffff"/>
+      <rect x="{{ cizim.sol }}" y="{{ cizim.ust }}" width="{{ cizim.zemin_genislik }}"
+            height="{{ cizim.yan_yukseklik }}" fill="var(--vg-gri-20)"
+            stroke="var(--ana)" stroke-width="2"/>
+      {% for p in cizim.paletler %}
+        <rect x="{{ p.x }}" y="{{ p.yan_y }}" width="{{ p.w }}" height="{{ p.yan_h }}"
+              fill="{{ p.renk }}" stroke="#ffffff" stroke-width="1.5"
+              opacity="{{ 0.6 if p.kirik else 0.92 }}"/>
+        {% if p.w > 54 and p.yan_h > 22 %}
+          <text x="{{ p.x + p.w / 2 }}" y="{{ p.yan_y + p.yan_h / 2 + 3 }}"
+                text-anchor="middle" fill="#ffffff" font-size="9" font-weight="700">
+            {{ p.sira }}. {{ p.kod }}</text>
+        {% endif %}
+      {% endfor %}
+      <text x="{{ cizim.sol }}" y="{{ cizim.ust - 10 }}" font-size="11" font-weight="700"
+            fill="var(--ana)">KABİN</text>
+      <text x="{{ cizim.sol + cizim.zemin_genislik }}" y="{{ cizim.ust - 10 }}"
+            text-anchor="end" font-size="11" font-weight="700" fill="var(--ana)">KAPI</text>
+      <text x="{{ cizim.sol - 6 }}" y="{{ cizim.ust + 12 }}" text-anchor="end"
+            font-size="10" fill="var(--soluk)">{{ cizim.arac_yukseklik }} cm</text>
+    </svg>
+    <p class="soluk">
+      Yandan görünüşte araç genişliği katlanır: yan yana duran paletler üst üste
+      binmiş görünür. Üst kata konan paletler tabanlarının üstünde durur.
+    </p>
+  </div>
+
+  <div class="gorunus" id="gorunus-uc" hidden>
+    <div class="sahne" id="sahne">
+      <div class="dunya" id="dunya"></div>
+      <div class="sahne-etiket" style="left:10px;top:10px">KABİN tarafı solda</div>
+      <div class="sahne-yardim">Sürükleyerek çevirin · tekerlekle yakınlaştırın</div>
+    </div>
+    <p class="soluk">
+      Kutuların üstündeki numara yükleme sırasıdır. Çizim
+      <b>{{ cizim.arac_uzunluk }} × {{ cizim.arac_genislik }} × {{ cizim.arac_yukseklik }} cm</b>
+      araç iç ölçüsüne göredir.
+    </p>
+  </div>
+</div>
+
+<script id="istif-verisi" type="application/json">{{ cizim.paletler | tojson }}</script>
+<script>
+(function () {
+  var sekmeler = document.querySelectorAll('.gorunus-sekmeleri button');
+  var gorunusler = { ust: 'gorunus-ust', yan: 'gorunus-yan', uc: 'gorunus-uc' };
+  sekmeler.forEach(function (dugme) {
+    dugme.addEventListener('click', function () {
+      sekmeler.forEach(function (d) { d.classList.remove('aktif'); });
+      dugme.classList.add('aktif');
+      Object.keys(gorunusler).forEach(function (ad) {
+        document.getElementById(gorunusler[ad]).hidden = ad !== dugme.dataset.gorunus;
+      });
+      if (dugme.dataset.gorunus === 'uc') { uculuKur(); }
+    });
+  });
+
+  var kuruldu = false;
+  var acilar = { x: -22, y: -34 }, yakinlik = 0.34;
+  var arac = {
+    uzunluk: {{ cizim.arac_uzunluk }},
+    genislik: {{ cizim.arac_genislik }},
+    yukseklik: {{ cizim.arac_yukseklik }}
+  };
+
+  function yuz(sinif, genislik, yukseklik, donusum, renk, etiket) {
+    var d = document.createElement('div');
+    d.className = 'yuz ' + sinif;
+    d.style.width = genislik + 'px';
+    d.style.height = yukseklik + 'px';
+    d.style.background = renk;
+    d.style.transform = donusum;
+    if (etiket) { d.innerHTML = '<div class="etiket">' + etiket + '</div>'; }
+    return d;
+  }
+
+  function uculuKur() {
+    if (kuruldu) { return; }
+    kuruldu = true;
+    var dunya = document.getElementById('dunya');
+    var paletler = JSON.parse(document.getElementById('istif-verisi').textContent);
+    // Araç merkezine göre konumlanır ki döndürünce ortada kalsın.
+    var mx = arac.uzunluk / 2, my = arac.genislik / 2;
+
+    var zemin = document.createElement('div');
+    zemin.className = 'zemin-yuz';
+    zemin.style.width = arac.uzunluk + 'px';
+    zemin.style.height = arac.genislik + 'px';
+    zemin.style.transform = 'translate3d(' + (-mx) + 'px,' + (-my) + 'px,0)';
+    dunya.appendChild(zemin);
+
+    var cerceve = document.createElement('div');
+    cerceve.className = 'dorse-cerceve';
+    cerceve.style.width = arac.uzunluk + 'px';
+    cerceve.style.height = arac.genislik + 'px';
+    cerceve.style.transform =
+      'translate3d(' + (-mx) + 'px,' + (-my) + 'px,' + arac.yukseklik + 'px)';
+    dunya.appendChild(cerceve);
+
+    paletler.forEach(function (p) {
+      var kutu = document.createElement('div');
+      kutu.className = 'kutu';
+      var x = p.cm_x - mx, y = p.cm_y - my, z = p.cm_z;
+      var u = p.cm_uzunluk, g = p.cm_genislik, h = p.cm_yukseklik;
+      kutu.style.transform = 'translate3d(' + x + 'px,' + y + 'px,' + z + 'px)';
+      var etiket = p.sira + '. ' + p.kod + '<br>' + p.adet + (p.kirik ? ' *' : '');
+      // Üç yüz yeterli: üstten, kapı tarafından ve yandan bakıldığında dolu görünür.
+      kutu.appendChild(yuz('ust', u, g, 'translateZ(' + h + 'px)', p.renk, etiket));
+      kutu.appendChild(yuz('on', u, h,
+        'translateY(' + g + 'px) rotateX(-90deg)', p.renk, ''));
+      kutu.appendChild(yuz('yan', g, h,
+        'translateX(' + u + 'px) rotateY(90deg) rotateZ(90deg)', p.renk, ''));
+      dunya.appendChild(kutu);
+    });
+    ciz();
+  }
+
+  function ciz() {
+    var dunya = document.getElementById('dunya');
+    if (!dunya) { return; }
+    dunya.style.transform =
+      'scale(' + yakinlik + ') rotateX(' + acilar.x + 'deg) rotateZ(' + acilar.y + 'deg)';
+  }
+
+  var sahne = document.getElementById('sahne');
+  var suruklu = false, sonX = 0, sonY = 0;
+  sahne.addEventListener('pointerdown', function (o) {
+    suruklu = true; sonX = o.clientX; sonY = o.clientY;
+    sahne.setPointerCapture(o.pointerId);
+  });
+  sahne.addEventListener('pointermove', function (o) {
+    if (!suruklu) { return; }
+    acilar.y += (o.clientX - sonX) * 0.4;
+    acilar.x = Math.max(-89, Math.min(0, acilar.x - (o.clientY - sonY) * 0.4));
+    sonX = o.clientX; sonY = o.clientY;
+    ciz();
+  });
+  ['pointerup', 'pointercancel'].forEach(function (olay) {
+    sahne.addEventListener(olay, function () { suruklu = false; });
+  });
+  sahne.addEventListener('wheel', function (o) {
+    o.preventDefault();
+    yakinlik = Math.max(0.12, Math.min(1.2, yakinlik * (o.deltaY > 0 ? 0.9 : 1.1)));
+    ciz();
+  }, { passive: false });
+})();
+</script>
+
+<div class="kart">
+  <h2>Yükleme sırası</h2>
+  <p class="soluk">
+    Depo bu sırayla yükler. <b>1 numara en dibe</b> (kabin tarafına) konur ve son
+    durakta iner; son numara kapıya en yakındır ve ilk durakta iner.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Sıra</th><th>Ürün</th><th class="sag">Palet</th><th class="sag">Adet</th>
+      <th>Durak</th><th>Üstüne konacak</th>
+    </tr></thead>
+    <tbody>
+    {% for y in yukleme %}
+      <tr>
+        <td><span class="rozet" style="background:{{ y.renk }};color:#fff;border-color:{{ y.renk }}">
+          {{ y.sira }}</span></td>
+        <td><b>{{ y.kod }}</b><div class="soluk">{{ y.urun_adi }}</div></td>
+        <td class="sag">{{ y.palet }}{% if y.kirik %}<div class="soluk">{{ y.kirik }} kırık</div>{% endif %}</td>
+        <td class="sag">{{ y.adet | sayi }}</td>
+        <td>{{ y.durak.sira }}. {{ y.durak.ad }}
+          <div class="soluk">{{ y.durak.il }}{% if y.durak.ilce %} / {{ y.durak.ilce }}{% endif %}</div></td>
+        <td class="soluk">
+          {% if y.ustundekiler %}
+            {% for u in y.ustundekiler %}
+              <div><span class="rozet" style="background:{{ u.renk }};color:#fff;border-color:{{ u.renk }}">üst</span>
+                {{ u.kod }} · {{ u.adet | sayi }} adet · {{ u.durak_adi }}</div>
+            {% endfor %}
+          {% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 
 <div class="kart">
-  <h2>Durak sırası ve yükleme</h2>
+  <h2>Durak özeti</h2>
   <table>
     <thead><tr>
       <th>Yükleme</th><th>Rota</th><th>Bayi</th><th>İl / İlçe</th>

@@ -236,3 +236,48 @@ td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600;
   .kart { border: 0; padding: 0; margin-bottom: 12px; break-inside: avoid; }
   .izgara.dort { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ------------------------------------------------------- araç içi yerleşim (istif)
+ *
+ * 3B görünüş saf CSS ile çizilir; harici bir kütüphane yüklenmez. Program şirket
+ * içi bir sunucuda çalışıyor ve internet erişimine bağlı olmamalı.
+ */
+.gorunus-sekmeleri { display: flex; gap: 6px; margin-bottom: 12px; }
+.gorunus-sekmeleri button {
+  background: #fff; color: var(--ana); border: 1px solid var(--kenar);
+}
+.gorunus-sekmeleri button.aktif {
+  background: var(--vurgu); color: #fff; border-color: var(--vurgu);
+}
+.gorunus { overflow-x: auto; }
+
+.sahne {
+  perspective: 1800px; height: 460px; background: var(--vg-gri-20);
+  border: 1px solid var(--kenar); border-radius: 8px; overflow: hidden;
+  cursor: grab; touch-action: none; position: relative;
+}
+.sahne:active { cursor: grabbing; }
+.dunya {
+  position: absolute; left: 50%; top: 55%;
+  transform-style: preserve-3d; transition: transform .08s linear;
+}
+.kutu { position: absolute; transform-style: preserve-3d; }
+.yuz { position: absolute; box-sizing: border-box; border: 1px solid rgba(255,255,255,.75); }
+.yuz.ust    { filter: brightness(1.12); }
+.yuz.on     { filter: brightness(.82); }
+.yuz.yan    { filter: brightness(.66); }
+.yuz .etiket {
+  color: #fff; font-size: 9px; font-weight: 700; line-height: 1.1;
+  padding: 2px 3px; overflow: hidden; text-shadow: 0 1px 1px rgba(0,0,0,.35);
+}
+.zemin-yuz { position: absolute; background: #cfd6d5; border: 2px solid var(--ana); }
+.dorse-cerceve { position: absolute; border: 2px dashed var(--vg-gri); }
+.sahne-etiket {
+  position: absolute; font-size: 11px; font-weight: 700; color: var(--ana);
+  background: rgba(255,255,255,.85); padding: 2px 6px; border-radius: 4px;
+}
+.sahne-yardim {
+  position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--soluk);
+  background: rgba(255,255,255,.85); padding: 3px 8px; border-radius: 4px;
+}
+@media print { .sahne { height: 340px; } .gorunus-sekmeleri { display: none; } }

@@ -2614,6 +2614,7 @@ def _istif_sayfasi(
         istif=istif,
         duraklar=duraklar,
         cizim=istif_servisi.cizim_verisi(istif),
+        yukleme=istif_servisi.yukleme_sirasi(istif),
         kirik_palet=sum(1 for y in istif.yerlesimler if y.yuk.kirik_mi),
         on_oran=int(on / toplam * 100) if toplam else 0,
         modul_kodu=modul_kodu,

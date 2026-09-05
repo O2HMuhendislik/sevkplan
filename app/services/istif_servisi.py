@@ -190,51 +190,116 @@ def durak_rengi(sira: int) -> str:
 
 
 def cizim_verisi(istif: IstifPlani, olcek: float = 0.9) -> dict:
-    """SVG'nin ihtiyacı olan piksel koordinatları.
+    """Üç görünüşün de kullandığı tek koordinat kümesi.
 
-    `olcek` cm başına piksel. Araç zemini santimetre cinsinden hesaplanır, çizime
-    burada çevrilir; şablonda hesap yapılmaz.
+    Paletler santimetre cinsinden yerleştirilir; çizime çevirmeyi burası yapar,
+    şablonda hesap kalmaz. Her palet üç eksende ölçülür:
+
+    * **x** — kabinden kapıya (araç uzunluğu). 0 = en dip, önce yüklenen.
+    * **y** — sol duvardan sağa (araç genişliği).
+    * **z** — zeminden yukarı. Üst kata konan paletler tabanlarının üstünde durur.
+
+    Üstten görünüş x-y, yandan görünüş x-z düzlemidir; 3B görünüş üçünü birden
+    kullanır. Aynı veriden çizildikleri için üçü hiçbir zaman çelişmez.
     """
     sol, ust = 40, 34
     zemin_g = istif.arac.uzunluk * olcek
     zemin_y = istif.arac.genislik * olcek
+    yukseklik_px = istif.arac.yukseklik * olcek
 
-    paletler = []
+    paletler: list[dict] = []
     siralar: dict[int, float] = {}
     for yerlesim in istif.yerlesimler:
-        x = sol + float(yerlesim.x) * olcek
-        w = float(yerlesim.derinlik) * olcek
-        paletler.append(
-            {
-                "x": round(x, 1),
-                "y": round(ust + float(yerlesim.y) * olcek, 1),
-                "w": round(w, 1),
-                "h": round(float(yerlesim.genislik) * olcek, 1),
-                "renk": durak_rengi(yerlesim.yuk.durak.sira),
-                "kod": yerlesim.yuk.tip.urun_kodu,
-                "adet": int(yerlesim.yuk.adet),
-                "kirik": yerlesim.yuk.kirik_mi,
-                "sira": yerlesim.yukleme_sirasi,
-                "ustundekiler": [
-                    {
-                        "kod": p.tip.urun_kodu,
-                        "adet": int(p.adet),
-                        "renk": durak_rengi(p.durak.sira),
-                    }
-                    for p in yerlesim.ustundekiler
-                ],
-                "yigin": yerlesim.yigin_yuksekligi,
-            }
+        yigin = [(yerlesim.yuk, True)] + [(p, False) for p in yerlesim.ustundekiler]
+        z = 0
+        for yuk, zeminde in yigin:
+            paletler.append(
+                {
+                    # cm cinsinden gerçek yerleşim: 3B görünüş bunları kullanır.
+                    "cm_x": float(yerlesim.x),
+                    "cm_y": float(yerlesim.y),
+                    "cm_z": float(z),
+                    "cm_uzunluk": float(yerlesim.derinlik),
+                    "cm_genislik": float(yerlesim.genislik),
+                    "cm_yukseklik": float(yuk.yukseklik or 20),
+                    # üstten görünüş (x-y)
+                    "x": round(sol + float(yerlesim.x) * olcek, 1),
+                    "y": round(ust + float(yerlesim.y) * olcek, 1),
+                    "w": round(float(yerlesim.derinlik) * olcek, 1),
+                    "h": round(float(yerlesim.genislik) * olcek, 1),
+                    # yandan görünüş (x-z): yükseklik yukarı doğru büyür, SVG'de aşağı
+                    "yan_y": round(
+                        ust + (istif.arac.yukseklik - z - (yuk.yukseklik or 20)) * olcek,
+                        1,
+                    ),
+                    "yan_h": round(float(yuk.yukseklik or 20) * olcek, 1),
+                    "renk": durak_rengi(yuk.durak.sira),
+                    "kod": yuk.tip.urun_kodu,
+                    "urun_adi": yuk.tip.urun_adi,
+                    "adet": int(yuk.adet),
+                    "kirik": yuk.kirik_mi,
+                    "zeminde": zeminde,
+                    "sira": yerlesim.yukleme_sirasi,
+                    "durak": yuk.durak.sira,
+                    "durak_adi": yuk.durak.ad,
+                }
+            )
+            z += yuk.yukseklik or 20
+        siralar.setdefault(
+            yerlesim.yukleme_sirasi,
+            round(sol + (float(yerlesim.x) + float(yerlesim.derinlik) / 2) * olcek, 1),
         )
-        siralar.setdefault(yerlesim.yukleme_sirasi, round(x + w / 2, 1))
 
     return {
+        "olcek": olcek,
         "sol": sol,
         "ust": ust,
         "zemin_genislik": round(zemin_g, 1),
         "zemin_yukseklik": round(zemin_y, 1),
+        "yan_yukseklik": round(yukseklik_px, 1),
         "genislik": round(sol * 2 + zemin_g, 1),
         "yukseklik": round(ust + zemin_y + 30, 1),
+        "yan_toplam_yukseklik": round(ust + yukseklik_px + 30, 1),
+        "arac_uzunluk": istif.arac.uzunluk,
+        "arac_genislik": istif.arac.genislik,
+        "arac_yukseklik": istif.arac.yukseklik,
         "paletler": paletler,
         "siralar": [{"no": no, "x": x} for no, x in sorted(siralar.items())],
     }
+
+
+def yukleme_sirasi(istif: IstifPlani) -> list[dict]:
+    """Yükleme sırası listesi: depo bunu okuyarak yükler.
+
+    Sıra numarası çizimdeki numaranın aynısıdır. Aynı sırada birden fazla palet
+    varsa tek satırda toplanır; depo o sırayı tek seferde alıp yükler.
+    """
+    gruplar: dict[int, dict] = {}
+    for yerlesim in istif.yerlesimler:
+        kayit = gruplar.setdefault(
+            yerlesim.yukleme_sirasi,
+            {
+                "sira": yerlesim.yukleme_sirasi,
+                "durak": yerlesim.yuk.durak,
+                "kod": yerlesim.yuk.tip.urun_kodu,
+                "urun_adi": yerlesim.yuk.tip.urun_adi,
+                "palet": 0,
+                "adet": Decimal(0),
+                "kirik": 0,
+                "ustundekiler": [],
+                "renk": durak_rengi(yerlesim.yuk.durak.sira),
+            },
+        )
+        kayit["palet"] += 1
+        kayit["adet"] += yerlesim.yuk.adet
+        kayit["kirik"] += 1 if yerlesim.yuk.kirik_mi else 0
+        for ustteki in yerlesim.ustundekiler:
+            kayit["ustundekiler"].append(
+                {
+                    "kod": ustteki.tip.urun_kodu,
+                    "adet": int(ustteki.adet),
+                    "durak_adi": ustteki.durak.ad,
+                    "renk": durak_rengi(ustteki.durak.sira),
+                }
+            )
+    return sorted(gruplar.values(), key=lambda k: k["sira"])

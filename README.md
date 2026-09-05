@@ -462,6 +462,13 @@ listesini görüyordu; malın araca hangi sırayla konulacağı yükleyicinin ka
 **Ters rota sırası.** En son uğranacak durağın malı en dibe (kabin tarafına), ilk
 durağın malı kapıya konur. Aksi hâlde ilk durakta bütün aracı boşaltmak gerekir.
 Ekrandaki numaralar yükleme sırasıdır; durak sırası plan detayındakinin aynısıdır.
+Ekranın **Yükleme sırası** tablosu bu numaraları ürün, palet ve durak bilgisiyle
+birlikte listeler — depo hangi ürünü en başta yükleyeceğini oradan okur.
+
+**Üç görünüş.** Üstten (x-y), yandan (x-z) ve 3 boyutlu; üçü de aynı yerleşimden
+çizilir, çelişemezler. 3B görünüş **saf CSS 3B dönüşümleriyle** yapılır, harici
+kütüphane yüklenmez: program şirket içi bir sunucuda çalışıyor ve internet
+erişimine bağlı olmamalı. Sürükleyerek çevrilir, tekerlekle yakınlaştırılır.
 
 **Zemin, anahtar değerin kendisidir.** Bir paletin kapladığı yer
 `araç zemini / o ürünün tır (ya da kamyon) palet sayısı` kadardır. O sayı ürün

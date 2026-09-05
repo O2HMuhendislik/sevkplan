@@ -345,7 +345,11 @@ def istif_planla(paletler: list[PaletYuku], arac: AracOlcusu) -> IstifPlani:
             break
 
         sira_no += 1
-        genislik = Decimal(arac.genislik) / Decimal(yan_yana)
+        # Sıradaki palet sayısı aracın enine sığandan azsa kalan en boş durmaz,
+        # paletler sırayı paylaşır. Derinlik zaten gerçek palet sayısıyla orantılı;
+        # eni de yan yana sığana bölseydik palet iki kez küçülür ve çizim, planın
+        # doluluk yüzdesinden daha boş görünürdü.
+        genislik = Decimal(arac.genislik) / Decimal(len(grup))
         for sutun, yuk in enumerate(grup):
             plan.yerlesimler.append(
                 Yerlesim(

@@ -193,3 +193,76 @@ def test_ustteki_palet_tabanindan_once_inmeli():
     for yerlesim in plan.yerlesimler:
         for ustteki in yerlesim.ustundekiler:
             assert ustteki.durak.sira <= yerlesim.yuk.durak.sira
+
+
+def test_eksik_sira_zemini_bos_birakmaz():
+    """Sırada aracın enine sığandan az palet varsa kalan en boş durmaz.
+
+    Derinlik zaten gerçek palet sayısıyla orantılı; eni de yan yana sığana
+    bölünseydi palet iki kez küçülür ve çizim, planın doluluk yüzdesinden çok daha
+    boş görünürdü.
+    """
+    urun = tip("P", palet_ici=10, arac_palet=33)      # 80x120 -> 3 yan yana
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(10))]), TIR
+    )
+    yerlesim = plan.yerlesimler[0]
+    assert len(plan.yerlesimler) == 1
+    assert yerlesim.genislik == Decimal(TIR.genislik)   # tek palet sırayı doldurur
+
+
+def test_cizilen_alan_plandaki_doluluga_esit():
+    """Paletlerin zeminde kapladığı alan, anahtar değerin gösterdiği oranla aynı."""
+    urun = tip("P", palet_ici=1, arac_palet=33)
+    for adet in (5, 11, 17, 33):
+        plan = istif_planla(
+            paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(adet))]), TIR
+        )
+        alan = sum(y.derinlik * y.genislik for y in plan.yerlesimler)
+        beklenen = Decimal(TIR.uzunluk) * Decimal(TIR.genislik) * Decimal(adet) / 33
+        assert abs(alan - beklenen) < Decimal("0.01"), adet
+
+
+def test_cizim_verisi_ust_kati_ayri_kutu_olarak_verir(db):
+    """3B ve yandan görünüş için her palet kendi x/y/z kutusunu alır."""
+    from app.services.istif_servisi import cizim_verisi
+
+    urun = PaletTipi(
+        urun_kodu="P", urun_adi="P", urun_grubu="G", palet_ici_adet=1,
+        en=80, boy=120, yukseklik=120, agirlik=Decimal(0), arac_palet_sayisi=33,
+    )
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(35))]), TIR
+    )
+    cizim = cizim_verisi(plan)
+
+    assert len(cizim["paletler"]) == plan.palet_sayisi == 35
+    zemin = [p for p in cizim["paletler"] if p["zeminde"]]
+    ustteki = [p for p in cizim["paletler"] if not p["zeminde"]]
+    assert len(zemin) == 33 and len(ustteki) == 2
+    # Üst kattaki palet tabanının tam üstünde durur.
+    assert all(p["cm_z"] == 120 for p in ustteki)
+    assert all(p["cm_z"] == 0 for p in zemin)
+    # Yandan görünüşte üsttekiler daha yukarıda (SVG'de y küçülür).
+    assert min(p["yan_y"] for p in ustteki) < min(p["yan_y"] for p in zemin)
+
+
+def test_yukleme_sirasi_listesi_dipten_kapiya(db):
+    """Ekrandaki liste çizimdeki numaralarla aynı sırayı verir."""
+    from app.services.istif_servisi import yukleme_sirasi
+
+    urun = tip("P", palet_ici=10, arac_palet=33)
+    plan = istif_planla(
+        paletleri_kur(
+            [
+                (urun, Durak(1, "İLK", "BURSA"), Decimal(30)),
+                (urun, Durak(2, "SON", "IZMIR"), Decimal(30)),
+            ]
+        ),
+        TIR,
+    )
+    liste = yukleme_sirasi(plan)
+    assert [k["sira"] for k in liste] == sorted(k["sira"] for k in liste)
+    # 1 numara son durağın malı: en dibe konur.
+    assert liste[0]["durak"].sira == 2
+    assert liste[-1]["durak"].sira == 1
