@@ -1,0 +1,75 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'ihracat_urunler' %}
+{% block icerik %}
+<h1>{{ urun.urun_kodu if urun else 'Yeni ihracat ürünü' }}
+  {% if urun %}<span class="soluk" style="font-size:14px">{{ urun.urun_adi }}</span>{% endif %}</h1>
+
+<div class="kart">
+  <p class="soluk">
+    Boş bıraktığınız alan <b>silinir</b>. Toplu Excel yüklemesinde kural bunun
+    tersidir: orada boş sütun mevcut veriyi silmez.
+    <b>Tır, konteyner ve desiden en az biri</b> girilmelidir; üçü de boşsa bu üründen
+    doluluk hesaplanamaz.
+  </p>
+  <form method="post" action="/masterdata/ihracat-urunler/kaydet">
+    <input type="hidden" name="geri" value="{{ geri }}">
+    <div class="izgara dort" style="margin-bottom:14px">
+      <div><label for="urun_kodu">Ürün kodu</label>
+        <input id="urun_kodu" name="urun_kodu" value="{{ urun.urun_kodu if urun else '' }}"
+               {{ 'readonly' if urun }} required style="width:100%"></div>
+      <div><label for="urun_adi">Ürün adı</label>
+        <input id="urun_adi" name="urun_adi" value="{{ urun.urun_adi if urun else '' }}"
+               required style="width:100%"></div>
+      <div><label for="urun_grubu">Ürün grubu</label>
+        <input id="urun_grubu" name="urun_grubu" list="gruplar"
+               value="{{ urun.urun_grubu if urun and urun.urun_grubu else '' }}" style="width:100%">
+        <datalist id="gruplar">{% for g in gruplar %}<option value="{{ g }}">{% endfor %}</datalist></div>
+      <div><label for="aktif">Durum</label>
+        <select id="aktif" name="aktif">
+          <option value="E" {{ 'selected' if not urun or urun.aktif }}>Aktif</option>
+          <option value="H" {{ 'selected' if urun and not urun.aktif }}>Pasif</option>
+        </select></div>
+    </div>
+
+    <h2>Yeni hesaplama</h2>
+    <div class="izgara dort" style="margin-bottom:14px">
+      {% for ad, etiket in [('palet_ici_adet','Palet içi adet'),
+                            ('tir_yukleme_adeti','Tır yükleme adeti'),
+                            ('konteyner_yukleme_adeti','Konteyner yükleme adeti'),
+                            ('dokme_adeti','Dökme adeti')] %}
+      <div><label for="{{ ad }}">{{ etiket }}</label>
+        <input id="{{ ad }}" name="{{ ad }}"
+               value="{{ (urun[ad] if urun and urun[ad] is not none else '') }}" style="width:100%"></div>
+      {% endfor %}
+    </div>
+
+    <h2>Eski hesaplama</h2>
+    <p class="soluk">
+      Notunda "ESKİ HESAPLAMA" yazan müşterilerde bu sütunlar kullanılır.
+    </p>
+    <div class="izgara dort" style="margin-bottom:14px">
+      {% for ad, etiket in [('palet_ici_adet_eski','Palet içi adet-2'),
+                            ('tir_yukleme_adeti_eski','Tır-2'),
+                            ('konteyner_yukleme_adeti_eski','Konteyner-2')] %}
+      <div><label for="{{ ad }}">{{ etiket }}</label>
+        <input id="{{ ad }}" name="{{ ad }}"
+               value="{{ (urun[ad] if urun and urun[ad] is not none else '') }}" style="width:100%"></div>
+      {% endfor %}
+    </div>
+
+    <h2>Ölçüler</h2>
+    <div class="izgara dort" style="margin-bottom:14px">
+      {% for ad, etiket, birim in [('desi','Birim desi','desi'), ('agirlik','Birim ağırlık','kg'),
+                                   ('en','En','cm'), ('boy','Boy','cm'), ('yukseklik','Yükseklik','cm')] %}
+      <div><label for="{{ ad }}">{{ etiket }} <span class="soluk">({{ birim }})</span></label>
+        <input id="{{ ad }}" name="{{ ad }}"
+               value="{{ (urun[ad] if urun and urun[ad] is not none else '') }}" style="width:100%"></div>
+      {% endfor %}
+    </div>
+
+    <button type="submit">Kaydet</button>
+    <a class="dugme ikincil" href="{{ geri }}">Vazgeç</a>
+  </form>
+</div>
+{% endblock %}

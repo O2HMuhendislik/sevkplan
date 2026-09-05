@@ -1,0 +1,124 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'ihracat_urunler' %}
+{% block icerik %}
+<h1>İhracat Ürünleri <span class="soluk">({{ toplam | sayi }} kayıt)</span></h1>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Excel</h2>
+    <p class="soluk">
+      Şirketin <b>Hesaplama.xlsx</b> dosyasının <b>Ürün</b> sayfası olduğu gibi
+      yüklenebilir; sütun başlıkları tanınır. İndirdiğiniz liste doldurulup doğrudan
+      geri yüklenebilir — <b>boş bırakılan sütun mevcut veriyi silmez</b>.
+    </p>
+    <form class="satir" method="post" action="/masterdata/ihracat-urunler/yukle"
+          enctype="multipart/form-data">
+      <input type="file" name="dosya" accept=".xlsx,.xlsm" required>
+      <button type="submit">Yükle</button>
+      <a class="dugme ikincil" href="/masterdata/ihracat-urunler/excel?{{ sorgu }}">
+        Filtrelenmiş listeyi indir ({{ eslesen | sayi }})</a>
+      <a class="dugme ikincil" href="/masterdata/ihracat-urunler/sablon">Boş şablon</a>
+      <a class="dugme ikincil" href="/masterdata/ihracat-urunler/yeni">Yeni ürün</a>
+    </form>
+  </div>
+  <div class="kart">
+    <h2>Doluluk nasıl hesaplanıyor</h2>
+    <p class="soluk">
+      Hesaplama dosyasındaki formüllerin aynısı: <code>DOLULUK = Σ(miktar / yükleme
+      adeti)</code> — 1,00 araç %100 dolu demektir. <code>TIR-2 / KONTEYNER-2 /
+      PALET İÇİ ADET-2</code> eski hesaplamanın sütunlarıdır; notunda "ESKİ HESAPLAMA"
+      yazan müşterilerde bunlar kullanılır.
+    </p>
+    {% if eksikler %}
+    <table>
+      <thead><tr><th>Eksik alan</th><th class="sag">Ürün</th><th></th></tr></thead>
+      <tbody>
+      {% for e in eksikler %}
+        <tr>
+          <td>{{ e.etiket }}</td>
+          <td class="sag">{{ e.sayi | sayi }}</td>
+          <td><a class="dugme ikincil"
+                 href="/masterdata/ihracat-urunler?eksik={{ e.kod }}">Listele</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/masterdata/ihracat-urunler" style="margin-bottom:0">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ filtre.arama }}"
+             placeholder="Ürün kodu, adı, grup" style="width:260px"></div>
+    <div><label for="urun_grubu">Ürün grubu</label>
+      <select id="urun_grubu" name="urun_grubu">
+        <option value="">Tümü</option>
+        {% for g in gruplar %}
+          <option value="{{ g }}" {{ 'selected' if filtre.urun_grubu == g }}>{{ g }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="eksik">Eksik alan</label>
+      <select id="eksik" name="eksik">
+        <option value="">Filtre yok</option>
+        <option value="HERHANGI" {{ 'selected' if filtre.eksik == 'HERHANGI' }}>Herhangi bir alanı eksik</option>
+        {% for kod, etiket in eksik_secenekleri %}
+          <option value="{{ kod }}" {{ 'selected' if filtre.eksik == kod }}>{{ etiket }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="durum">Durum</label>
+      <select id="durum" name="durum">
+        <option value="">Tümü</option>
+        <option value="AKTIF" {{ 'selected' if filtre.durum == 'AKTIF' }}>Aktif</option>
+        <option value="PASIF" {{ 'selected' if filtre.durum == 'PASIF' }}>Pasif</option>
+      </select></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/masterdata/ihracat-urunler">Temizle</a>
+  </form>
+</div>
+
+<div class="kart">
+  {% if urunler %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Ürün kodu</th><th>Ürün</th><th>Grup</th>
+      <th class="sag">Palet içi</th><th class="sag">Tır</th><th class="sag">Konteyner</th>
+      <th class="sag">Tır-2</th><th class="sag">Konteyner-2</th><th class="sag">Palet içi-2</th>
+      <th class="sag">Desi</th><th class="sag">Ağırlık</th><th>Ölçü</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for u in urunler %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><b>{{ u.urun_kodu }}</b></td>
+        <td>{{ u.urun_adi }}</td>
+        <td>{{ u.urun_grubu or '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.palet_ici_adet }}">{{ u.palet_ici_adet | sayi if u.palet_ici_adet else '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.tir_yukleme_adeti }}">{{ u.tir_yukleme_adeti | sayi if u.tir_yukleme_adeti else '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.konteyner_yukleme_adeti }}">{{ u.konteyner_yukleme_adeti | sayi if u.konteyner_yukleme_adeti else '—' }}</td>
+        <td class="sag">{{ u.tir_yukleme_adeti_eski | sayi if u.tir_yukleme_adeti_eski else '—' }}</td>
+        <td class="sag">{{ u.konteyner_yukleme_adeti_eski | sayi if u.konteyner_yukleme_adeti_eski else '—' }}</td>
+        <td class="sag">{{ u.palet_ici_adet_eski | sayi if u.palet_ici_adet_eski else '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.desi }}">{{ u.desi | sayi if u.desi else '—' }}</td>
+        <td class="sag {{ 'eksik' if not u.agirlik }}">{{ u.agirlik | sayi if u.agirlik else '—' }}</td>
+        <td class="{{ 'eksik' if not (u.en and u.boy) }}">
+          {% if u.en and u.boy %}{{ u.en }}×{{ u.boy }}{% if u.yukseklik %}×{{ u.yukseklik }}{% endif %}
+          {% else %}—{% endif %}</td>
+        <td><a class="dugme ikincil" href="/masterdata/ihracat-urunler/{{ u.urun_kodu }}">Düzenle</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk" style="margin-top:12px">
+    {% if eslesen > ekran_limiti %}
+      Filtreye {{ eslesen | sayi }} ürün uyuyor; ekranda ilk {{ ekran_limiti | sayi }} tanesi
+      var. <b>İndirilen dosya {{ eslesen | sayi }} ürünün tamamını içerir.</b>
+    {% else %}
+      Listenin sonu — {{ eslesen | sayi }} ürün gösterildi.
+    {% endif %}
+  </p>
+  {% else %}<div class="bos">Filtreye uyan ürün yok.</div>{% endif %}
+</div>
+{% endblock %}

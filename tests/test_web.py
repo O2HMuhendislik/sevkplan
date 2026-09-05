@@ -921,7 +921,7 @@ def test_tek_depolu_planda_axata_deposu_zorunlu_degil(istemci, fabrika):
     "yol",
     ["/masterdata", "/masterdata/urunler", "/masterdata/musteriler",
      "/masterdata/ihracat-musteriler", "/masterdata/ihracat-urunler",
-     "/masterdata/depolar", "/masterdata/sistem"],
+     "/masterdata/gruplar", "/masterdata/depolar", "/masterdata/sistem"],
 )
 def test_masterdata_ekranlari_acilir(istemci, yol):
     cevap = istemci.get(yol)
@@ -1049,3 +1049,78 @@ def test_yerlesimde_son_durak_once_yuklenir(istemci, fabrika):
         dipteki = min(istif.yerlesimler, key=lambda y: (y.x, y.y))
         assert dipteki.yuk.durak.il == "IZMIR"
         assert dipteki.yukleme_sirasi == 1
+
+
+def test_urun_gruplari_ekranindan_ad_degistirilir(istemci, fabrika):
+    """Ad değişikliği master datanın tamamına işlemeli."""
+    from app.models import Urun
+
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["P1", "Panel 1", "PANEL", 10, 100],
+         ["P2", "Panel 2", "PANEL", 10, 100],
+         ["K1", "Klima 1", "Klima", 10, 100]],
+    )
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("u.xlsx", urunler)})
+
+    ekran = istemci.get("/masterdata/gruplar")
+    assert ekran.status_code == 200
+    # 'Klima' Türkçe kurallarıyla KLİMA olur; KLIMA diye ikinci grup açılmaz.
+    assert "KLİMA" in ekran.text and "KLIMA<" not in ekran.text
+
+    cevap = istemci.post(
+        "/masterdata/gruplar/ad",
+        data={"kapsam": "IC_PIYASA", "eski_ad": "PANEL", "yeni_ad": "Radyatör"},
+    )
+    assert "2 ürün güncellendi" in sorgu(cevap)
+    with fabrika() as db:
+        assert {u.urun_grubu for u in db.query(Urun).all()} == {"RADYATÖR", "KLİMA"}
+
+
+def test_ihracat_urunu_ekrandan_duzenlenir(istemci, fabrika):
+    from app.models import IhracatUrunu
+
+    urunler = kitap(
+        ["ÜRÜN KODU", "ÜRÜN", "Ürün Grubu", "TIR", "DESİ"],
+        [["E1", "Radiator", "Radiator", 3000, 2.5],
+         ["E2", "Valve", "Acc.", None, None]],
+    )
+    istemci.post("/masterdata/ihracat-urunler/yukle", files={"dosya": ("i.xlsx", urunler)})
+
+    liste = istemci.get("/masterdata/ihracat-urunler", params={"eksik": "OLCUSUZ"})
+    assert "E2" in liste.text and "E1" not in liste.text
+
+    assert istemci.get("/masterdata/ihracat-urunler/E2").status_code == 200
+    cevap = istemci.post(
+        "/masterdata/ihracat-urunler/kaydet",
+        data={"geri": "/masterdata/ihracat-urunler", "urun_kodu": "E2",
+              "urun_adi": "Valve", "urun_grubu": "Acc.", "tir_yukleme_adeti": "2800",
+              "desi": "0,4", "en": "60", "boy": "120", "aktif": "E"},
+    )
+    assert "güncellendi" in sorgu(cevap)
+    with fabrika() as db:
+        urun = db.query(IhracatUrunu).filter_by(urun_kodu="E2").one()
+        assert urun.tir_yukleme_adeti == Decimal(2800)
+        assert urun.desi == Decimal("0.4")
+
+
+def test_ihracat_urun_indirmesi_filtreyi_uygular(istemci, tmp_path):
+    """Ekranda görülen filtre inen dosyaya da uygulanmalı."""
+    from openpyxl import load_workbook
+
+    urunler = kitap(
+        ["ÜRÜN KODU", "ÜRÜN", "Ürün Grubu", "TIR", "DESİ"],
+        [["E1", "Radiator", "Radiator", 3000, 2.5],
+         ["E2", "Valve", "Acc.", None, None]],
+    )
+    istemci.post("/masterdata/ihracat-urunler/yukle", files={"dosya": ("i.xlsx", urunler)})
+
+    dosya = tmp_path / "ih.xlsx"
+    dosya.write_bytes(
+        istemci.get(
+            "/masterdata/ihracat-urunler/excel", params={"eksik": "OLCUSUZ"}
+        ).content
+    )
+    sayfa = load_workbook(dosya).active
+    kodlar = {sayfa.cell(row=r, column=1).value for r in range(2, sayfa.max_row + 1)}
+    assert kodlar == {"E2"}

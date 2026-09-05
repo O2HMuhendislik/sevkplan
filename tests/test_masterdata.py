@@ -170,3 +170,139 @@ def test_gecersiz_ayar_reddedilir(db):
     with pytest.raises(md.MasterDataHatasi, match="sıfırdan büyük"):
         md.ayarlari_kaydet(db, {"azami_durak": "0"}, "admin")
     assert db.query(Ayar).count() == 0
+
+
+# ------------------------------------------------------------- ürün grupları
+
+
+def test_turkce_buyuk_harf_grubu_ikiye_bolmez(db, tmp_path):
+    """'Klima' ile 'KLİMA' aynı gruptur; Python'un upper()'ı bunları ayırıyordu.
+
+    `'Klima'.upper()` -> 'KLIMA' (noktasız I), 'KLİMA' ile eşleşmez.
+    """
+    from openpyxl import Workbook
+
+    kitap = Workbook()
+    sayfa = kitap.active
+    sayfa.append(["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"])
+    sayfa.append(["A1", "Klima A", "Klima", 10, 100])
+    sayfa.append(["A2", "Klima B", "KLİMA", 10, 100])
+    sayfa.append(["A3", "Kombi", "kombi", 10, 100])
+    yol = tmp_path / "u.xlsx"
+    kitap.save(yol)
+
+    ice_aktarim.urunleri_aktar(db, yol, "u.xlsx")
+    gruplar = {u.urun_grubu for u in db.query(Urun).all()}
+    assert gruplar == {"KLİMA", "KOMBİ"}
+
+
+def test_grup_adi_degisince_butun_urunler_guncellenir(db, urunler):
+    """Ad değişikliği master datanın tamamına işler."""
+    sayi = md.grubu_yeniden_adlandir(db, md.IC_PIYASA, "PANEL", "Radyatör")
+    assert sayi == 2
+    # İç piyasada ad Türkçe kurallarına göre büyük harfe çevrilir.
+    assert {u.urun_grubu for u in db.query(Urun).all()} == {"RADYATÖR", "KOMBİ"}
+
+
+def test_ayni_ada_tasinan_grup_birlesir(db, urunler):
+    """Yazım hatasıyla ikiye bölünmüş grubu toplamanın yolu budur."""
+    db.query(Urun).filter_by(urun_kodu="OLCUSUZ").update({"urun_grubu": "KLIMA"})
+    db.flush()
+    md.grubu_yeniden_adlandir(db, md.IC_PIYASA, "KLIMA", "PANEL")
+    assert {u.urun_grubu for u in db.query(Urun).all()} == {"PANEL"}
+    assert db.query(Urun).filter_by(urun_grubu="PANEL").count() == 3
+
+
+def test_gruptan_cikarilan_urun_silinmez(db, urunler):
+    sayi = md.grubu_sil(db, md.IC_PIYASA, "PANEL")
+    assert sayi == 2
+    assert db.query(Urun).count() == 3
+    assert db.query(Urun).filter(Urun.urun_grubu.is_(None)).count() == 2
+
+
+def test_grup_ozeti_yalnizca_yazimla_ayrisani_isaretler(db, urunler):
+    db.query(Urun).filter_by(urun_kodu="OLCUSUZ").update({"urun_grubu": "KLIMA"})
+    db.query(Urun).filter_by(urun_kodu="PALETSIZ").update({"urun_grubu": "KLİMA"})
+    db.flush()
+    ozet = {g["ad"]: g for g in md.urun_gruplari_ozeti(db) if g["kapsam"] == md.IC_PIYASA}
+    assert ozet["KLIMA"]["cakisanlar"] == ["KLİMA"]
+    assert ozet["KLİMA"]["cakisanlar"] == ["KLIMA"]
+    assert ozet["PANEL"]["cakisanlar"] == []
+
+
+def test_ihracat_gruplari_ic_piyasadan_ayridir(db, urunler):
+    """İhracat grupları İngilizce ve karışık yazımlı; büyük harfe çevrilmez."""
+    from app.models import IhracatUrunu
+
+    db.add(IhracatUrunu(urun_kodu="E1", urun_adi="Rad", urun_grubu="Towel Heater",
+                        tir_yukleme_adeti=Decimal(3000)))
+    db.flush()
+    md.grubu_yeniden_adlandir(db, md.IHRACAT, "Towel Heater", "Towel Radiator")
+    assert db.query(IhracatUrunu).one().urun_grubu == "Towel Radiator"
+    # İç piyasa grupları etkilenmez.
+    assert {u.urun_grubu for u in db.query(Urun).all()} == {"PANEL", "KOMBİ"}
+
+
+def test_bilinmeyen_kapsam_reddedilir(db):
+    with pytest.raises(md.MasterDataHatasi, match="Bilinmeyen kapsam"):
+        md.grubu_yeniden_adlandir(db, "BASKA", "A", "B")
+
+
+# ------------------------------------------------------------ ihracat ürünleri
+
+
+@pytest.fixture()
+def ihracat_urunler(db):
+    from app.models import IhracatUrunu
+
+    db.add_all(
+        [
+            IhracatUrunu(urun_kodu="TAM", urun_adi="Radiator", urun_grubu="Radiator",
+                         palet_ici_adet=Decimal(120), tir_yukleme_adeti=Decimal(3000),
+                         konteyner_yukleme_adeti=Decimal(2640), desi=Decimal("2.5"),
+                         agirlik=Decimal(12), en=60, boy=120),
+            IhracatUrunu(urun_kodu="OLCUSUZ", urun_adi="Valve", urun_grubu="Acc."),
+            IhracatUrunu(urun_kodu="DESILI", urun_adi="Sensor", desi=Decimal("0.1")),
+        ]
+    )
+    db.flush()
+    return db
+
+
+def test_ihracat_eksik_filtresi(db, ihracat_urunler):
+    olcusuz = md.ihracat_urunleri_getir(
+        db, md.IhracatUrunFiltresi(eksik="OLCUSUZ")
+    )
+    assert {u.urun_kodu for u in olcusuz} == {"OLCUSUZ"}
+
+    grupsuz = md.ihracat_urunleri_getir(db, md.IhracatUrunFiltresi(eksik="GRUP"))
+    assert {u.urun_kodu for u in grupsuz} == {"DESILI"}
+
+    gruplu = md.ihracat_urunleri_getir(
+        db, md.IhracatUrunFiltresi(urun_grubu="Radiator")
+    )
+    assert {u.urun_kodu for u in gruplu} == {"TAM"}
+
+
+def test_ihracat_urunu_ekrandan_guncellenir(db, ihracat_urunler):
+    from app.models import IhracatUrunu
+
+    md.ihracat_urununu_guncelle(
+        db,
+        "OLCUSUZ",
+        {"urun_adi": "Valve", "urun_grubu": "Acc.", "tir_yukleme_adeti": "2800",
+         "konteyner_yukleme_adeti": "2464", "desi": "0,4", "en": "60", "boy": "120"},
+    )
+    urun = db.query(IhracatUrunu).filter_by(urun_kodu="OLCUSUZ").one()
+    assert urun.tir_yukleme_adeti == Decimal(2800)
+    assert urun.desi == Decimal("0.4")
+    assert (urun.en, urun.boy) == (60, 120)
+
+
+def test_olcusuz_ihracat_urunu_kaydedilemez(db):
+    with pytest.raises(md.MasterDataHatasi, match="en az biri"):
+        md.ihracat_urununu_guncelle(
+            db, "YENI",
+            {"urun_adi": "X", "tir_yukleme_adeti": "", "konteyner_yukleme_adeti": "",
+             "desi": ""},
+        )

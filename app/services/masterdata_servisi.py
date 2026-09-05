@@ -19,10 +19,18 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.models import Ayar, Depo, IhracatMusterisi, IhracatUrunu, Musteri, Urun
+from app.domain.metin import buyuk_harf
+from app.models import (
+    Ayar,
+    Depo,
+    IhracatMusterisi,
+    IhracatUrunu,
+    Musteri,
+    Urun,
+)
 from app.services import excel
 from app.services.veri_formatlari import (
     IHRACAT_MUSTERI_ALANLARI,
@@ -286,7 +294,7 @@ def urunu_guncelle(db: Session, urun_kodu: str, alanlar: dict[str, str]) -> Urun
         db.add(urun)
 
     urun.urun_adi = (alanlar.get("urun_adi") or "").strip() or urun.urun_adi or kod
-    urun.urun_grubu = (alanlar.get("urun_grubu") or "").strip().upper() or None
+    urun.urun_grubu = buyuk_harf(alanlar.get("urun_grubu")) or None
     for ad in URUN_SAYISAL_ALANLAR:
         if ad in alanlar:
             setattr(urun, ad, _tam_sayi(alanlar[ad]))
@@ -518,3 +526,247 @@ def kurallari_kur(db: Session):
         gunluk_rutin_siniri=int(d["gunluk_rutin_siniri"]),
         azami_sapma_km=int(d["azami_sapma_km"]),
     )
+
+
+# ----------------------------------------------------------------- ürün grupları
+
+IC_PIYASA = "IC_PIYASA"
+IHRACAT = "IHRACAT"
+"""Grup adları iki master datada ayrıdır: iç piyasa Türkçe (PANEL, KLİMA), ihracat
+İngilizce (Radiator, Air Con.). Aynı grup değiller, birleştirilmezler."""
+
+GRUP_MODELLERI = {IC_PIYASA: Urun, IHRACAT: IhracatUrunu}
+GRUP_ADLARI = {IC_PIYASA: "İç piyasa", IHRACAT: "İhracat"}
+
+
+def urun_gruplari_ozeti(db: Session) -> list[dict]:
+    """Her grup ve kaç üründe kullanıldığı.
+
+    Yalnızca büyük/küçük harf ya da Türkçe karakterle ayrışan gruplar **çakışma**
+    olarak işaretlenir: "KLİMA" ile "KLIMA" (noktasız ı) ayrı grup görünür ama
+    aynı şeyi anlatır. Yöneticinin birini diğerine taşıması için işaretlenir.
+    """
+    from app.domain.iller import yer_adi
+
+    satirlar: list[dict] = []
+    for kapsam, model in GRUP_MODELLERI.items():
+        sayimlar: dict[str, int] = {}
+        for (grup,) in db.execute(select(model.urun_grubu)).all():
+            ad = (grup or "").strip()
+            if ad:
+                sayimlar[ad] = sayimlar.get(ad, 0) + 1
+        # Aynı sadeleşmiş ada inen birden fazla yazım varsa hepsi çakışmadır.
+        benzerler: dict[str, list[str]] = {}
+        for ad in sayimlar:
+            benzerler.setdefault(yer_adi(ad), []).append(ad)
+        for ad, sayi in sorted(sayimlar.items(), key=lambda k: (-k[1], k[0])):
+            digerleri = [d for d in benzerler[yer_adi(ad)] if d != ad]
+            satirlar.append(
+                {
+                    "kapsam": kapsam,
+                    "kapsam_adi": GRUP_ADLARI[kapsam],
+                    "ad": ad,
+                    "sayi": sayi,
+                    "cakisanlar": digerleri,
+                }
+            )
+    return satirlar
+
+
+def grupsuz_urun_sayisi(db: Session) -> dict[str, int]:
+    return {
+        kapsam: db.scalar(
+            select(func.count())
+            .select_from(model)
+            .where((model.urun_grubu.is_(None)) | (model.urun_grubu == ""))
+        )
+        or 0
+        for kapsam, model in GRUP_MODELLERI.items()
+    }
+
+
+def grubu_yeniden_adlandir(
+    db: Session, kapsam: str, eski_ad: str, yeni_ad: str
+) -> int:
+    """Bir ürün grubunun adını değiştirir; **bütün ürünlere** işler.
+
+    Hedef ad zaten varsa iki grup **birleşir** — yazım hatasıyla ikiye bölünmüş
+    grupları toplamanın yolu budur ("KLIMA" -> "KLİMA").
+
+    Ad iç piyasada Türkçe kurallarına göre büyük harfe çevrilir; ihracat grupları
+    İngilizce ve karışık yazımlı olduğu için (Towel Heater, Air Con.) olduğu gibi
+    yazılır.
+    """
+    model = GRUP_MODELLERI.get(kapsam)
+    if model is None:
+        raise MasterDataHatasi(f"Bilinmeyen kapsam: {kapsam}")
+    eski = (eski_ad or "").strip()
+    yeni = (
+        buyuk_harf(yeni_ad) if kapsam == IC_PIYASA else (yeni_ad or "").strip()
+    )
+    if not eski or not yeni:
+        raise MasterDataHatasi("Grup adı boş olamaz.")
+    if eski == yeni:
+        return 0
+    sonuc = db.execute(
+        update(model).where(model.urun_grubu == eski).values(urun_grubu=yeni)
+    )
+    db.flush()
+    return sonuc.rowcount or 0
+
+
+def grubu_sil(db: Session, kapsam: str, ad: str) -> int:
+    """Grubu ürünlerden kaldırır; ürünler silinmez, grupsuz kalır."""
+    model = GRUP_MODELLERI.get(kapsam)
+    if model is None:
+        raise MasterDataHatasi(f"Bilinmeyen kapsam: {kapsam}")
+    sonuc = db.execute(
+        update(model).where(model.urun_grubu == (ad or "").strip()).values(urun_grubu=None)
+    )
+    db.flush()
+    return sonuc.rowcount or 0
+
+
+# ------------------------------------------------------------- ihracat ürünleri
+
+
+@dataclass(frozen=True)
+class IhracatUrunFiltresi:
+    arama: str = ""
+    urun_grubu: str = ""
+    durum: str = ""
+    eksik: str = ""
+
+
+IHRACAT_EKSIK_KOSULLARI: dict[str, tuple[str, Callable[[Any], bool]]] = {
+    "TIR": ("Tır yükleme adeti boş", lambda u: not u.tir_yukleme_adeti),
+    "KONTEYNER": ("Konteyner yükleme adeti boş", lambda u: not u.konteyner_yukleme_adeti),
+    "PALET": ("Palet içi adet boş", lambda u: not u.palet_ici_adet),
+    "DESI": ("Desi boş", lambda u: not u.desi),
+    "AGIRLIK": ("Ağırlık boş", lambda u: not u.agirlik),
+    "ESKI": (
+        "Eski hesaplama sütunları boş",
+        lambda u: not (u.tir_yukleme_adeti_eski or u.konteyner_yukleme_adeti_eski),
+    ),
+    "OLCU": ("Ürün ölçüsü (en/boy) boş", lambda u: not (u.en and u.boy)),
+    "GRUP": ("Ürün grubu boş", lambda u: not u.urun_grubu),
+    "OLCUSUZ": (
+        "Doluluk hesaplanamaz (tır, konteyner ve desi boş)",
+        lambda u: not (u.tir_yukleme_adeti or u.konteyner_yukleme_adeti or u.desi),
+    ),
+}
+"""İhracat ürünlerinin eksik alan filtreleri.
+
+`OLCUSUZ` en kritiğidir: bu üründen doluluk hiç hesaplanamaz, plana girdiğinde
+araç ölçüsü tutmaz.
+"""
+
+
+def ihracat_urun_gruplari(db: Session) -> list[str]:
+    return sorted(
+        {
+            g
+            for (g,) in db.execute(
+                select(IhracatUrunu.urun_grubu)
+                .where(IhracatUrunu.urun_grubu.is_not(None))
+                .distinct()
+            ).all()
+            if g
+        }
+    )
+
+
+def ihracat_urunleri_getir(
+    db: Session, filtre: IhracatUrunFiltresi, limit: int = 5000
+) -> list[IhracatUrunu]:
+    sorgu = select(IhracatUrunu)
+    if filtre.arama:
+        desen = f"%{filtre.arama.strip()}%"
+        sorgu = sorgu.where(
+            or_(
+                IhracatUrunu.urun_kodu.ilike(desen),
+                IhracatUrunu.urun_adi.ilike(desen),
+                IhracatUrunu.urun_grubu.ilike(desen),
+            )
+        )
+    if filtre.urun_grubu:
+        sorgu = sorgu.where(IhracatUrunu.urun_grubu == filtre.urun_grubu)
+    if filtre.durum == "AKTIF":
+        sorgu = sorgu.where(IhracatUrunu.aktif.is_(True))
+    elif filtre.durum == "PASIF":
+        sorgu = sorgu.where(IhracatUrunu.aktif.is_(False))
+    urunler = list(db.scalars(sorgu.order_by(IhracatUrunu.urun_kodu)).all())
+
+    if filtre.eksik == EKSIK_HERHANGI:
+        urunler = [
+            u
+            for u in urunler
+            if any(kosul(u) for _, kosul in IHRACAT_EKSIK_KOSULLARI.values())
+        ]
+    elif filtre.eksik in IHRACAT_EKSIK_KOSULLARI:
+        kosul = IHRACAT_EKSIK_KOSULLARI[filtre.eksik][1]
+        urunler = [u for u in urunler if kosul(u)]
+    return urunler[:limit]
+
+
+def ihracat_eksik_ozeti(db: Session) -> list[dict]:
+    urunler = list(db.scalars(select(IhracatUrunu)).all())
+    toplam = len(urunler)
+    ozet = []
+    for kod, (etiket, kosul) in IHRACAT_EKSIK_KOSULLARI.items():
+        sayi = sum(1 for u in urunler if kosul(u))
+        if sayi:
+            ozet.append(
+                {
+                    "kod": kod,
+                    "etiket": etiket,
+                    "sayi": sayi,
+                    "oran": (sayi / toplam) if toplam else 0,
+                }
+            )
+    return sorted(ozet, key=lambda o: -o["sayi"])
+
+
+IHRACAT_ONDALIK_ALANLAR = (
+    "palet_ici_adet", "tir_yukleme_adeti", "konteyner_yukleme_adeti",
+    "palet_ici_adet_eski", "tir_yukleme_adeti_eski", "konteyner_yukleme_adeti_eski",
+    "desi", "agirlik", "dokme_adeti",
+)
+IHRACAT_TAM_SAYI_ALANLAR = ("en", "boy", "yukseklik")
+
+
+def ihracat_urununu_guncelle(
+    db: Session, urun_kodu: str, alanlar: dict[str, str]
+) -> IhracatUrunu:
+    """Tek bir ihracat ürününün ölçülerini günceller; yoksa oluşturur.
+
+    Boş bırakılan alan silinir — iç piyasa ürün formundaki kuralın aynısı.
+    Grup adı olduğu gibi yazılır: ihracat grupları İngilizce ve karışık yazımlı
+    (Towel Heater, Air Con.), büyük harfe çevrilmez.
+    """
+    kod = (urun_kodu or "").strip()
+    if not kod:
+        raise MasterDataHatasi("Ürün kodu boş olamaz.")
+    urun = db.scalar(select(IhracatUrunu).where(IhracatUrunu.urun_kodu == kod))
+    if urun is None:
+        urun = IhracatUrunu(urun_kodu=kod)
+        db.add(urun)
+
+    urun.urun_adi = (alanlar.get("urun_adi") or "").strip() or urun.urun_adi or kod
+    urun.urun_grubu = (alanlar.get("urun_grubu") or "").strip() or None
+    for ad in IHRACAT_ONDALIK_ALANLAR:
+        if ad in alanlar:
+            setattr(urun, ad, _ondalik(alanlar[ad]))
+    for ad in IHRACAT_TAM_SAYI_ALANLAR:
+        if ad in alanlar:
+            setattr(urun, ad, _tam_sayi(alanlar[ad]))
+    if "aktif" in alanlar:
+        urun.aktif = str(alanlar["aktif"]).strip().upper() in {"E", "1", "TRUE", "ON"}
+
+    if not (urun.tir_yukleme_adeti or urun.konteyner_yukleme_adeti or urun.desi):
+        raise MasterDataHatasi(
+            "Tır yükleme adeti, konteyner yükleme adeti ve desiden en az biri "
+            "girilmelidir; yoksa bu üründen doluluk hesaplanamaz."
+        )
+    db.flush()
+    return urun

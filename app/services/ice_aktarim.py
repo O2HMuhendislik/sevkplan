@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.iller import yer_adi
+from app.domain.metin import buyuk_harf
 from app.models import IceAktarim, Musteri, SiparisDurumu, SiparisSatiri, Urun
 from app.services import excel
 from app.services.excel import ExcelHatasi
@@ -158,8 +159,9 @@ def urunleri_aktar(
             sonuc.guncellenen += 1
 
         urun.urun_adi = urun_adi
-        _doluyu_yaz(urun, "urun_grubu",
-                    (excel.metin(kayit.get("urun_grubu")) or "").upper() or None)
+        # Türkçe büyük harf: 'Klima' -> 'KLİMA'. Python'un upper()'ı 'KLIMA' verip
+        # aynı grubu ikiye bölüyordu (bkz. app/domain/metin.py).
+        _doluyu_yaz(urun, "urun_grubu", buyuk_harf(kayit.get("urun_grubu")) or None)
         _doluyu_yaz(urun, "palet_ici_adet", palet_ici)
         _doluyu_yaz(urun, "kamyon_yukleme_adeti", kamyon_adet)
         _doluyu_yaz(urun, "kamyon_palet", excel.tam_sayi_ya_da(kayit.get("kamyon_palet")))

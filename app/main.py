@@ -223,6 +223,20 @@ def sayfa(istek: Request, ad: str, kullanici: Kullanici | None = None, **baglam)
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
 
 
+EKRAN_LIMITI = 500
+"""Master Data listelerinde ekranda gösterilen en fazla kayıt; indirme sınırsızdır."""
+
+MD_YETKI = modul_yetkisi("MASTERDATA")
+MD_DUZENLEME = modul_yetkisi("MASTERDATA", duzenleme=True)
+
+
+def _sorgu_metni(**alanlar: str) -> str:
+    """Filtreyi indirme bağlantısına taşır: ekranda görülen liste = inen dosya."""
+    from urllib.parse import urlencode
+
+    return urlencode({ad: deger for ad, deger in alanlar.items() if deger})
+
+
 def plan_getir(db: Session, plan_id: int) -> SevkiyatPlani:
     plan = db.get(SevkiyatPlani, plan_id)
     if plan is None:
@@ -1213,6 +1227,7 @@ def rota_musteriler(
         musteriler=rapor_servisi.musterileri_getir(db, arama or None, tir or None),
         arama=arama,
         tir=tir,
+        sorgu=_sorgu_metni(arama=arama, tir=tir),
         toplam=db.scalar(select(func.count(Musteri.id))) or 0,
         bolgeler=VARSAYILAN_BOLGELER,
     )
@@ -1615,6 +1630,7 @@ def ihracat_musteriler(
         kullanici,
         musteriler=db.scalars(sorgu.limit(500)).all(),
         arama=arama,
+        sorgu=_sorgu_metni(arama=arama),
         toplam=db.scalar(select(func.count(IhracatMusterisi.id))) or 0,
     )
 
@@ -1647,40 +1663,75 @@ def ihracat_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTER
 def ihracat_urunler(
     istek: Request,
     arama: str = "",
+    urun_grubu: str = "",
     eksik: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("MASTERDATA")),
+    durum: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
     """Şirketin hesaplama dosyasındaki ürün ölçüleri."""
-    limit = 300
-    sorgu = select(IhracatUrunu).order_by(IhracatUrunu.urun_kodu)
-    if arama:
-        desen = f"%{arama.strip()}%"
-        sorgu = sorgu.where(
-            IhracatUrunu.urun_kodu.ilike(desen)
-            | IhracatUrunu.urun_adi.ilike(desen)
-            | IhracatUrunu.urun_grubu.ilike(desen)
-        )
-    olcusuz = (
-        IhracatUrunu.tir_yukleme_adeti.is_(None)
-        & IhracatUrunu.konteyner_yukleme_adeti.is_(None)
-        & IhracatUrunu.desi.is_(None)
+    from app.models import IhracatUrunu
+
+    filtre = masterdata_servisi.IhracatUrunFiltresi(
+        arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
     )
-    if eksik:
-        sorgu = sorgu.where(olcusuz)
+    tumu = masterdata_servisi.ihracat_urunleri_getir(db, filtre)
     return sayfa(
         istek,
-        "ihracat_urunler.html",
+        "md_ihracat_urunler.html",
         kullanici,
-        urunler=db.scalars(sorgu.limit(limit)).all(),
-        arama=arama,
-        eksik=bool(eksik),
-        limit=limit,
+        urunler=tumu[:EKRAN_LIMITI],
+        eslesen=len(tumu),
+        ekran_limiti=EKRAN_LIMITI,
+        filtre=filtre,
+        gruplar=masterdata_servisi.ihracat_urun_gruplari(db),
+        eksik_secenekleri=[
+            (kod, etiket)
+            for kod, (etiket, _) in masterdata_servisi.IHRACAT_EKSIK_KOSULLARI.items()
+        ],
+        eksikler=masterdata_servisi.ihracat_eksik_ozeti(db),
+        sorgu=_sorgu_metni(
+            arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
+        ),
         toplam=db.scalar(select(func.count(IhracatUrunu.id))) or 0,
-        eksik_sayisi=db.scalar(
-            select(func.count(IhracatUrunu.id)).where(olcusuz)
-        ) or 0,
     )
+
+
+@uygulama.get("/masterdata/ihracat-urunler/yeni")
+def ihracat_urun_yeni(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "md_ihracat_urun_duzenle.html",
+        kullanici,
+        urun=None,
+        gruplar=masterdata_servisi.ihracat_urun_gruplari(db),
+        geri="/masterdata/ihracat-urunler",
+    )
+
+
+@uygulama.post("/masterdata/ihracat-urunler/kaydet")
+async def ihracat_urun_kaydet(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    form = await istek.form()
+    geri = str(form.get("geri") or "/masterdata/ihracat-urunler")
+    urun_kodu = str(form.get("urun_kodu") or "")
+    alanlar = {
+        ad: str(deger) for ad, deger in form.items() if ad not in {"geri", "urun_kodu"}
+    }
+    try:
+        urun = masterdata_servisi.ihracat_urununu_guncelle(db, urun_kodu, alanlar)
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir(f"/masterdata/ihracat-urunler/{urun_kodu}", hata=str(hata))
+    return yonlendir(geri, mesaj=f"{urun.urun_kodu} güncellendi.")
 
 
 @uygulama.post("/masterdata/ihracat-urunler/yukle")
@@ -2194,20 +2245,6 @@ def ihracat_manuel_plan_uret(
 
 
 # ------------------------------------------------------------------- master data
-EKRAN_LIMITI = 500
-"""Master Data listelerinde ekranda gösterilen en fazla kayıt; indirme sınırsızdır."""
-
-MD_YETKI = modul_yetkisi("MASTERDATA")
-MD_DUZENLEME = modul_yetkisi("MASTERDATA", duzenleme=True)
-
-
-def _sorgu_metni(**alanlar: str) -> str:
-    """Filtreyi indirme bağlantısına taşır: ekranda görülen liste = inen dosya."""
-    from urllib.parse import urlencode
-
-    return urlencode({ad: deger for ad, deger in alanlar.items() if deger})
-
-
 @uygulama.get("/masterdata")
 def masterdata_ozet(
     istek: Request,
@@ -2227,6 +2264,9 @@ def masterdata_ozet(
         {"etiket": "İhracat ürünü",
          "sayi": db.scalar(select(func.count(IhracatUrunu.id))) or 0,
          "aciklama": "Tır / konteyner yükleme adetleri", "yol": "/masterdata/ihracat-urunler"},
+        {"etiket": "Ürün grubu",
+         "sayi": len(masterdata_servisi.urun_gruplari_ozeti(db)),
+         "aciklama": "Ad değiştirme ve birleştirme", "yol": "/masterdata/gruplar"},
         {"etiket": "Depo", "sayi": db.scalar(select(func.count(Depo.id))) or 0,
          "aciklama": "Kod, tesis, form etiketi", "yol": "/masterdata/depolar"},
     ]
@@ -2424,13 +2464,23 @@ def md_musteriler_excel(
 
 @uygulama.get("/masterdata/ihracat-musteriler/excel")
 def md_ihracat_musteriler_excel(
+    arama: str = "",
     kullanici: Kullanici = Depends(MD_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
+    """Ekrandaki aramanın aynısını uygular; inen dosya görülen listedir."""
     from app.models import IhracatMusterisi
 
+    sorgu = select(IhracatMusterisi).order_by(IhracatMusterisi.musteri_adi)
+    if arama:
+        desen = f"%{arama.strip()}%"
+        sorgu = sorgu.where(
+            IhracatMusterisi.musteri_adi.ilike(desen)
+            | IhracatMusterisi.ulke.ilike(desen)
+            | IhracatMusterisi.ulke_kodu.ilike(desen)
+        )
     hedef = masterdata_servisi.disari_aktar(
-        list(db.scalars(select(IhracatMusterisi).order_by(IhracatMusterisi.musteri_adi)).all()),
+        list(db.scalars(sorgu).all()),
         veri_formatlari.IHRACAT_MUSTERI_ALANLARI,
         masterdata_servisi.IHRACAT_MUSTERI_DEGERLERI,
         CIKTI_DIZIN / "ihracat_masterdata.xlsx",
@@ -2441,13 +2491,19 @@ def md_ihracat_musteriler_excel(
 
 @uygulama.get("/masterdata/ihracat-urunler/excel")
 def md_ihracat_urunler_excel(
+    arama: str = "",
+    urun_grubu: str = "",
+    eksik: str = "",
+    durum: str = "",
     kullanici: Kullanici = Depends(MD_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    from app.models import IhracatUrunu
-
+    """Ekrandaki filtrenin **aynısını** uygular; inen dosya görülen listedir."""
+    filtre = masterdata_servisi.IhracatUrunFiltresi(
+        arama=arama, urun_grubu=urun_grubu, eksik=eksik, durum=durum
+    )
     hedef = masterdata_servisi.disari_aktar(
-        list(db.scalars(select(IhracatUrunu).order_by(IhracatUrunu.urun_kodu)).all()),
+        masterdata_servisi.ihracat_urunleri_getir(db, filtre),
         veri_formatlari.IHRACAT_URUN_ALANLARI,
         masterdata_servisi.IHRACAT_URUN_DEGERLERI,
         CIKTI_DIZIN / "ihracat_urun_masterdata.xlsx",
@@ -2650,3 +2706,91 @@ def ihracat_istif(
     db: Session = Depends(oturum_bagimliligi),
 ):
     return _istif_sayfasi(istek, kullanici, db, plan_id, "IHRACAT")
+
+
+@uygulama.get("/masterdata/ihracat-urunler/{urun_kodu:path}")
+def ihracat_urun_duzenle(
+    istek: Request,
+    urun_kodu: str,
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import IhracatUrunu
+
+    urun = db.scalar(
+        select(IhracatUrunu).where(IhracatUrunu.urun_kodu == urun_kodu)
+    )
+    if urun is None:
+        raise HTTPException(404, "Ürün bulunamadı")
+    return sayfa(
+        istek,
+        "md_ihracat_urun_duzenle.html",
+        kullanici,
+        urun=urun,
+        gruplar=masterdata_servisi.ihracat_urun_gruplari(db),
+        geri="/masterdata/ihracat-urunler",
+    )
+
+
+# --------------------------------------------------------------- ürün grupları
+@uygulama.get("/masterdata/gruplar")
+def md_gruplar(
+    istek: Request,
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    gruplar = masterdata_servisi.urun_gruplari_ozeti(db)
+    listeler: dict[str, list[str]] = {}
+    for g in gruplar:
+        listeler.setdefault(g["kapsam"], []).append(g["ad"])
+    return sayfa(
+        istek,
+        "md_gruplar.html",
+        kullanici,
+        gruplar=gruplar,
+        cakisanlar=[g for g in gruplar if g["cakisanlar"]],
+        grup_listeleri={k: sorted(v) for k, v in listeler.items()},
+        grupsuzlar=masterdata_servisi.grupsuz_urun_sayisi(db),
+        kapsam_adlari=masterdata_servisi.GRUP_ADLARI,
+    )
+
+
+@uygulama.post("/masterdata/gruplar/ad")
+def md_grup_adi(
+    kapsam: str = Form(...),
+    eski_ad: str = Form(...),
+    yeni_ad: str = Form(...),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Grup adını değiştirir; ad zaten varsa iki grup birleşir."""
+    try:
+        sayi = masterdata_servisi.grubu_yeniden_adlandir(db, kapsam, eski_ad, yeni_ad)
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir("/masterdata/gruplar", hata=str(hata))
+    if not sayi:
+        return yonlendir("/masterdata/gruplar", mesaj="Değişiklik yok.")
+    return yonlendir(
+        "/masterdata/gruplar",
+        mesaj=f"{eski_ad} → {yeni_ad}: {sayi} ürün güncellendi.",
+    )
+
+
+@uygulama.post("/masterdata/gruplar/sil")
+def md_grup_sil(
+    kapsam: str = Form(...),
+    ad: str = Form(...),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sayi = masterdata_servisi.grubu_sil(db, kapsam, ad)
+        db.commit()
+    except masterdata_servisi.MasterDataHatasi as hata:
+        db.rollback()
+        return yonlendir("/masterdata/gruplar", hata=str(hata))
+    return yonlendir(
+        "/masterdata/gruplar", mesaj=f"{ad} grubu {sayi} üründen kaldırıldı."
+    )

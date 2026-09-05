@@ -174,7 +174,8 @@ bakılıyordu. Artık tek yerdeler, eski adresler yönlendiriliyor.
 | **Ürünler** | Sütun filtreleri, filtrelenmiş listeyi indirme, toplu yükleme, tekil düzenleme |
 | **Müşteriler** | İç piyasa müşterileri: il, ilçe, bölge, tır girişi, cari kod, sevk tipi, cumartesi/e-irsaliye (eski adres `/rota/musteriler`) |
 | **İhracat Müşterileri** | Araç tipi, sefer kodu, yükleme tipi, azami tonaj (eski adres `/ihracat/musteriler`) |
-| **İhracat Ürünleri** | Tır ve konteyner yükleme adetleri, yeni/eski hesap (eski adres `/ihracat/urunler`) |
+| **İhracat Ürünleri** | Sütun filtreleri, filtrelenmiş listeyi indirme, tekil düzenleme; tır/konteyner yükleme adetleri, yeni ve eski hesap (eski adres `/ihracat/urunler`) |
+| **Ürün Grupları** | Grup adı değiştirme ve birleştirme; değişiklik bütün ürünlere işler |
 | **Depolar** | Kod, ad, tesis, yükleme formundaki satır adı ve sırası, Axata açılır mı, parsiyel yapılır mı |
 | **Sistem Tanımları** | Planlama sayıları (kargo desi sınırı, rutin palet sınırı, azami durak, rota sapması, günlük araç sınırları) |
 
@@ -235,6 +236,30 @@ Eşleşmeyenler gerekçesi ve sistemdeki adaylarıyla birlikte Excel'e yazılıy
 
 Sahadan gelen ilk liste programla birlikte geliyor ve **kurulumda bir kez**
 işleniyor; sonraki açılışlarda ekrandan yapılan düzeltmelerin üzerine yazmıyor.
+
+#### Ürün grupları
+
+Ürün grubu planlamanın ikinci fazında kullanılır: aracı dolduramayan artıklar **aynı
+grup içinde** birleştirilir. Grup ikiye bölünmüşse bu birleştirme çalışmaz.
+
+**Türkçe büyük harf.** Python'un `str.upper()` metodu Türkçe değildir: `'i'` harfini
+`'I'` yapar, oysa Türkçede `i → İ`. Bu yüzden dosyada "Klima" yazan kayıt `KLIMA`,
+"KLİMA" yazan kayıt `KLİMA` olarak saklanıyor ve **aynı grup ikiye bölünüyordu**.
+Artık `app/domain/metin.py` içindeki `buyuk_harf()` kullanılıyor: "Klima" da "kombi"
+de doğru karşılığına (`KLİMA`, `KOMBİ`) gidiyor.
+
+Yazım hatasını (ör. noktasız ı ile "klıma") büyük harf kuralı düzeltemez; onun için
+**Ürün Grupları** ekranı var:
+
+* Grup adı değiştirilir; **o gruptaki bütün ürünler** güncellenir.
+* Hedef ad zaten varsa iki grup **birleşir** — ikiye bölünmüş grubu toplamanın yolu budur.
+* Yalnızca yazımıyla ayrışan gruplar (`KLİMA` ↔ `KLIMA`) ekranın başında uyarı olarak
+  listelenir.
+* "Gruptan çıkar" ürünleri silmez, grupsuz bırakır.
+
+İç piyasa ve ihracat grupları **ayrıdır**: biri Türkçe (PANEL, KLİMA), diğeri
+İngilizce (Radiator, Air Con.). Birleştirilmezler. İhracat adları büyük harfe
+çevrilmez, olduğu gibi yazılır.
 
 #### Depo tanımları
 

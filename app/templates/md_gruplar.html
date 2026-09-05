@@ -1,0 +1,100 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'gruplar' %}
+{% block icerik %}
+<h1>Ürün Grupları</h1>
+
+<div class="kart">
+  <p class="soluk" style="margin:0">
+    Ürün grubu planlamanın ikinci fazında kullanılır: aracı dolduramayan artıklar
+    <b>aynı grup içinde</b> birleştirilir. Grup ikiye bölünmüşse bu birleştirme
+    çalışmaz. Adı değiştirdiğinizde <b>o gruptaki bütün ürünler</b> güncellenir;
+    hedef ad zaten varsa iki grup <b>birleşir</b>.
+  </p>
+  <p class="soluk">
+    İç piyasa ve ihracat grupları ayrıdır: biri Türkçe (PANEL, KLİMA), diğeri
+    İngilizce (Radiator, Air Con.). Aynı grup değiller, birleştirilmezler.
+    İç piyasa adları <b>Türkçe kurallarına göre</b> büyük harfe çevrilir —
+    "Klima" yazsanız da "KLİMA" olur.
+  </p>
+</div>
+
+{% if cakisanlar %}
+<div class="uyari hata">
+  <b>Yalnızca yazımıyla ayrışan grup var.</b> Aşağıdakiler aynı şeyi anlatıyor ama
+  ayrı grup sayılıyor; birini diğerinin adına taşıyın:
+  {% for c in cakisanlar %}
+    <div>{{ c.kapsam_adi }}: <b>{{ c.ad }}</b> ({{ c.sayi }} ürün) ↔
+      {{ c.cakisanlar | join(', ') }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="kart">
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Master data</th><th>Grup</th>
+      <th class="sag">Ürün</th><th>Yeni ad</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for g in gruplar %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td>{{ g.kapsam_adi }}</td>
+        <td><b>{{ g.ad }}</b>
+          {% if g.cakisanlar %}
+            <div><span class="rozet HATALI">çakışma</span>
+              <span class="soluk">{{ g.cakisanlar | join(', ') }}</span></div>
+          {% endif %}</td>
+        <td class="sag">
+          <a href="/masterdata/{{ 'urunler' if g.kapsam == 'IC_PIYASA' else 'ihracat-urunler' }}?urun_grubu={{ g.ad | urlencode }}">
+            {{ g.sayi | sayi }}</a></td>
+        <td>
+          <form method="post" action="/masterdata/gruplar/ad" class="satir" style="gap:6px">
+            <input type="hidden" name="kapsam" value="{{ g.kapsam }}">
+            <input type="hidden" name="eski_ad" value="{{ g.ad }}">
+            <input name="yeni_ad" value="{{ g.ad }}" list="grup-{{ g.kapsam }}"
+                   style="width:200px" required>
+            <button type="submit">Kaydet</button>
+          </form></td>
+        <td>
+          <form method="post" action="/masterdata/gruplar/sil">
+            <input type="hidden" name="kapsam" value="{{ g.kapsam }}">
+            <input type="hidden" name="ad" value="{{ g.ad }}">
+            <button type="submit" class="ikincil"
+                    onclick="return confirm('{{ g.ad }} grubu {{ g.sayi }} üründen kaldırılacak. Ürünler silinmez, grupsuz kalır. Onaylıyor musunuz?')">
+              Gruptan çıkar</button>
+          </form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% for kapsam, adlar in grup_listeleri.items() %}
+    <datalist id="grup-{{ kapsam }}">
+      {% for ad in adlar %}<option value="{{ ad }}">{% endfor %}
+    </datalist>
+  {% endfor %}
+</div>
+
+<div class="kart">
+  <h2>Grubu olmayan ürünler</h2>
+  <p class="soluk">
+    Grubu boş ürün faz 2'de hiçbir grupla birleşemez; tek başına araç dolduramazsa
+    beklemede kalır.
+  </p>
+  <table>
+    <thead><tr><th>Master data</th><th class="sag">Grupsuz ürün</th><th></th></tr></thead>
+    <tbody>
+    {% for kapsam, sayi in grupsuzlar.items() %}
+      <tr>
+        <td>{{ kapsam_adlari[kapsam] }}</td>
+        <td class="sag">{{ sayi | sayi }}</td>
+        <td><a class="dugme ikincil"
+               href="/masterdata/{{ 'urunler' if kapsam == 'IC_PIYASA' else 'ihracat-urunler' }}?eksik=GRUP">
+            Listele</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
