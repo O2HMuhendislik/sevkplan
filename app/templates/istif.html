@@ -18,10 +18,10 @@
     <div class="deger">{{ istif.palet_sayisi }}</div>
     <div class="soluk">{{ istif.zemin_paleti }} zeminde ·
       {{ istif.istiflenen }} üst kat · {{ kirik_palet }} kırık</div></div>
-  <div class="metrik"><div class="etiket">Zemin doluluğu</div>
-    <div class="deger">%{{ (istif.zemin_doluluk * 100) | round(1) }}</div>
+  <div class="metrik"><div class="etiket">Zemin kaplama</div>
+    <div class="deger">%{{ (istif.zemin_kaplama * 100) | round(1) }}</div>
     <div class="soluk">{{ (istif.kullanilan_uzunluk / 100) | round(2) }} /
-      {{ istif.arac.uzunluk / 100 }} m</div></div>
+      {{ istif.arac.uzunluk / 100 }} m kullanıldı</div></div>
   <div class="metrik"><div class="etiket">Ağırlık</div>
     <div class="deger">{{ istif.toplam_agirlik | sayi }} kg</div>
     <div class="soluk">ön %{{ on_oran }} · arka %{{ 100 - on_oran }}</div></div>
@@ -58,6 +58,14 @@
     katlarını, <b>3B</b> ikisini birden gösterir. Sol taraf <b>kabin</b> (dip), sağ
     taraf <b>kapı</b>; renkler durakları gösterir. Kutuların üstündeki numara
     <b>yükleme sırasıdır</b>: 1 önce yüklenir.
+  </p>
+  <p class="soluk">
+    Her kutu <b>tek bir palettir</b> ve master datadaki eni/boyu kadar yer kaplar;
+    palet aracın enine daha çok sığan yönde çevrilir. Bir sıraya aynı durağın
+    paletleri yan yana girer — durak karışmaz, çünkü sıra bir bütün olarak iner.
+    Zeminde kalan boşluk gerçektir: sıranın eni tam dolmamıştır.
+    <b>Kapasite kararı bu çizimde değil, anahtar değerdedir</b>; çizim fiziki
+    yerleşimi gösterir.
   </p>
 
   <div class="gorunus-sekmeleri">

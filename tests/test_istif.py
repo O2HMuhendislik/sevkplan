@@ -24,33 +24,46 @@ def tip(kod, palet_ici=16, en=80, boy=120, arac_palet=33, agirlik=0):
 
 
 @pytest.mark.parametrize(
-    "arac, en, boy, sirket_palet",
+    "arac, en, boy, sira_adedi, sira_sayisi",
     [
-        (TIR, 80, 120, 33), (TIR, 100, 120, 26),
-        (KAMYON, 80, 120, 17), (KAMYON, 100, 120, 14),
+        # 80x120: eni 245'e üç kez sığar, derinlik 120 -> 1360/120 = 11 sıra
+        (TIR, 80, 120, 3, 11),
+        # 100x120: çevrilir, 120 eni ikiye sığar, derinlik 100 -> 13 sıra
+        (TIR, 100, 120, 2, 13),
+        (KAMYON, 80, 120, 3, 5),
+        (KAMYON, 100, 120, 2, 7),
     ],
 )
-def test_arac_zemini_sirketin_palet_sayisini_alir(arac, en, boy, sirket_palet):
-    """Zemin, master datadaki 'tır/kamyon palet' sayısı kadar palet almalı.
+def test_paletler_gercek_olculeriyle_zemine_dizilir(arac, en, boy, sira_adedi, sira_sayisi):
+    """Her palet master datadaki eni/boyu kadar yer kaplar.
 
-    Araç ölçüleri tahmin değil: 1360x245 (tır) ve 700x245 (kamyon) zeminler,
-    şirketin kendi palet sayılarını birebir veren ölçülerdir.
+    Palet iki yönde de denenir; aracın enine daha çok sığan yön seçilir. Çizim bir
+    zemin planıdır: kapasite kararı anahtar değerindir, burada geometri konuşur.
     """
-    urun = tip("P", palet_ici=1, en=en, boy=boy, arac_palet=sirket_palet)
-    paletler = paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(sirket_palet))])
-    plan = istif_planla(paletler, arac)
+    urun = tip("P", palet_ici=1, en=en, boy=boy, arac_palet=0)
+    hedef = sira_adedi * sira_sayisi
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(hedef))]), arac
+    )
 
-    assert plan.palet_sayisi == sirket_palet
+    assert plan.zemin_paleti == hedef
     assert not plan.sigmayanlar
-    # Tam sayıda palet zemini tam doldurur.
-    assert plan.zemin_doluluk == Decimal(1)
+    # Her palet gerçek ölçüsünde; sıradaki paletler yan yana dizilir.
+    ilk_sira = [y for y in plan.yerlesimler if y.yukleme_sirasi == 1]
+    assert len(ilk_sira) == sira_adedi
+    enler = {int(y.genislik) for y in ilk_sira}
+    assert len(enler) == 1 and enler.pop() * sira_adedi <= arac.genislik
+    assert len({y.y for y in ilk_sira}) == sira_adedi      # farklı konumlarda
 
 
-def test_bir_palet_fazlasi_zemine_sigmaz():
-    urun = tip("P", palet_ici=1, arac_palet=33)
-    paletler = paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(34))])
-    plan = istif_planla(paletler, TIR)
-    assert plan.palet_sayisi == 33
+def test_zemin_dolunca_kalan_paletler_ustune_konur():
+    """Bir sıra fazlası zemine sığmaz; istiflenebiliyorsa üste çıkar."""
+    urun = tip("P", palet_ici=1, arac_palet=0)          # 80x120, yükseklik 160
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(34))]), TIR
+    )
+    assert plan.zemin_paleti == 33
+    # 2 x 160 cm > 270 cm iç yükseklik: istiflenemez.
     assert len(plan.sigmayanlar) == 1
 
 
@@ -102,29 +115,17 @@ def test_agirlik_kirik_palette_oransal_hesaplanir():
     assert [p.agirlik for p in paletler] == [Decimal("100.0"), Decimal("50.0")]
 
 
-def test_farkli_urunler_ayni_siraya_karismaz():
-    """Depo bir sırayı tek ürün olarak topluyor; sırada iki ürün olmamalı."""
-    a = tip("A", palet_ici=10, arac_palet=33)
-    b = tip("B", palet_ici=10, arac_palet=33)
-    durak = Durak(1, "BAYİ", "IZMIR")
-    plan = istif_planla(
-        paletleri_kur([(a, durak, Decimal(10)), (b, durak, Decimal(10))]), TIR
-    )
-    siralar: dict[int, set[str]] = {}
-    for yerlesim in plan.yerlesimler:
-        siralar.setdefault(yerlesim.yukleme_sirasi, set()).add(yerlesim.yuk.tip.urun_kodu)
-    assert all(len(kodlar) == 1 for kodlar in siralar.values())
-
-
 def test_agirlik_dagilimi_on_ve_arka_yariyi_ayirir():
-    """Tek sıralı (araç enine bir palet) yükte ağırlık tam ortadan bölünür."""
-    urun = tip("P", palet_ici=1, en=240, boy=240, arac_palet=10, agirlik=100)
+    """Zemine eşit dağılan yükte ağırlık ön ve arka yarıda eşit olur."""
+    # 80x120 palet: 3 yan yana, 11 sıra = 33 palet, 1320 cm. Ortadaki 6. sıra
+    # (600-720 cm) tam ortada; ilk 5 sıra önde, son 5 sıra arkada kalır.
+    urun = tip("P", palet_ici=1, arac_palet=0, agirlik=100)
     plan = istif_planla(
-        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(10))]), TIR
+        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(33))]), TIR
     )
-    assert plan.palet_sayisi == 10
     on, arka = plan.agirlik_dagilimi()
-    assert on == arka == Decimal(500)
+    assert on + arka == Decimal(3300)
+    assert on > arka          # yük dipten başlar, ön yarı daha dolu
 
 
 def test_olcusu_olmayan_urun_tek_palet_sayilir():
@@ -195,32 +196,51 @@ def test_ustteki_palet_tabanindan_once_inmeli():
             assert ustteki.durak.sira <= yerlesim.yuk.durak.sira
 
 
-def test_eksik_sira_zemini_bos_birakmaz():
-    """Sırada aracın enine sığandan az palet varsa kalan en boş durmaz.
-
-    Derinlik zaten gerçek palet sayısıyla orantılı; eni de yan yana sığana
-    bölünseydi palet iki kez küçülür ve çizim, planın doluluk yüzdesinden çok daha
-    boş görünürdü.
-    """
-    urun = tip("P", palet_ici=10, arac_palet=33)      # 80x120 -> 3 yan yana
+def test_ayni_duragin_farkli_urunleri_ayni_sirayi_paylasir():
+    """Tek paletlik kalemler sıranın kalanını boş bırakmaz; depo yan yana koyar."""
+    a = tip("A", palet_ici=1, arac_palet=0)
+    b = tip("B", palet_ici=1, arac_palet=0)
+    durak = Durak(1, "BAYİ", "IZMIR")
     plan = istif_planla(
-        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(10))]), TIR
+        paletleri_kur([(a, durak, Decimal(1)), (b, durak, Decimal(1))]), TIR
     )
-    yerlesim = plan.yerlesimler[0]
-    assert len(plan.yerlesimler) == 1
-    assert yerlesim.genislik == Decimal(TIR.genislik)   # tek palet sırayı doldurur
+    assert len({y.yukleme_sirasi for y in plan.yerlesimler}) == 1   # tek sıra
+    assert {y.yuk.tip.urun_kodu for y in plan.yerlesimler} == {"A", "B"}
+    assert len({y.y for y in plan.yerlesimler}) == 2                # yan yana
 
 
-def test_cizilen_alan_plandaki_doluluga_esit():
-    """Paletlerin zeminde kapladığı alan, anahtar değerin gösterdiği oranla aynı."""
-    urun = tip("P", palet_ici=1, arac_palet=33)
-    for adet in (5, 11, 17, 33):
-        plan = istif_planla(
-            paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(adet))]), TIR
-        )
-        alan = sum(y.derinlik * y.genislik for y in plan.yerlesimler)
-        beklenen = Decimal(TIR.uzunluk) * Decimal(TIR.genislik) * Decimal(adet) / 33
-        assert abs(alan - beklenen) < Decimal("0.01"), adet
+def test_farkli_duraklar_ayni_sirayi_paylasmaz():
+    """Sıra bir bütün olarak iner; dipteki sıraya öndekiler boşaltılmadan ulaşılmaz."""
+    urun = tip("P", palet_ici=1, arac_palet=0)
+    plan = istif_planla(
+        paletleri_kur(
+            [
+                (urun, Durak(1, "İLK", "BURSA"), Decimal(1)),
+                (urun, Durak(2, "SON", "IZMIR"), Decimal(1)),
+            ]
+        ),
+        TIR,
+    )
+    siralar: dict[int, set[int]] = {}
+    for yerlesim in plan.yerlesimler:
+        siralar.setdefault(yerlesim.yukleme_sirasi, set()).add(yerlesim.yuk.durak.sira)
+    assert all(len(duraklar) == 1 for duraklar in siralar.values())
+
+
+def test_olcusuz_urun_standart_palet_sayilir():
+    """Ölçüsü tanımsız ürün için Euro palet varsayılır; palet yine çizilir."""
+    from app.domain.istif import VARSAYILAN_PALET_BOY, VARSAYILAN_PALET_EN
+
+    urun = PaletTipi(
+        urun_kodu="X", urun_adi="X", urun_grubu="G", palet_ici_adet=1,
+        en=0, boy=0, yukseklik=120, agirlik=Decimal(0), arac_palet_sayisi=0,
+    )
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(3))]), TIR
+    )
+    assert plan.zemin_paleti == 3
+    assert all(int(y.genislik) == VARSAYILAN_PALET_EN for y in plan.yerlesimler)
+    assert all(int(y.derinlik) == VARSAYILAN_PALET_BOY for y in plan.yerlesimler)
 
 
 def test_cizim_verisi_ust_kati_ayri_kutu_olarak_verir(db):
@@ -266,3 +286,15 @@ def test_yukleme_sirasi_listesi_dipten_kapiya(db):
     # 1 numara son durağın malı: en dibe konur.
     assert liste[0]["durak"].sira == 2
     assert liste[-1]["durak"].sira == 1
+
+
+def test_zemin_kaplama_bos_sirayi_sayar():
+    """Kullanılan uzunluk ile kaplanan alan farklıdır; eksik sıra boşluk bırakır."""
+    urun = tip("P", palet_ici=1, arac_palet=0)          # 80x120 -> 3 yan yana
+    plan = istif_planla(
+        paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(1))]), TIR
+    )
+    # Tek palet bir sıra açar: uzunlukça 120/1360, alanca 80x120 / (1360x245).
+    assert plan.kullanilan_uzunluk == Decimal(120)
+    assert plan.zemin_doluluk == Decimal("0.0882")
+    assert plan.zemin_kaplama == Decimal("0.0288")

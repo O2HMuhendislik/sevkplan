@@ -470,20 +470,29 @@ birlikte listeler — depo hangi ürünü en başta yükleyeceğini oradan okur.
 kütüphane yüklenmez: program şirket içi bir sunucuda çalışıyor ve internet
 erişimine bağlı olmamalı. Sürükleyerek çevrilir, tekerlekle yakınlaştırılır.
 
-**Zemin, anahtar değerin kendisidir.** Bir paletin kapladığı yer
-`araç zemini / o ürünün tır (ya da kamyon) palet sayısı` kadardır. O sayı ürün
-master datasından, yani şirketin kendi ölçüsünden gelir; anahtar değer de
-`Σ palet / tır palet` olduğu için **çizim ile planın doluluk yüzdesi çelişmez**.
+**Her kutu tek bir palettir.** Palet, master datadaki **eni ve boyu** kadar yer
+kaplar; aracın enine daha çok sığan yönde çevrilir (depo da öyle yapıyor). Bir sıraya
+**aynı durağın** paletleri yan yana girer, ürünleri farklı olabilir — tek paletlik
+kalemler sıranın kalanını boş bırakmasın diye. Durak karışmaz: sıra bir bütün olarak
+iner, dipteki sıraya öndekiler boşaltılmadan ulaşılamaz. Ölçüsü tanımsız ürün için
+standart Euro palet (80×120) varsayılır.
 
-Araç iç ölçüleri de tahmin değil, aynı veriden türetildi:
+Zeminde kalan boşluk **gerçektir**: o sıranın eni tam dolmamıştır. Ekrandaki
+**zemin kaplama** yüzdesi kaplanan alanı ölçer, kullanılan uzunluğu değil.
+
+Araç iç ölçüleri tahmin değil, şirketin kendi verisinden türetildi:
 
 | Araç | Zemin | Doğrulama |
 |---|---|---|
 | Tır | 1360 × 245 cm | 80×120 palet → 33, 100×120 → 26 (master datanın "tır palet" sütunu) |
 | Kamyon | 700 × 245 cm | Aynı ürünlerde 17 ve 14 — tırın tam yarısı |
 
-Model, palet ölçüsü tanımlı **2.124 ürünün tamamında** şirketin palet sayısını
-birebir veriyor.
+**Kapasite kararı bu çizimde değil, anahtar değerdedir.** Çizim fiziki yerleşimi
+gösterir; ikisi aynı şeyi ölçmez. Anahtar değeri 1,00 olan bir araçta palet gözü
+sayısı zeminden fazla çıkar (3 adetlik bir kalem de bir palet yapar) — fazlası üst
+kata konur, oraya da sığmayan kalırsa gerekçesiyle listelenir. 30.09.2025'in gerçek
+verisinde 30 FTL aracın 1.308 paletinin **729'u zeminde, 579'u üst katta**;
+**129'u** (%10) yerleştirilemiyor. Zemin kaplama medyanı **%83**.
 
 ### Üst kat (istif)
 
@@ -499,10 +508,8 @@ kalem de bir palet yapar ama depo onu yere ayrı bir göz olarak koymaz, başka 
   inmelidir. Aksi hâlde alttaki malı almak için üstündekini indirip tekrar yüklemek
   gerekir.
 
-30.09.2025'in gerçek verisinde 33 planın 1.478 paletinden **37'si** (%2,5)
-yerleştirilemiyor; 4'ü palet yüksekliği master datada tanımsız olduğu için, 33'ü
-gerçekten yer kalmadığı için. Model bilerek temkinlidir: iki kırık paleti yan yana
-tek göze koymaz, yalnızca üst üste bindirir.
+Model bilerek temkinlidir: paletleri kesmez, döndürmekten başka bir şey yapmaz ve
+yalnızca tam palet üstüne tam palet koyar.
 
 Ekran ağırlığın ön/arka dağılımını da gösterir (dingil yükü) ve yazdırılabilir.
 

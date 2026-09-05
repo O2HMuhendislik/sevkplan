@@ -53,6 +53,10 @@ KAMYON = AracOlcusu("Kamyon", 700, 245, 260)
 """Kamyon kasası. Aynı ürünlerde "kamyon palet" sayısı tırın tam yarısı (17 / 14);
 700 x 245 cm zemin bu sayıları da birebir veriyor."""
 
+VARSAYILAN_PALET_EN = 80
+VARSAYILAN_PALET_BOY = 120
+"""Ölçüsü master datada tanımsız ürün için standart Euro palet."""
+
 ASGARI_PALET_YUKSEKLIGI = 15
 """Boş palet tahtasının yüksekliği (cm): kırık palet bundan alçak olamaz."""
 
@@ -91,41 +95,30 @@ class PaletTipi:
     arac_palet_sayisi: int
     """Bu üründen araca kaç palet sığdığı (master datanın 'tır/kamyon palet' alanı)."""
 
-    def sira_adedi(self, arac: AracOlcusu) -> int:
-        """Aracın enine kaç tanesi yan yana girer? İki yön de denenir."""
-        adaylar = [
-            int(arac.genislik // olcu)
-            for olcu in (self.en, self.boy)
-            if olcu and olcu <= arac.genislik
-        ]
-        return max(adaylar) if adaylar else 1
+    @property
+    def olculu_mu(self) -> bool:
+        return bool(self.en and self.boy)
 
-    def sira_derinligi(self, arac: AracOlcusu, palet_adedi: int | None = None) -> Decimal:
-        """`palet_adedi` paletlik bir sıranın araç boyunca kapladığı derinlik (cm).
+    def yerlesim_olcusu(self, arac: AracOlcusu) -> tuple[int, int, int]:
+        """(yan yana adet, palet eni, palet derinliği) — cm.
 
-        Şirketin palet sayısından türetilir: `arac_palet_sayisi` palet zemini **tam**
-        doldurmalı. Derinlik sıradaki gerçek palet sayısıyla orantılıdır; son sıra
-        eksik kalırsa daha az yer kaplar. Sabit derinlik varsayılsaydı yan yana
-        sığmayan sayılarda (kamyona 17 palet, sıraya 3) zemin tutmuyordu.
+        Palet iki yönde de denenir; aracın enine **daha çok** sığan yön seçilir,
+        eşitlikte daha az derinlik kaplayan. Depo da paleti çevirerek yerleştiriyor.
 
-        Ölçü yoksa paletin kendi boyuna düşülür.
+        Ölçüsü tanımsız ürün için standart Euro palet (80x120) varsayılır; çizimde
+        işaretlenir. Ölçüsüz diye paleti hiç çizmemek depoya daha az bilgi verirdi.
         """
-        yan_yana = self.sira_adedi(arac)
-        adet = yan_yana if palet_adedi is None else palet_adedi
-        if self.arac_palet_sayisi > 0:
-            return (
-                Decimal(arac.uzunluk) * Decimal(adet) / Decimal(self.arac_palet_sayisi)
-            )
-        if self.boy:
-            return Decimal(min(self.en, self.boy) if yan_yana > 1 else self.boy)
-        return Decimal(120)
-
-    def palet_payi(self, arac: AracOlcusu) -> Decimal:
-        """Tek paletin araç zemininden aldığı pay (0-1)."""
-        if self.arac_palet_sayisi > 0:
-            return Decimal(1) / Decimal(self.arac_palet_sayisi)
-        yan_yana = self.sira_adedi(arac) or 1
-        return self.sira_derinligi(arac) / Decimal(arac.uzunluk) / Decimal(yan_yana)
+        en = self.en or VARSAYILAN_PALET_EN
+        boy = self.boy or VARSAYILAN_PALET_BOY
+        adaylar = [
+            (int(arac.genislik // genis), genis, derin)
+            for genis, derin in ((en, boy), (boy, en))
+            if genis <= arac.genislik
+        ]
+        if not adaylar:
+            # Palet araca enine sığmıyor: tek başına, aracın enini kaplar.
+            return 1, arac.genislik, min(en, boy)
+        return max(adaylar, key=lambda a: (a[0], -a[2]))
 
 
 @dataclass(frozen=True)
@@ -232,11 +225,26 @@ class IstifPlani:
 
     @property
     def zemin_doluluk(self) -> Decimal:
-        """Zeminin ne kadarının kaplandığı (0-1)."""
+        """Kullanılan uzunluğun araç boyuna oranı (0-1)."""
         if not self.arac.uzunluk:
             return Decimal(0)
         oran = self.kullanilan_uzunluk / Decimal(self.arac.uzunluk)
         return min(oran, Decimal(1)).quantize(Decimal("0.0001"))
+
+    @property
+    def zemin_kaplama(self) -> Decimal:
+        """Paletlerin zeminde kapladığı **alan** oranı (0-1).
+
+        Kullanılan uzunluktan farklıdır: sıra eksik kaldıysa o sıranın kalan eni
+        boştur. Depoya asıl bilgiyi bu verir — zeminde ne kadar boşluk kaldı.
+        """
+        toplam = self.arac.zemin_alani
+        if not toplam:
+            return Decimal(0)
+        alan = sum(
+            (y.derinlik * y.genislik for y in self.yerlesimler), Decimal(0)
+        )
+        return min(alan / toplam, Decimal(1)).quantize(Decimal("0.0001"))
 
     def _yigin_agirligi(self, yerlesim: Yerlesim) -> Decimal:
         return yerlesim.yuk.agirlik + sum(
@@ -302,70 +310,82 @@ def _sira_anahtari(palet: PaletYuku) -> tuple:
 
 
 def istif_planla(paletler: list[PaletYuku], arac: AracOlcusu) -> IstifPlani:
-    """Paletleri araç zeminine sıra sıra oturtur.
+    """Paletleri araç zeminine **tek tek**, gerçek palet ölçüleriyle oturtur.
 
-    Yerleştirme **ters rota sırasıyla** ilerler: en son uğranacak durağın paleti
-    dipten başlar, ilk durağınki kapıya en yakın sırada kalır. Böylece her durakta
-    yalnızca kapıdaki mal indirilir.
+    Her palet master datadaki eni ve boyu kadar yer kaplar; araç zemini gerçek bir
+    zemin planı gibi çizilir. Yerleştirme sıra sıra ilerler: bir sıra aracın enine
+    kaç palet sığıyorsa onu alır, sıra dolunca ya da ürün değişince yeni sıra açılır.
+    Sıranın derinliği içindeki en derin paletin derinliğidir.
 
-    Bir sıra aracın enine sığdığı kadar palet alır; sıra dolunca ya da sıradaki
-    paletin tipi değişince yeni sıra açılır. Aynı sırada farklı ürün karışmaz —
-    depo bir sırayı tek ürün olarak topluyor.
+    Sıra **ters rota** düzenindedir: en son uğranacak durağın paleti dipten
+    (kabinden) başlar, ilk durağınki kapıya en yakın sırada kalır. Böylece her
+    durakta yalnızca kapıdaki mal indirilir.
+
+    Bir sıraya **aynı durağın** paletleri girer; ürünleri farklı olabilir. Sıralama
+    aynı ürünü yan yana tuttuğu için karışma ancak bir ürünün son paletinde olur.
+    Durak karıştırılmaz: sıra bir bütün olarak indirilir, dipteki sıraya öndekiler
+    boşaltılmadan ulaşılamaz.
+
+    Zemine sığmayan paletler `_istifle` ile mevcut paletlerin üstüne konur.
     """
     plan = IstifPlani(arac=arac)
     sirali = sorted(paletler, key=_sira_anahtari)
-
-    # Ondalık bölmeden gelen milimetrenin binde biri kadar taşmalar sıra düşürmesin:
-    # 1360 / 26 x 2 gibi hesaplar tam kapanmayabiliyor.
-    TOLERANS = Decimal("0.001")
 
     x = Decimal(0)
     sira_no = 0
     indeks = 0
     while indeks < len(sirali):
         palet = sirali[indeks]
-        tip = palet.tip
-        yan_yana = tip.sira_adedi(arac)
-
-        # Sıraya yalnızca aynı ürünün ve aynı durağın paletleri girer.
-        grup = [palet]
-        ileri = indeks + 1
-        while (
-            len(grup) < yan_yana
-            and ileri < len(sirali)
-            and sirali[ileri].tip.urun_kodu == tip.urun_kodu
-            and sirali[ileri].durak.sira == palet.durak.sira
-        ):
-            grup.append(sirali[ileri])
-            ileri += 1
-
-        derinlik = tip.sira_derinligi(arac, len(grup))
-        if x + derinlik > Decimal(arac.uzunluk) + TOLERANS:
-            # Zemin doldu; kalanlar aşağıda istiflenmeye çalışılır.
+        _, palet_eni, palet_derinligi = palet.tip.yerlesim_olcusu(arac)
+        if x + palet_derinligi > Decimal(arac.uzunluk):
+            # Zemin doldu; kalanlar istiflenmeye çalışılır.
             break
 
+        # Sırayı aracın eni bitene kadar doldur. Sıradaki palet sığmıyorsa aynı
+        # durağın **ilerideki** paletlerine bakılır: bir kalemin geniş paleti yüzünden
+        # sıranın kalanı boş kalmasın. Durak bloğu dışına çıkılmaz (sıralama duraklara
+        # göre olduğu için blok bitişiktir).
+        sira: list[tuple[PaletYuku, int]] = [(palet, palet_eni)]
+        alinanlar = {indeks}
+        kalan_en = arac.genislik - palet_eni
+        derinlik = palet_derinligi
+        ileri = indeks + 1
+        while ileri < len(sirali) and sirali[ileri].durak.sira == palet.durak.sira:
+            if kalan_en <= 0:
+                break
+            aday = sirali[ileri]
+            _, aday_eni, aday_derinligi = aday.tip.yerlesim_olcusu(arac)
+            yeni_derinlik = max(derinlik, aday_derinligi)
+            if (
+                aday_eni <= kalan_en
+                and x + yeni_derinlik <= Decimal(arac.uzunluk)
+            ):
+                sira.append((aday, aday_eni))
+                alinanlar.add(ileri)
+                kalan_en -= aday_eni
+                derinlik = yeni_derinlik
+            ileri += 1
+
         sira_no += 1
-        # Sıradaki palet sayısı aracın enine sığandan azsa kalan en boş durmaz,
-        # paletler sırayı paylaşır. Derinlik zaten gerçek palet sayısıyla orantılı;
-        # eni de yan yana sığana bölseydik palet iki kez küçülür ve çizim, planın
-        # doluluk yüzdesinden daha boş görünürdü.
-        genislik = Decimal(arac.genislik) / Decimal(len(grup))
-        for sutun, yuk in enumerate(grup):
+        y_konum = 0
+        for yuk, en in sira:
             plan.yerlesimler.append(
                 Yerlesim(
                     yuk=yuk,
                     x=x,
-                    y=genislik * sutun,
-                    genislik=genislik,
-                    derinlik=derinlik,
+                    y=Decimal(y_konum),
+                    genislik=Decimal(en),
+                    derinlik=Decimal(derinlik),
                     yukleme_sirasi=sira_no,
                 )
             )
-        x += derinlik
-        indeks = ileri
+            y_konum += en
+        x += Decimal(derinlik)
+        sirali = [p for i, p in enumerate(sirali) if i not in alinanlar]
+        indeks = 0
 
-    if indeks < len(sirali):
-        _istifle(plan, sirali[indeks:])
+    if sirali:
+        _istifle(plan, sirali)
     return plan
 
 
