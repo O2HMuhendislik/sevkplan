@@ -153,6 +153,11 @@ MUSTERI_DEGERLERI: dict[str, Callable[[Musteri], Any]] = {
     "incoterms": lambda m: m.incoterms,
     "tir_girisi": lambda m: m.tir_girisi,
     "bolge_kodu": lambda m: m.bolge_kodu,
+    "eposta": lambda m: m.eposta,
+    "sevk_tipi": lambda m: m.sevk_tipi,
+    "cumartesi_teslimat": lambda m: "E" if m.cumartesi_teslimat else "H",
+    "e_irsaliye": lambda m: "E" if m.e_irsaliye else "H",
+    "ozel_durum": lambda m: m.ozel_durum,
     "notlar": lambda m: m.notlar,
     "aktif": lambda m: "E" if m.aktif else "H",
 }

@@ -484,6 +484,28 @@ def musterileri_aktar(
         elif musteri.tir_girisi is None:
             musteri.tir_girisi = "?"
         _doluyu_yaz(musteri, "bolge_kodu", excel.metin(kayit.get("bolge_kodu")))
+        _doluyu_yaz(musteri, "eposta", excel.metin(kayit.get("eposta")))
+        _doluyu_yaz(musteri, "ozel_durum", excel.metin(kayit.get("ozel_durum")))
+        # Sevk tipi metni araç tipini, cumartesi ve e-irsaliye bilgisini birlikte
+        # taşıyor; dosyada varsa üçü de ondan çözülür (bkz. musteri_ek_bilgi).
+        sevk = excel.metin(kayit.get("sevk_tipi"))
+        if sevk:
+            from app.services.musteri_ek_bilgi import sevk_tipini_coz
+
+            cozum = sevk_tipini_coz(sevk)
+            musteri.sevk_tipi = cozum["sevk_tipi"]
+            musteri.cumartesi_teslimat = cozum["cumartesi_teslimat"]
+            musteri.e_irsaliye = cozum["e_irsaliye"]
+            if cozum["tir_girisi"] != "?" and excel.bos_mu(kayit.get("tir_girisi")):
+                # Sütun ayrıca doldurulmamışsa sevk tipinden türetilen değer geçerli.
+                musteri.tir_girisi = cozum["tir_girisi"]
+        else:
+            if not excel.bos_mu(kayit.get("cumartesi_teslimat")):
+                musteri.cumartesi_teslimat = excel.evet_hayir(
+                    kayit.get("cumartesi_teslimat"), True
+                )
+            if not excel.bos_mu(kayit.get("e_irsaliye")):
+                musteri.e_irsaliye = excel.evet_hayir(kayit.get("e_irsaliye"), False)
         _doluyu_yaz(musteri, "notlar", excel.metin(kayit.get("notlar")))
         if not excel.bos_mu(kayit.get("aktif")):
             musteri.aktif = excel.evet_hayir(kayit.get("aktif"), True)

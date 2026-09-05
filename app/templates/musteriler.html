@@ -20,6 +20,34 @@
     </form>
   </div>
   <div class="kart">
+    <h2>Cari kod ve sevk tipi listesi</h2>
+    <p class="soluk">
+      Sahanın <b>CARİ KODLAR</b> ve <b>TESLİMAT TİPİ</b> sayfalarını taşıyan dosyası
+      olduğu gibi yüklenebilir; sayfa adları değil başlıkları tanınır. Cari kod
+      <b>bayi kodu</b> alanına, sevk tipi metni de <b>tır girişi</b>,
+      <b>cumartesi teslimat</b> ve <b>e-irsaliye</b> alanlarına çözülür.
+    </p>
+    <p class="soluk">
+      Eşleştirme yalnızca <b>kesin</b> yapılır: ad birebir aynıysa, ya da yalnız
+      noktalama/boşluk farkı varsa, ya da ayırt edici kelimeleri aynıysa. Benzerliğe
+      dayalı tahmin yapılmaz — "AKKAŞ ISI DEPO" ile "ARSE ISI DEPO" %81 benziyor ama
+      farklı bayiler; yanlış eşleşme yanlış araç kararı demek. Aynı müşteriye farklı
+      değer isteyen satırlar da yazılmaz. Kalanlar
+      <a href="/masterdata/musteriler/eslesmeyenler">eşleşmeyenler listesinde</a>
+      adaylarıyla birlikte çıkar; oradan tek tek işleyebilirsiniz.
+    </p>
+    <form class="satir" method="post" action="/masterdata/musteriler/ek-bilgi"
+          enctype="multipart/form-data">
+      <input type="file" name="dosya" accept=".xlsx,.xlsm" required>
+      <button type="submit">Yükle</button>
+      <a class="dugme ikincil" href="/masterdata/musteriler/eslesmeyenler">
+        Eşleşmeyenler</a>
+    </form>
+  </div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
     <h2>Tır girişi ne demek</h2>
     <p class="soluk">
       Bazı müşterilerin fiziki adresine tır giremiyor (AVM, şehir içi mağaza).
@@ -51,13 +79,14 @@
   {% if musteriler %}
   <table>
     <thead><tr>
-      <th>Bayi</th><th>İl</th><th>İlçe</th><th>Bölge</th><th>Incoterms</th>
-      <th>Tır</th><th>Not</th><th>Aktif</th><th></th>
+      <th class="sag">#</th><th>Bayi</th><th>İl</th><th>İlçe</th><th>Bölge</th>
+      <th>Incoterms</th><th>Tır</th><th>Sevk tipi</th><th>Not</th><th>Aktif</th><th></th>
     </tr></thead>
     <tbody>
     {% for m in musteriler %}
       <tr>
         <form method="post" action="/masterdata/musteriler/{{ m.id }}">
+        <td class="sag soluk">{{ loop.index }}</td>
         <td><b>{{ m.bayi_adi }}</b>
           {% if m.bayi_kodu %}<div class="soluk">{{ m.bayi_kodu }}</div>{% endif %}
           {% if m.alici_firma %}<div class="soluk">{{ m.alici_firma }}</div>{% endif %}</td>
@@ -76,6 +105,12 @@
               <option value="E" {{ 'selected' if m.tir_girisi == 'E' }}>E</option>
               <option value="H" {{ 'selected' if m.tir_girisi == 'H' }}>H</option>
             </select></td>
+        <td class="soluk" style="max-width:190px">
+          {% if m.sevk_tipi %}{{ m.sevk_tipi }}
+            {% if not m.cumartesi_teslimat %}<div><span class="rozet TASLAK">cts yok</span></div>{% endif %}
+            {% if m.e_irsaliye %}<div><span class="rozet AXATA_BEKLIYOR">e-irsaliye</span></div>{% endif %}
+            {% if m.ozel_durum %}<div class="dikkat">{{ m.ozel_durum }}</div>{% endif %}
+          {% else %}—{% endif %}</td>
         <td><input name="notlar" value="{{ m.notlar or '' }}" style="width:180px"></td>
         <td><input type="checkbox" name="aktif" value="true" {{ 'checked' if m.aktif }}></td>
         <td><button type="submit" class="ikincil">Kaydet</button></td>

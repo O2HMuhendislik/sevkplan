@@ -231,6 +231,22 @@ class Musteri(Temel):
     """E = tır girebilir, H = fiziki adres tır almıyor, ? = geçmişten karar verilemedi."""
     bolge_kodu: Mapped[str | None] = mapped_column(String(20), index=True, default=None)
     """Boşsa ilin varsayılan bölgesi kullanılır (app/domain/bolgeler.py)."""
+    eposta: Mapped[str | None] = mapped_column(String(200), default=None)
+    """Sevk bilgilendirmesinin gideceği adres."""
+    sevk_tipi: Mapped[str | None] = mapped_column(String(80), default=None)
+    """Sahanın kendi yazdığı teslimat tipi metni ("TIR-C.TESİ YOK-EİRSALİYE" gibi).
+
+    `tir_girisi` bundan türetilir ama ham metin de saklanır: içinde araç tipinin
+    yanında cumartesi ve e-irsaliye bilgisi de var ve ileride başka kural çıkabilir.
+    """
+    cumartesi_teslimat: Mapped[bool] = mapped_column(Boolean, default=True)
+    """Cumartesi mal kabul ediyor mu? Sevk tipinde "C.TESİ YOK" geçenlerde hayır."""
+    e_irsaliye: Mapped[bool] = mapped_column(Boolean, default=False)
+    """Teslimatta e-irsaliye isteniyor mu?"""
+    ozel_durum: Mapped[str | None] = mapped_column(Text, default=None)
+    """Sahanın serbest notu: "saat 10:00'a kadar teslim", "tam araç olana kadar
+    bekletilmesi" gibi. `notlar` kullanıcının kendi notu; bu alan kaynak dosyadan
+    gelir ve yeniden yüklemede güncellenir."""
     plan_sayisi: Mapped[int] = mapped_column(Integer, default=0)
     son_sevk: Mapped[date | None] = mapped_column(Date, default=None)
     notlar: Mapped[str | None] = mapped_column(Text, default=None)

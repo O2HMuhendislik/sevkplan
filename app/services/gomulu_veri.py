@@ -69,6 +69,10 @@ def eksikleri_yukle(db: Session) -> list[str]:
             continue
         mesajlar.append(f"{gomulu.ad}: {sonuc.eklenen} kayıt")
 
+    mesaj = _musteri_ek_bilgisi(db)
+    if mesaj:
+        mesajlar.append(mesaj)
+
     # Depo tanımları Excel'den değil, koddaki varsayılan listeden gelir; bugüne kadar
     # sabit olarak taşınan değerlerin aynısıdır (bkz. masterdata_servisi).
     from app.services.masterdata_servisi import depolari_yukle
@@ -77,3 +81,38 @@ def eksikleri_yukle(db: Session) -> list[str]:
     if eklenen_depo:
         mesajlar.append(f"Depo tanımları: {eklenen_depo} kayıt")
     return mesajlar
+
+
+EK_BILGI_DOSYASI = ORNEK_DIZIN / "musteri_ek_bilgi.xlsx"
+"""Sahanın cari kod ve teslimat tipi listesi.
+
+Müşteri master datası geçmiş sevk verisinden üretildiği için bayi kodu ve tır girişi
+çoğunlukla boştu. Bu dosya sahadan geldi ve müşteri kayıtlarına **ad üzerinden**
+işleniyor. Ana dosyanın üzerine yazmak yerine ayrı tutuluyor: ana dosya geçmiş
+istatistiklerini (plan sayısı, araç tipi geçmişi) taşıyor ve kaynağı belli kalsın.
+"""
+
+
+def _musteri_ek_bilgisi(db: Session) -> str | None:
+    """Cari kod / sevk tipi bilgisini bir kez işler.
+
+    Kayıtlardan biri bile sevk tipi taşıyorsa dosya daha önce işlenmiş demektir;
+    kullanıcının ekrandan yaptığı düzeltmelerin üzerine yazılmaz.
+    """
+    from app.models import Musteri
+    from app.services.musteri_ek_bilgi import ek_bilgileri_aktar
+
+    if not EK_BILGI_DOSYASI.exists():
+        return None
+    if (db.scalar(select(func.count()).select_from(Musteri)) or 0) == 0:
+        return None
+    islenmis = db.scalar(
+        select(func.count()).select_from(Musteri).where(Musteri.sevk_tipi.is_not(None))
+    )
+    if islenmis:
+        return None
+    try:
+        sonuc = ek_bilgileri_aktar(db, EK_BILGI_DOSYASI)
+    except (ExcelHatasi, OSError, KeyError) as hata:
+        return f"Müşteri ek bilgisi: yüklenemedi ({hata})"
+    return f"Müşteri ek bilgisi: {sonuc.ozet()}"

@@ -70,6 +70,7 @@ from app.services import (
     kullanici_servisi,
     marka,
     masterdata_servisi,
+    musteri_ek_bilgi,
     plan_raporu,
     plan_servisi,
     rapor_servisi,
@@ -1240,7 +1241,7 @@ def rota_musteri_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDAT
     return FileResponse(hedef, filename=hedef.name)
 
 
-@uygulama.post("/masterdata/musteriler/{musteri_id}")
+@uygulama.post("/masterdata/musteriler/{musteri_id:int}")
 def rota_musteri_guncelle(
     musteri_id: int,
     tir_girisi: str = Form("?"),
@@ -1705,7 +1706,7 @@ def ihracat_urun_sablonu(kullanici: Kullanici = Depends(modul_yetkisi("MASTERDAT
     return FileResponse(hedef, filename=hedef.name)
 
 
-@uygulama.post("/masterdata/ihracat-musteriler/{musteri_id}")
+@uygulama.post("/masterdata/ihracat-musteriler/{musteri_id:int}")
 def ihracat_musteri_guncelle(
     musteri_id: int,
     arac_tipi: str = Form("TIR"),
@@ -2373,6 +2374,35 @@ def md_urun_duzenle(
         gruplar=sorted(masterdata_servisi.urun_gruplari(db)),
         geri="/masterdata/urunler",
     )
+
+
+@uygulama.post("/masterdata/musteriler/ek-bilgi")
+async def md_musteri_ek_bilgi(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Sahanın cari kod / sevk tipi listesini müşteri kayıtlarına işler."""
+    try:
+        sonuc = musteri_ek_bilgi.ek_bilgileri_aktar(db, dosya.file)
+        db.commit()
+    except (ExcelHatasi, OSError, KeyError) as hata:
+        db.rollback()
+        return yonlendir("/masterdata/musteriler", hata=f"Dosya okunamadı: {hata}")
+    if sonuc.eslesmeyenler:
+        musteri_ek_bilgi.eslesmeyen_raporu(
+            sonuc, CIKTI_DIZIN / "eslesmeyen_musteriler.xlsx"
+        )
+    return yonlendir("/masterdata/musteriler", mesaj=sonuc.ozet())
+
+
+@uygulama.get("/masterdata/musteriler/eslesmeyenler")
+def md_eslesmeyen_musteriler(kullanici: Kullanici = Depends(MD_YETKI)):
+    """Son yüklemede eşleşmeyen adların listesi."""
+    hedef = CIKTI_DIZIN / "eslesmeyen_musteriler.xlsx"
+    if not hedef.exists():
+        raise HTTPException(404, "Henüz eşleşmeyen kayıt listesi üretilmedi.")
+    return FileResponse(hedef, filename=hedef.name)
 
 
 @uygulama.get("/masterdata/musteriler/excel")

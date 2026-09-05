@@ -172,7 +172,7 @@ bakılıyordu. Artık tek yerdeler, eski adresler yönlendiriliyor.
 |---|---|
 | **Özet** (`/masterdata`) | Kayıt sayıları ve **eksik ürün master datası** dökümü; satıra tıklayınca o eksiği olan ürünler listelenir |
 | **Ürünler** | Sütun filtreleri, filtrelenmiş listeyi indirme, toplu yükleme, tekil düzenleme |
-| **Müşteriler** | İç piyasa müşterileri: il, ilçe, bölge, tır girişi (eski adres `/rota/musteriler`) |
+| **Müşteriler** | İç piyasa müşterileri: il, ilçe, bölge, tır girişi, cari kod, sevk tipi, cumartesi/e-irsaliye (eski adres `/rota/musteriler`) |
 | **İhracat Müşterileri** | Araç tipi, sefer kodu, yükleme tipi, azami tonaj (eski adres `/ihracat/musteriler`) |
 | **İhracat Ürünleri** | Tır ve konteyner yükleme adetleri, yeni/eski hesap (eski adres `/ihracat/urunler`) |
 | **Depolar** | Kod, ad, tesis, yükleme formundaki satır adı ve sırası, Axata açılır mı, parsiyel yapılır mı |
@@ -193,6 +193,48 @@ Dışa aktarım, **içe aktarımın tanıdığı başlıkları** kullanır; ikis
   bütün ölçüleri siler ve planlama durur.
 * Bir alanı **kasten boşaltmak** için ürünü ekrandan açıp alanı boş bırakın; tekil
   düzenleme formunda boşluk silme anlamına gelir.
+
+#### Cari kod ve sevk tipi listesi
+
+Müşteri master datası geçmiş sevk verisinden üretildiği için **bayi kodu** ve
+**tır girişi** çoğunlukla boştu. Sahanın iki sayfalı listesi (CARİ KODLAR +
+TESLİMAT TİPİ) Müşteriler ekranından yüklenebiliyor; sayfa adları değil başlıkları
+tanınıyor.
+
+Sevk tipi sütunu tek metinde üç bilgi taşıyor ve alanlara ayrılıyor:
+
+| Sevk tipi | Tır girişi | Cumartesi | E-irsaliye |
+|---|---|---|---|
+| `TIR` | E | var | yok |
+| `KAMYON` / `KAMYONET` / `RUTİN` / `SADECE KAMYON` | H | var | yok |
+| `TIR-C.TESİ YOK-EİRSALİYE` | E | **yok** | **var** |
+| `KAMYON-EİRSALİYE` | H | var | **var** |
+| `ZORDA KALIRSAN TIR` | E | var | yok |
+| `SOR` | ? | var | yok |
+
+Ham metin `sevk_tipi` alanında da saklanıyor: içinde ileride başka kural çıkabilir
+ve ekranda sahanın kendi yazdığı hâli görünsün.
+
+**Eşleştirme yalnızca kesin yapılır.** Üç kademe: ad birebir aynı, yalnız
+noktalama/boşluk farkı var, ya da ayırt edici kelimeleri aynı (LTD/ŞTİ/SAN/TİC gibi
+unvan ekleri sayılmaz). **Benzerliğe dayalı tahmin yapılmaz:** Türkçe bayi adları
+ISI, DEPO, MÜHENDİSLİK gibi ortak kelimeleri paylaşıyor ve oran yanıltıyor —
+"AKKAŞ ISI DEPO" ile "ARSE ISI DEPO" %81 benziyor ama farklı bayiler. Yanlış
+eşleşme yanlış cari kod ya da yanlış "tır giremez" işareti demek; biri faturaya,
+diğeri araç seçimine dokunur.
+
+İki durumda daha yazılmaz:
+
+* **Belirsiz** — ad birden fazla müşteriye uyuyor.
+* **Çakışma** — dosyada aynı bayi iki satırda farklı yazılmış ve ikisi de aynı kayda
+  düşüyor ("AS MÜHENDİSLİK" bir satırda `KAMYON`, diğerinde `TIR`). Son satırın
+  kazanması sessizce yanlış araç kararı üretirdi.
+
+Eşleşmeyenler gerekçesi ve sistemdeki adaylarıyla birlikte Excel'e yazılıyor
+(Müşteriler → **Eşleşmeyenler**); oradan tek tek işlenebilir.
+
+Sahadan gelen ilk liste programla birlikte geliyor ve **kurulumda bir kez**
+işleniyor; sonraki açılışlarda ekrandan yapılan düzeltmelerin üzerine yazmıyor.
 
 #### Depo tanımları
 
