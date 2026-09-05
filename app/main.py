@@ -58,7 +58,7 @@ from app.models import (
     SiparisSatiri,
     Urun,
 )
-from app.moduller import MODULLER
+from app.moduller import MODUL_HARITASI, MODULLER
 from app.services import (
     gomulu_veri,
     ic_piyasa_servisi,
@@ -218,6 +218,8 @@ def sayfa(istek: Request, ad: str, kullanici: Kullanici | None = None, **baglam)
     baglam.setdefault("grup_ici_mix_varsayilan", GRUP_ICI_MIX)
     baglam.setdefault("kullanici", kullanici)
     baglam.setdefault("moduller", MODULLER)
+    # Başlık çubuğu hangi modülde olunduğunu simge ve renkle gösteriyor.
+    baglam.setdefault("modul_haritasi", MODUL_HARITASI)
     # Logo değişince tarayıcı eskisini önbellekten sunmasın.
     baglam.setdefault("logo_surumu", marka.surum())
     return sablon_motoru.TemplateResponse(istek, ad, baglam)
@@ -232,8 +234,6 @@ MD_DUZENLEME = modul_yetkisi("MASTERDATA", duzenleme=True)
 
 def _sorgu_metni(**alanlar: str) -> str:
     """Filtreyi indirme bağlantısına taşır: ekranda görülen liste = inen dosya."""
-    from urllib.parse import urlencode
-
     return urlencode({ad: deger for ad, deger in alanlar.items() if deger})
 
 
@@ -571,6 +571,25 @@ def yukleme_formu_indir(
     return FileResponse(hedef, filename=hedef.name)
 
 
+@uygulama.get("/ring/gunluk-form")
+def ring_gunluk_form(
+    tarih: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bir günün bütün ring planları tek kitapta."""
+    gun = datetime.strptime(tarih, "%Y-%m-%d").date() if tarih else date.today()
+    planlar_listesi = rapor_servisi.planlari_getir(
+        db, PlanFiltresi(modul="RING", baslangic=gun, bitis=gun), limit=500
+    )
+    if not planlar_listesi:
+        return yonlendir(
+            "/ring/planlar", hata=f"{gun:%d.%m.%Y} için ring planı bulunamadı."
+        )
+    hedef = yukleme_formu.gunluk_form(planlar_listesi)
+    return FileResponse(hedef, filename=hedef.name)
+
+
 BEKLEYEN_MODULLERI = {
     "RING": "/ring/bekleyenler",
     "ROTA": "/rota/bekleyenler",
@@ -803,14 +822,11 @@ def plan_excel(
 
 
 @uygulama.get("/ring/izleme")
-def izleme(
-    istek: Request,
-    anahtar: str = "",
-    kullanici: Kullanici = Depends(modul_yetkisi("RING")),
-    db: Session = Depends(oturum_bagimliligi),
-):
-    sonuc = rapor_servisi.izleme_sorgusu(db, anahtar) if anahtar.strip() else None
-    return sayfa(istek, "izleme.html", kullanici, anahtar=anahtar, sonuc=sonuc)
+def ring_izleme_yonlendir(anahtar: str = ""):
+    """Eski adres. Sorgu bütün modüllerde arama yaptığı için ekran Raporlama'ya taşındı;
+    tarayıcı sık kullanılanlarında kalan bağlantılar kırılmasın diye yönlendiriyoruz."""
+    ek = f"?{urlencode({'anahtar': anahtar})}" if anahtar.strip() else ""
+    return RedirectResponse(f"/raporlama/izleme{ek}", status_code=307)
 
 
 # ------------------------------------------- İç Piyasa Sevkiyat Planlama modülü
@@ -1588,7 +1604,32 @@ def ihracat_gunluk_form(
     return FileResponse(hedef, filename=hedef.name)
 
 
-@uygulama.get("/ihracat/plan-excel")
+@uygulama.get("/ihracat/plan-excel", include_in_schema=False)
+def ihracat_plan_excel_yonlendir(durum: str = "", arama: str = ""):
+    """Eski adres: liste artık diğer modüllerdeki gibi /ihracat/raporlar altında."""
+    ek = urlencode({"durum": durum, "arama": arama})
+    return RedirectResponse(f"/ihracat/raporlar/plan-excel?{ek}", status_code=307)
+
+
+@uygulama.get("/ihracat/raporlar")
+def ihracat_raporlar(
+    istek: Request,
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "ihracat_raporlar.html",
+        kullanici,
+        ozet=rapor_servisi.gosterge_paneli(db, modul="IHRACAT"),
+        ulke_ozeti=rapor_servisi.ihracat_ulke_ozeti(db),
+        urun_bazli=rapor_servisi.urun_bazli_ozet(db, modul="IHRACAT"),
+        bekleyenler=rapor_servisi.bekleyen_ozeti(db, modul="IHRACAT"),
+        sevk_durumu=rapor_servisi.sevk_durumu(db, modul="IHRACAT"),
+    )
+
+
+@uygulama.get("/ihracat/raporlar/plan-excel")
 def ihracat_plan_excel(
     durum: str = "",
     arama: str = "",
@@ -1852,7 +1893,21 @@ def raporlama_planlar(
     )
 
 
-# ---------------------------------------------------------------------- master data
+@uygulama.get("/raporlama/izleme")
+def raporlama_izleme(
+    istek: Request,
+    anahtar: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("RAPORLAMA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Teslimat / sipariş numarasından planı bulur.
+
+    Sorgu bütün modüllerde arar; bu yüzden ekran Ring menüsünde değil, Raporlama'da.
+    """
+    sonuc = rapor_servisi.izleme_sorgusu(db, anahtar) if anahtar.strip() else None
+    return sayfa(istek, "izleme.html", kullanici, anahtar=anahtar, sonuc=sonuc)
+
+
 # ------------------------------------------------------------------- veri yönetimi
 @uygulama.get("/veri-yonetimi")
 def veri_yonetimi(

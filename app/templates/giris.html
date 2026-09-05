@@ -1,20 +1,37 @@
 {% extends "temel.html" %}
+{% from "simgeler.html" import simge %}
 {% block icerik %}
-<div class="giris-kutusu">
-  <img src="/marka/logo?s={{ logo_surumu }}" alt="Vaillant Group" class="giris-logo">
-  <h1>Nakliye Yönetim Sistemi</h1>
-  <p class="soluk">Devam etmek için kullanıcı adınız ve parolanızla giriş yapın.</p>
-  <form method="post" action="/giris">
-    <label for="kullanici_adi">Kullanıcı adı</label>
-    <input id="kullanici_adi" name="kullanici_adi" autocomplete="username"
-           autofocus required style="width:100%">
-    <label for="parola" style="margin-top:12px">Parola</label>
-    <input id="parola" name="parola" type="password"
-           autocomplete="current-password" required style="width:100%">
-    <button type="submit" style="width:100%; margin-top:18px">Giriş yap</button>
-  </form>
-  <p class="soluk" style="margin-top:18px; margin-bottom:0">
-    Parolanızı unuttuysanız ya da hesabınız kilitlendiyse sistem yöneticinize başvurun.
-  </p>
+<div class="giris-panosu">
+  {# Sol tarafta programın ne yaptığı: giriş ekranı boş bir form olmasın. #}
+  <div class="giris-tanitim">
+    <h1>Nakliye Yönetim Sistemi</h1>
+    <p>
+      Sipariş verisinden otomatik sevkiyat planı üretir, planları sefer numarasıyla
+      takip eder ve depoya yükleme formu ile araç içi yerleşim planı çıkarır.
+    </p>
+    <ul class="giris-moduller">
+      {% for modul in moduller if modul.hazir %}
+      <li data-renk="{{ modul.renk }}">{{ simge(modul.simge) }}<span>{{ modul.ad }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="giris-kutusu">
+    <img src="/marka/logo?s={{ logo_surumu }}" alt="Vaillant Group" class="giris-logo">
+    <h1>Giriş</h1>
+    <p class="soluk">Devam etmek için kullanıcı adınız ve parolanızla giriş yapın.</p>
+    <form method="post" action="/giris">
+      <label for="kullanici_adi">Kullanıcı adı</label>
+      <input id="kullanici_adi" name="kullanici_adi" autocomplete="username"
+             autofocus required style="width:100%">
+      <label for="parola" style="margin-top:12px">Parola</label>
+      <input id="parola" name="parola" type="password"
+             autocomplete="current-password" required style="width:100%">
+      <button type="submit" style="width:100%; margin-top:18px">Giriş yap</button>
+    </form>
+    <p class="soluk" style="margin-top:18px; margin-bottom:0">
+      Parolanızı unuttuysanız ya da hesabınız kilitlendiyse sistem yöneticinize başvurun.
+    </p>
+  </div>
 </div>
 {% endblock %}

@@ -1,0 +1,123 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'IHRACAT' %}
+{% set aktif_menu = 'raporlar' %}
+{% block icerik %}
+<h1>İhracat Raporları</h1>
+
+<div class="kart">
+  <h2>Excel'e aktar</h2>
+  <p class="soluk">
+    <b>Plan raporu</b> dört sayfadan oluşur: özet (durum bazında plan, teslimat, adet,
+    doluluk), ürün grubu kırılımı, plan künyeleri ve sevk durumu (Axata, araç, plaka,
+    mail). <b>Bekleyen siparişler</b> plana giremeyen satırları sebebiyle listeler.
+  </p>
+  <div class="satir">
+    <a class="dugme" href="/rapor/plan-raporu?modul=IHRACAT">Plan raporu (özet + sevk durumu)</a>
+    <a class="dugme ikincil" href="/ihracat/raporlar/plan-excel">Plan listesi</a>
+    <a class="dugme ikincil" href="/ihracat/bekleyenler/excel">Bekleyen siparişler</a>
+    <a class="dugme ikincil" href="/ihracat/gunluk-form?tarih={{ bugun }}">Bugünün yükleme formları</a>
+  </div>
+</div>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Toplam plan</div>
+    <div class="deger">{{ ozet.toplam_plan }}</div></div>
+  <div class="metrik"><div class="etiket">Ortalama doluluk</div>
+    <div class="deger">%{{ ozet.ortalama_doluluk }}</div></div>
+  <div class="metrik"><div class="etiket">Depoya gönderilen</div>
+    <div class="deger">{{ ozet.plan.get('MAIL_GONDERILDI', 0) }}</div></div>
+  <div class="metrik"><div class="etiket">Tamamlanan</div>
+    <div class="deger">{{ ozet.plan.get('TAMAMLANDI', 0) }}</div></div>
+</div>
+
+<div class="izgara iki">
+  <div class="kart">
+    <h2>Ülkelere göre</h2>
+    <p class="soluk">
+      Taşıma modu müşteriden gelir: <b>konteyner</b> deniz, <b>tır</b> kara yoludur.
+    </p>
+    {% if ulke_ozeti %}
+    <table>
+      <thead><tr><th>Ülke</th><th>Taşıma</th><th class="sag">Plan</th>
+        <th class="sag">Desi</th><th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in ulke_ozeti %}
+        <tr>
+          <td><b>{{ satir.ulke }}</b></td>
+          <td>{{ satir.tasima_modu }}</td>
+          <td class="sag">{{ satir.plan }}</td>
+          <td class="sag">{{ satir.desi | sayi }}</td>
+          <td class="sag">%{{ satir.doluluk }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Henüz ihracat planı üretilmedi.</div>{% endif %}
+  </div>
+
+  <div class="kart">
+    <h2>Ürün bazında planlama</h2>
+    {% if urun_bazli %}
+    <table>
+      <thead><tr><th>Ürün(ler)</th><th class="sag">Plan</th>
+        <th class="sag">Palet</th><th class="sag">Ort. doluluk</th></tr></thead>
+      <tbody>
+      {% for satir in urun_bazli[:15] %}
+        <tr><td>{{ satir.urunler }}</td><td class="sag">{{ satir.plan_sayisi }}</td>
+            <td class="sag">{{ satir.toplam_palet }}</td>
+            <td class="sag">%{{ satir.ortalama_doluluk }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="bos">Veri yok.</div>{% endif %}
+
+    <h2 style="margin-top:18px">Planlanmayı bekleyenler</h2>
+    {% if bekleyenler %}
+    <table>
+      <thead><tr><th>Ürün</th><th class="sag">Teslimat</th>
+        <th class="sag">Miktar</th><th>En eski termin</th></tr></thead>
+      <tbody>
+      {% for satir in bekleyenler[:15] %}
+        <tr><td>{{ satir.urun_kodu }}</td>
+            <td class="sag">{{ satir.teslimat_sayisi }}</td>
+            <td class="sag">{{ satir.toplam_miktar | sayi }}</td>
+            <td>{{ satir.en_eski_termin | tarih }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="soluk"><a href="/ihracat/bekleyenler">Satır satır sebepleriyle gör</a></p>
+    {% else %}<div class="bos">Bekleyen ihracat siparişi yok.</div>{% endif %}
+  </div>
+</div>
+
+<div class="kart">
+  <h2>Sevk durumu</h2>
+  <p class="soluk">
+    Axata numarası girilmeyi bekleyen planlar listenin başında. Tamamlananlar sona iner.
+  </p>
+  {% if sevk_durumu %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Sefer No</th><th>Tarih</th><th>Müşteri</th><th>Ülke</th>
+      <th>Araç</th><th>Axata</th><th>Plaka</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for plan in sevk_durumu %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><a href="/ihracat/planlar/{{ plan.id }}">{{ plan.sefer_no }}</a></td>
+        <td>{{ plan.plan_tarihi | tarih }}</td>
+        <td>{{ plan.musteri_adi }}</td>
+        <td>{{ plan.ulke }}</td>
+        <td>{{ plan.arac_tipi_adi }}</td>
+        <td>{% if plan.axata_ozeti %}<b>{{ plan.axata_ozeti }}</b>
+            {% else %}<span class="rozet TASLAK">GİRİLMEDİ</span>{% endif %}</td>
+        <td>{{ plan.plaka or '' }}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Henüz plan üretilmedi.</div>{% endif %}
+</div>
+{% endblock %}

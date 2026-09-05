@@ -383,6 +383,19 @@ def form_uret(plan: SevkiyatPlani, hedef: Path | None = None) -> Path:
     return formlari_uret([plan], hedef)
 
 
+def gunluk_form(planlar: list[SevkiyatPlani], hedef: Path | None = None) -> Path:
+    """Bir günün bütün ring planları tek kitapta, sefer numarasına göre sıralı.
+
+    Depo günün formlarını tek tek indirmesin diye: iç piyasa ve ihracat modüllerinde
+    zaten böyle çalışıyordu, ring de aynı düğmeye sahip olsun.
+    """
+    if not planlar:
+        raise ValueError("Form üretmek için en az bir plan gerekir.")
+    tarih = planlar[0].plan_tarihi
+    hedef = hedef or CIKTI_DIZIN / f"yukleme_formlari_{tarih:%Y%m%d}.xlsx"
+    return formlari_uret(sorted(planlar, key=lambda plan: plan.sefer_no), hedef)
+
+
 def plan_listesi_disa_aktar(planlar: list[SevkiyatPlani], hedef: Path) -> Path:
     """Rapor ekranlarındaki plan listesini Excel'e aktarır."""
     kitap = yeni_kitap()

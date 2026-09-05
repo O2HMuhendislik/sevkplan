@@ -156,9 +156,11 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Siparişler** | Excel aktarımı; beklemede / planlandı / tamamlandı / hatalı sekmeleri |
 | **Planlar** | Plan listesi, filtre, Excel'e aktarma, tüm depoları tek seferde planlama, mix seçeneği |
 | **Plan Detayı** | Plan içeriği, Axata no girişi (**depo bazında**), yükleme formu, statü işlemleri, plan geçmişi |
-| **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar** |
+| **Raporlar** | Aylık özet, ürün bazlı doluluk, sevk/Axata takibi, bekleyenlerin gerekçesi, **master datası eksik olduğu için hiç planlanamayanlar**; üç modülde de var |
+| **Bekleyenler** | Plana giremeyen sipariş satırları, satır satır gerekçesiyle; üç modülde de var |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
-| **Sipariş İzleme** | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama |
+| **Araç İçi Yerleşim** | Planın palet palet yerleşimi: üstten, yandan ve 3B görünüş + yükleme sırası |
+| **Sipariş İzleme** (`/raporlama/izleme`) | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama. Sorgu **bütün modüllerde** aradığı için Raporlama modülünde durur (eski adres `/ring/izleme`) |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
 

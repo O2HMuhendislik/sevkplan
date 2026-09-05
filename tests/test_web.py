@@ -88,11 +88,12 @@ def kitap(basliklar, satirlar) -> BytesIO:
     "yol",
     [
         "/", "/masterdata/urunler", "/ring", "/ring/siparisler", "/ring/planlar",
-        "/ring/raporlar", "/ring/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
+        "/ring/raporlar", "/raporlama/izleme", "/veri-yonetimi", "/yonetim/kullanicilar",
         "/rota", "/rota/siparisler", "/rota/planlar", "/masterdata/musteriler",
         "/rota/raporlar",
         "/ring/manuel-plan", "/rota/manuel-plan", "/ihracat/manuel-plan",
         "/raporlama", "/raporlama/siparisler", "/raporlama/planlar",
+        "/ihracat/raporlar",
         "/ihracat", "/ihracat/siparisler", "/ihracat/planlar", "/masterdata/ihracat-musteriler",
     ],
 )
@@ -211,8 +212,15 @@ def test_uctan_uca_akis(istemci):
         "application/vnd.openxmlformats"
     )
 
-    izleme = istemci.get("/ring/izleme", params={"anahtar": "TSL-1"})
+    gunluk = istemci.get("/ring/gunluk-form", params={"tarih": "2026-08-31"})
+    assert gunluk.status_code == 200
+
+    izleme = istemci.get("/raporlama/izleme", params={"anahtar": "TSL-1"})
     assert "2608D1001" in izleme.text
+
+    # Ekran Raporlama'ya taşındı; eski adres yer imlerinde kalmış olabilir.
+    eski = istemci.get("/ring/izleme", params={"anahtar": "TSL-1"})
+    assert "2608D1001" in eski.text
 
 
 def test_veri_silme_onay_ister(istemci):
@@ -1124,3 +1132,31 @@ def test_ihracat_urun_indirmesi_filtreyi_uygular(istemci, tmp_path):
     sayfa = load_workbook(dosya).active
     kodlar = {sayfa.cell(row=r, column=1).value for r in range(2, sayfa.max_row + 1)}
     assert kodlar == {"E2"}
+
+
+def test_uc_planlama_modulu_ayni_ekranlari_sunar(istemci):
+    """Ring, iç piyasa ve ihracat aynı işi yapıyor; ekran takımları da aynı olmalı.
+
+    Ekranlar tek tek eklendiği için modüller arasında boşluklar oluşmuştu: ihracatın
+    rapor ekranı yoktu, ring'in günlük yükleme formu yoktu. Bu test o boşlukların
+    geri gelmesini engeller.
+    """
+    for kok in ("/ring", "/rota", "/ihracat"):
+        for ekran in ("", "/siparisler", "/planlar", "/manuel-plan",
+                      "/bekleyenler", "/raporlar"):
+            cevap = istemci.get(kok + ekran)
+            assert cevap.status_code == 200, kok + ekran
+        # Plan listesi her modülde raporların altında duruyor.
+        assert istemci.get(f"{kok}/raporlar/plan-excel").status_code == 200
+
+
+def test_ihracat_plan_listesi_eski_adresten_filtresiyle_yonlenir(istemci):
+    """Eski /ihracat/plan-excel adresi filtreyi kaybetmeden yeni adrese gider."""
+    cevap = istemci.get(
+        "/ihracat/plan-excel", params={"durum": "TASLAK", "arama": "VAILLANT"},
+        follow_redirects=False,
+    )
+    assert cevap.status_code == 307
+    assert cevap.headers["location"].startswith("/ihracat/raporlar/plan-excel?")
+    assert "durum=TASLAK" in cevap.headers["location"]
+    assert "arama=VAILLANT" in cevap.headers["location"]

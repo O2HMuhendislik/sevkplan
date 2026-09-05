@@ -16,6 +16,13 @@ class Modul:
     aciklama: str
     yol: str
     simge: str
+    """`simgeler.html` içindeki çizim adı — kart üstünde SVG olarak çizilir."""
+    renk: str
+    """Kurumsal palet adı (`style.css` içindeki `.modul-kart[data-renk=...]`).
+
+    Her modülün kendi rengi var; kullanıcı kartı okumadan hangi modül olduğunu
+    renginden tanısın diye. Renkler Vaillant Group kartelasından seçildi.
+    """
     hazir: bool = True
     """Hazır olmayan modüller seçim ekranında 'yakında' olarak gösterilir."""
 
@@ -29,7 +36,8 @@ MODULLER: tuple[Modul, ...] = (
             "numarası atanması ve yükleme formunun hazırlanması."
         ),
         yol="/ring",
-        simge="🚚",
+        simge="kamyon",
+        renk="yesil",
     ),
     Modul(
         kod="ROTA",
@@ -39,7 +47,8 @@ MODULLER: tuple[Modul, ...] = (
             "planlanması; durak sırası, son uğrak kuralı ve ortak yükleme."
         ),
         yol="/rota",
-        simge="🗺️",
+        simge="rota",
+        renk="lacivert",
     ),
     Modul(
         kod="IHRACAT",
@@ -50,7 +59,8 @@ MODULLER: tuple[Modul, ...] = (
             "adetlerinden, ikinci sınır olarak ağırlıktan ölçülür."
         ),
         yol="/ihracat",
-        simge="🌍",
+        simge="dunya",
+        renk="mavi",
     ),
     Modul(
         kod="ARAC_TALEP",
@@ -60,7 +70,8 @@ MODULLER: tuple[Modul, ...] = (
             "araç bildirmesi ve atama."
         ),
         yol="/arac-talep",
-        simge="📋",
+        simge="liste",
+        renk="sari",
         hazir=False,
     ),
     Modul(
@@ -71,7 +82,8 @@ MODULLER: tuple[Modul, ...] = (
             "Siparişin plana alınma süresi (KPI) burada izlenir."
         ),
         yol="/raporlama",
-        simge="📊",
+        simge="grafik",
+        renk="mor",
     ),
     Modul(
         kod="MASTERDATA",
@@ -82,14 +94,16 @@ MODULLER: tuple[Modul, ...] = (
             "süzülür, süzülen liste indirilip doldurulup geri yüklenir."
         ),
         yol="/masterdata",
-        simge="📦",
+        simge="katman",
+        renk="bej",
     ),
     Modul(
         kod="YONETIM",
         ad="Sistem Yönetimi",
         aciklama="Kullanıcılar, yetkiler ve veri yönetimi.",
         yol="/yonetim/kullanicilar",
-        simge="⚙️",
+        simge="ayar",
+        renk="gri",
     ),
 )
 

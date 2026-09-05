@@ -70,14 +70,22 @@ body {
 }
 header.ust {
   background: var(--ana); color: #fff; padding: 0 24px;
-  border-bottom: 3px solid var(--vurgu);
-  display: flex; align-items: center; gap: 24px; height: 64px;
+  border-bottom: 3px solid var(--modul-renk, var(--vurgu));
+  display: flex; align-items: center; gap: 18px; height: 64px;
 }
+/* Modül renkleri başlık çubuğunda da geçerli (kart renkleriyle aynı tanım). */
+header.ust[data-renk="yesil"]    { --modul-renk: var(--vg-yesil); }
+header.ust[data-renk="lacivert"] { --modul-renk: var(--vg-lacivert-70); }
+header.ust[data-renk="mavi"]     { --modul-renk: var(--vg-acik-mavi); }
+header.ust[data-renk="mor"]      { --modul-renk: var(--vg-mor); }
+header.ust[data-renk="bej"]      { --modul-renk: var(--vg-bej); }
+header.ust[data-renk="sari"]     { --modul-renk: var(--vg-sari); }
+header.ust[data-renk="gri"]      { --modul-renk: var(--vg-gri); }
 /* Logo beyaz bir yonga üzerinde durur: kurumsal logo dosyası yeşil zeminli
    olduğunda da doğru görünsün diye. */
 header.ust .marka {
-  display: flex; align-items: center; gap: 14px;
-  text-decoration: none; color: #fff;
+  display: flex; align-items: center; gap: 14px; flex: 0 0 auto;
+  text-decoration: none; color: #fff; white-space: nowrap;
 }
 header.ust .marka img {
   height: 34px; width: auto; display: block;
@@ -89,10 +97,29 @@ header.ust .marka .ad .ust-satir {
   color: var(--vg-lacivert-40);
 }
 header.ust .marka .ad .alt-satir { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
-header.ust nav { display: flex; gap: 4px; }
+/* Hangi modülde olduğumuz başlık çubuğunda da görünsün: simge + modülün rengi.
+   Ad dar ekranda gizlenir, simge kalır — menü satırı taşmasın. */
+.modul-yonga {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  padding: 6px 12px 6px 8px; border-radius: 20px; text-decoration: none;
+  background: rgba(255, 255, 255, .12); color: #fff;
+  font-weight: 700; font-size: 12.5px; white-space: nowrap;
+}
+.modul-yonga:hover { background: rgba(255, 255, 255, .22); }
+.modul-yonga .simge { width: 18px; height: 18px; }
+/* Dar ekranda önce yonganın adı, sonra markanın yazısı gizlenir; menünün
+   tamamı görünsün diye (Master Data'da sekiz sekme var). Logo her zaman kalır. */
+@media (max-width: 1560px) { .modul-yonga span { display: none; } }
+@media (max-width: 1200px) { header.ust .marka .ad { display: none; } }
+
+header.ust nav {
+  display: flex; gap: 3px; flex: 1 1 auto; min-width: 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+header.ust nav::-webkit-scrollbar { display: none; }
 header.ust nav a {
-  color: var(--vg-lacivert-20); text-decoration: none;
-  padding: 8px 14px; border-radius: 6px; font-weight: 500;
+  color: var(--vg-lacivert-20); text-decoration: none; white-space: nowrap;
+  padding: 8px 12px; border-radius: 6px; font-weight: 500; font-size: 13.5px;
 }
 header.ust nav a:hover { background: var(--ana-acik); color: #fff; }
 header.ust nav a.aktif { background: var(--ana-acik); color: #fff; }
@@ -186,6 +213,7 @@ form.satir { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 header.ust .marka { color: #fff; text-decoration: none; }
 header.ust .kullanici-alani {
   margin-left: auto; display: flex; align-items: center; gap: 14px; font-size: 13px;
+  flex: 0 0 auto; white-space: nowrap;
 }
 header.ust .kullanici-alani a { color: var(--vg-lacivert-20); text-decoration: none; }
 header.ust .kullanici-alani a:hover { color: #fff; text-decoration: underline; }
@@ -193,24 +221,101 @@ header.ust .kullanici-adi { color: #fff; font-weight: 600; }
 header.ust .modul-cikis {
   border: 1px solid var(--vg-lacivert-70); border-radius: 6px; padding: 5px 12px;
 }
+/* Giriş ekranı: solda programın ne yaptığı, sağda form. Tek başına duran bir
+   kutu yerine, kullanıcı daha giriş yapmadan hangi modüllerin olduğunu görüyor. */
+.giris-panosu {
+  display: grid; grid-template-columns: 1fr minmax(360px, 420px);
+  gap: 48px; align-items: center; max-width: 1080px; margin: 56px auto;
+}
+.giris-tanitim h1 { font-size: 30px; line-height: 1.2; margin-bottom: 14px; }
+.giris-tanitim p { color: var(--soluk); font-size: 15px; max-width: 46ch; margin: 0 0 26px; }
+.giris-moduller { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.giris-moduller li {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 600; color: var(--ana); font-size: 14px;
+}
+.giris-moduller .simge {
+  width: 34px; height: 34px; padding: 7px; border-radius: 9px; box-sizing: border-box;
+  background: var(--modul-zemin); color: var(--modul-renk);
+}
+.giris-moduller li[data-renk="yesil"]    { --modul-renk: var(--vg-yesil);     --modul-zemin: var(--vg-yesil-20); }
+.giris-moduller li[data-renk="lacivert"] { --modul-renk: var(--vg-lacivert);  --modul-zemin: var(--vg-lacivert-20); }
+.giris-moduller li[data-renk="mavi"]     { --modul-renk: var(--vg-acik-mavi); --modul-zemin: var(--vg-acik-mavi-20); }
+.giris-moduller li[data-renk="mor"]      { --modul-renk: var(--vg-mor);       --modul-zemin: var(--vg-mor-20); }
+.giris-moduller li[data-renk="bej"]      { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-bej-20); }
+.giris-moduller li[data-renk="sari"]     { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-sari-20); }
+.giris-moduller li[data-renk="gri"]      { --modul-renk: var(--soluk);        --modul-zemin: var(--vg-gri-20); }
+
+@media (max-width: 900px) {
+  .giris-panosu { grid-template-columns: 1fr; gap: 28px; margin: 28px auto; }
+  .giris-tanitim { display: none; }
+}
+
+/* Parola değiştirme ekranı da aynı kutuyu kullanıyor; ortalanmış hâli orada geçerli. */
 .giris-kutusu {
   max-width: 420px; margin: 60px auto; background: var(--kart);
-  border: 1px solid var(--kenar); border-radius: 10px; padding: 32px;
+  border: 1px solid var(--kenar); border-radius: 12px; padding: 32px;
+  box-shadow: 0 14px 34px rgba(42, 80, 124, .12);
 }
+.giris-panosu .giris-kutusu { margin: 0; }
 .giris-kutusu h1 { margin-bottom: 6px; }
 .giris-kutusu .giris-logo { height: 44px; width: auto; display: block; margin-bottom: 18px; }
+.modul-giris { margin-bottom: 22px; }
+.modul-giris h1 { margin-bottom: 4px; }
+.modul-giris p { margin: 0; }
+
 .modul-izgara {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px;
 }
+
+/* Kartın tamamı bağlantı: kullanıcı küçük "Aç" düğmesini aramak yerine karta
+   basıyor. Erişilebilirlik için odak halkası kartın kendisinde. */
 .modul-kart {
-  background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px;
-  padding: 22px; display: flex; flex-direction: column;
+  position: relative; overflow: hidden;
+  background: var(--kart); border: 1px solid var(--kenar); border-radius: 12px;
+  padding: 24px 22px 20px; display: flex; flex-direction: column;
+  color: inherit; text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
-.modul-kart.pasif { opacity: .62; }
-.modul-kart h2 { font-size: 17px; margin: 10px 0 8px; }
-.modul-kart p { flex: 1; margin: 0 0 16px; }
-.modul-simge { font-size: 30px; line-height: 1; }
+/* Üstteki ince şerit modülün kurumsal rengi: kart okunmadan tanınsın. */
+.modul-kart::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 4px;
+  background: var(--modul-renk);
+}
+a.modul-kart:hover {
+  transform: translateY(-3px); border-color: var(--modul-renk);
+  box-shadow: 0 10px 24px rgba(42, 80, 124, .14);
+}
+a.modul-kart:focus-visible { outline: 3px solid var(--modul-renk); outline-offset: 2px; }
+.modul-kart.pasif { opacity: .7; background: var(--vg-gri-20); }
+.modul-kart h2 { font-size: 17px; margin: 14px 0 8px; color: var(--ana); }
+.modul-kart p { flex: 1; margin: 0 0 18px; }
+
+.modul-simge {
+  width: 52px; height: 52px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--modul-zemin); color: var(--modul-renk);
+}
+.modul-simge .simge { width: 28px; height: 28px; }
+a.modul-kart:hover .modul-simge { background: var(--modul-renk); color: #fff; }
+
 .modul-alt { display: flex; align-items: center; gap: 10px; }
+.modul-ac {
+  font-weight: 700; font-size: 13px; color: var(--modul-renk);
+}
+.modul-ac::after { content: " →"; }
+
+/* Modül renkleri — hepsi Vaillant Group kartelasından (bkz. renk paleti). */
+.modul-kart { --modul-renk: var(--vg-lacivert); --modul-zemin: var(--vg-lacivert-20); }
+.modul-kart[data-renk="yesil"]    { --modul-renk: var(--vg-yesil);     --modul-zemin: var(--vg-yesil-20); }
+.modul-kart[data-renk="lacivert"] { --modul-renk: var(--vg-lacivert);  --modul-zemin: var(--vg-lacivert-20); }
+.modul-kart[data-renk="mavi"]     { --modul-renk: var(--vg-acik-mavi); --modul-zemin: var(--vg-acik-mavi-20); }
+.modul-kart[data-renk="mor"]      { --modul-renk: var(--vg-mor);       --modul-zemin: var(--vg-mor-20); }
+.modul-kart[data-renk="bej"]      { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-bej-20); }
+.modul-kart[data-renk="sari"]     { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-sari-20); }
+/* Yönetim modülü bilerek nötr; ama markanın açık grisi simgeyi okunmaz
+   yapıyordu, bu yüzden çizgi rengi gövde metninin nötr tonudur. */
+.modul-kart[data-renk="gri"]      { --modul-renk: var(--soluk);        --modul-zemin: var(--vg-gri-20); }
 
 /* Manuel planlama: seçim çubuğu tablo kaydırılırken de görünür kalmalı,
    çünkü kullanıcı listenin altında seçim yapıp yukarıdaki tuşa basıyor. */

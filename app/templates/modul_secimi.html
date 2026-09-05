@@ -1,16 +1,21 @@
 {% extends "temel.html" %}
+{% from "simgeler.html" import simge %}
 {% block icerik %}
-<h1>Modüller</h1>
-<p class="soluk" style="margin-top:-10px">
-  Hoş geldiniz {{ kullanici.ad_soyad }}. Yetkili olduğunuz modüller aşağıda listelendi.
-</p>
+<div class="modul-giris">
+  <h1>Modüller</h1>
+  <p class="soluk">
+    Hoş geldiniz <b>{{ kullanici.ad_soyad }}</b>. Yetkili olduğunuz modüller aşağıda.
+  </p>
+</div>
 
 <div class="modul-izgara">
   {% for modul in moduller %}
     {% set gorunur = kullanici.gorebilir_mi(modul.kod) %}
+    {% set acilabilir = gorunur and modul.hazir %}
     {% if gorunur or modul.hazir %}
-    <div class="modul-kart {{ 'pasif' if not gorunur or not modul.hazir }}">
-      <div class="modul-simge">{{ modul.simge }}</div>
+    {% if acilabilir %}<a class="modul-kart" data-renk="{{ modul.renk }}" href="{{ modul.yol }}">
+    {% else %}<div class="modul-kart pasif" data-renk="{{ modul.renk }}">{% endif %}
+      <div class="modul-simge">{{ simge(modul.simge) }}</div>
       <h2>{{ modul.ad }}</h2>
       <p class="soluk">{{ modul.aciklama }}</p>
       <div class="modul-alt">
@@ -19,13 +24,13 @@
         {% elif not gorunur %}
           <span class="rozet IPTAL">YETKİNİZ YOK</span>
         {% else %}
-          <a class="dugme" href="{{ modul.yol }}">Aç</a>
+          <span class="modul-ac">Aç</span>
           <span class="rozet {{ 'TAMAMLANDI' if kullanici.duzenleyebilir_mi(modul.kod) else 'PLANLANDI' }}">
             {{ 'DÜZENLEME' if kullanici.duzenleyebilir_mi(modul.kod) else 'GÖRÜNTÜLEME' }}
           </span>
         {% endif %}
       </div>
-    </div>
+    {% if acilabilir %}</a>{% else %}</div>{% endif %}
     {% endif %}
   {% endfor %}
 </div>
