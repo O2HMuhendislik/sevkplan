@@ -92,8 +92,6 @@ class PaletTipi:
     yukseklik: int
     agirlik: Decimal
     """Tam paletin ağırlığı (kg)."""
-    arac_palet_sayisi: int
-    """Bu üründen araca kaç palet sığdığı (master datanın 'tır/kamyon palet' alanı)."""
 
     @property
     def olculu_mu(self) -> bool:
@@ -194,12 +192,32 @@ class Yerlesim:
         return self.yuk.yukseklik + sum(p.yukseklik for p in self.ustundekiler)
 
 
+@dataclass(frozen=True)
+class Sigmayan:
+    """Araca yerleştirilemeyen palet ve gerekçesi."""
+
+    yuk: PaletYuku
+    gerekce: str
+
+    @property
+    def tip(self) -> PaletTipi:
+        return self.yuk.tip
+
+    @property
+    def adet(self) -> Decimal:
+        return self.yuk.adet
+
+    @property
+    def durak(self) -> "Durak":
+        return self.yuk.durak
+
+
 @dataclass
 class IstifPlani:
     arac: AracOlcusu
     yerlesimler: list[Yerlesim] = field(default_factory=list)
-    sigmayanlar: list[PaletYuku] = field(default_factory=list)
-    """Ne zemine ne de bir paletin üstüne yerleştirilebilen paletler.
+    sigmayanlar: list[Sigmayan] = field(default_factory=list)
+    """Ne zemine ne de bir paletin üstüne yerleştirilebilen paletler, gerekçesiyle.
 
     Boş değilse yük gerçekten araca girmiyor demektir; zemine sığmayıp istiflenenler
     burada değil, tabanlarının `ustundekiler` listesindedir.
@@ -411,17 +429,28 @@ def _istifle(plan: IstifPlani, kalanlar: list[PaletYuku]) -> None:
     """
     for palet in kalanlar:
         if not palet.yukseklik:
-            plan.sigmayanlar.append(palet)
+            plan.sigmayanlar.append(
+                Sigmayan(palet, "palet yüksekliği master datada tanımsız")
+            )
             continue
-        adaylar = [
+        ayni_durak = [
             yerlesim
             for yerlesim in plan.yerlesimler
-            if yerlesim.yuk.yukseklik
-            and palet.durak.sira <= yerlesim.yuk.durak.sira
-            and yerlesim.yigin_yuksekligi + palet.yukseklik <= plan.arac.yukseklik
+            if yerlesim.yuk.yukseklik and palet.durak.sira <= yerlesim.yuk.durak.sira
+        ]
+        adaylar = [
+            yerlesim
+            for yerlesim in ayni_durak
+            if yerlesim.yigin_yuksekligi + palet.yukseklik <= plan.arac.yukseklik
         ]
         if not adaylar:
-            plan.sigmayanlar.append(palet)
+            gerekce = (
+                f"iki kat {palet.yukseklik} cm; araç iç yüksekliği "
+                f"{plan.arac.yukseklik} cm — istiflenemiyor"
+                if ayni_durak
+                else "zeminde yer yok, üstüne konabileceği palet de yok"
+            )
+            plan.sigmayanlar.append(Sigmayan(palet, gerekce))
             continue
         # En boş yığın seçilir: ağırlık tek noktada toplanmasın, istif dengeli olsun.
         hedef = min(adaylar, key=lambda y: (y.yigin_yuksekligi, y.x))

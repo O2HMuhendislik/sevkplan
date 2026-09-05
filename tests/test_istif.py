@@ -15,11 +15,11 @@ from app.domain.istif import (
 )
 
 
-def tip(kod, palet_ici=16, en=80, boy=120, arac_palet=33, agirlik=0):
+def tip(kod, palet_ici=16, en=80, boy=120, yukseklik=160, agirlik=0):
     return PaletTipi(
         urun_kodu=kod, urun_adi=f"{kod} ürünü", urun_grubu="PANEL",
-        palet_ici_adet=palet_ici, en=en, boy=boy, yukseklik=160,
-        agirlik=Decimal(str(agirlik)), arac_palet_sayisi=arac_palet,
+        palet_ici_adet=palet_ici, en=en, boy=boy, yukseklik=yukseklik,
+        agirlik=Decimal(str(agirlik)),
     )
 
 
@@ -40,7 +40,7 @@ def test_paletler_gercek_olculeriyle_zemine_dizilir(arac, en, boy, sira_adedi, s
     Palet iki yönde de denenir; aracın enine daha çok sığan yön seçilir. Çizim bir
     zemin planıdır: kapasite kararı anahtar değerindir, burada geometri konuşur.
     """
-    urun = tip("P", palet_ici=1, en=en, boy=boy, arac_palet=0)
+    urun = tip("P", palet_ici=1, en=en, boy=boy)
     hedef = sira_adedi * sira_sayisi
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(hedef))]), arac
@@ -58,7 +58,7 @@ def test_paletler_gercek_olculeriyle_zemine_dizilir(arac, en, boy, sira_adedi, s
 
 def test_zemin_dolunca_kalan_paletler_ustune_konur():
     """Bir sıra fazlası zemine sığmaz; istiflenebiliyorsa üste çıkar."""
-    urun = tip("P", palet_ici=1, arac_palet=0)          # 80x120, yükseklik 160
+    urun = tip("P", palet_ici=1)          # 80x120, yükseklik 160
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(34))]), TIR
     )
@@ -69,7 +69,7 @@ def test_zemin_dolunca_kalan_paletler_ustune_konur():
 
 def test_son_durak_dibe_ilk_durak_kapiya_yuklenir():
     """Yükleme ters rota sırasıyla: 3. durak en dipte, 1. durak kapıda."""
-    urun = tip("P", palet_ici=10, arac_palet=33)
+    urun = tip("P", palet_ici=10)
     yukler = [
         (urun, Durak(1, "İLK", "BURSA"), Decimal(30)),
         (urun, Durak(2, "ORTA", "IZMIR"), Decimal(30)),
@@ -92,7 +92,7 @@ def test_son_durak_dibe_ilk_durak_kapiya_yuklenir():
 
 
 def test_kirik_palet_ayri_palet_olur_ve_isaretlenir():
-    urun = tip("P", palet_ici=16, arac_palet=33)
+    urun = tip("P", palet_ici=16)
     paletler = paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(35))])
     assert len(paletler) == 3                       # 16 + 16 + 3
     assert [int(p.adet) for p in paletler] == [16, 16, 3]
@@ -101,7 +101,7 @@ def test_kirik_palet_ayri_palet_olur_ve_isaretlenir():
 
 def test_kirik_palet_kapiya_yakin_kalir():
     """Aynı duraktaki tam paletler önce yüklenir, kırık olan en sona."""
-    urun = tip("P", palet_ici=16, arac_palet=33)
+    urun = tip("P", palet_ici=16)
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "BAYİ", "IZMIR"), Decimal(35))]), TIR
     )
@@ -110,7 +110,7 @@ def test_kirik_palet_kapiya_yakin_kalir():
 
 
 def test_agirlik_kirik_palette_oransal_hesaplanir():
-    urun = tip("P", palet_ici=10, arac_palet=33, agirlik=100)   # tam palet 100 kg
+    urun = tip("P", palet_ici=10, agirlik=100)   # tam palet 100 kg
     paletler = paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(15))])
     assert [p.agirlik for p in paletler] == [Decimal("100.0"), Decimal("50.0")]
 
@@ -119,7 +119,7 @@ def test_agirlik_dagilimi_on_ve_arka_yariyi_ayirir():
     """Zemine eşit dağılan yükte ağırlık ön ve arka yarıda eşit olur."""
     # 80x120 palet: 3 yan yana, 11 sıra = 33 palet, 1320 cm. Ortadaki 6. sıra
     # (600-720 cm) tam ortada; ilk 5 sıra önde, son 5 sıra arkada kalır.
-    urun = tip("P", palet_ici=1, arac_palet=0, agirlik=100)
+    urun = tip("P", palet_ici=1, agirlik=100)
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(33))]), TIR
     )
@@ -129,7 +129,7 @@ def test_agirlik_dagilimi_on_ve_arka_yariyi_ayirir():
 
 
 def test_olcusu_olmayan_urun_tek_palet_sayilir():
-    urun = tip("X", palet_ici=0, en=0, boy=0, arac_palet=0)
+    urun = tip("X", palet_ici=0, en=0, boy=0)
     paletler = paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(7))])
     assert len(paletler) == 1
     plan = istif_planla(paletler, TIR)
@@ -138,7 +138,7 @@ def test_olcusu_olmayan_urun_tek_palet_sayilir():
 
 def test_zemine_sigmayan_palet_ustune_istiflenir():
     """Anahtar değeri dolu araçta palet gözü zeminden fazla olur; kalan üste konur."""
-    urun = tip("P", palet_ici=1, arac_palet=33, agirlik=50)
+    urun = tip("P", palet_ici=1, agirlik=50)
     urun = PaletTipi(**{**urun.__dict__, "yukseklik": 120})   # 2 kat sığar (2x120<270)
     paletler = paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(36))])
     plan = istif_planla(paletler, TIR)
@@ -153,7 +153,7 @@ def test_zemine_sigmayan_palet_ustune_istiflenir():
 
 def test_yuksek_palet_istiflenemez():
     """İki kat aracın iç yüksekliğini aşıyorsa istif önerilmez."""
-    urun = tip("P", palet_ici=1, arac_palet=33)          # yükseklik 160, 2x160 > 270
+    urun = tip("P", palet_ici=1)          # yükseklik 160, 2x160 > 270
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(34))]), TIR
     )
@@ -165,7 +165,7 @@ def test_olcusu_bilinmeyen_palet_istiflenmez():
     """Yüksekliği tanımsız üründe istif önerilmez; bilinmeyen ölçüyle karar verilmez."""
     urun = PaletTipi(
         urun_kodu="X", urun_adi="X", urun_grubu="G", palet_ici_adet=1,
-        en=80, boy=120, yukseklik=0, agirlik=Decimal(0), arac_palet_sayisi=33,
+        en=80, boy=120, yukseklik=0, agirlik=Decimal(0),
     )
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(34))]), TIR
@@ -182,7 +182,7 @@ def test_ustteki_palet_tabanindan_once_inmeli():
     """
     urun = PaletTipi(
         urun_kodu="P", urun_adi="P", urun_grubu="G", palet_ici_adet=1,
-        en=80, boy=120, yukseklik=120, agirlik=Decimal(0), arac_palet_sayisi=33,
+        en=80, boy=120, yukseklik=120, agirlik=Decimal(0),
     )
     ilk = Durak(1, "İLK", "BURSA")      # önce iner, kapıya yakın
     son = Durak(2, "SON", "IZMIR")      # sonra iner, dipte
@@ -198,8 +198,8 @@ def test_ustteki_palet_tabanindan_once_inmeli():
 
 def test_ayni_duragin_farkli_urunleri_ayni_sirayi_paylasir():
     """Tek paletlik kalemler sıranın kalanını boş bırakmaz; depo yan yana koyar."""
-    a = tip("A", palet_ici=1, arac_palet=0)
-    b = tip("B", palet_ici=1, arac_palet=0)
+    a = tip("A", palet_ici=1)
+    b = tip("B", palet_ici=1)
     durak = Durak(1, "BAYİ", "IZMIR")
     plan = istif_planla(
         paletleri_kur([(a, durak, Decimal(1)), (b, durak, Decimal(1))]), TIR
@@ -211,7 +211,7 @@ def test_ayni_duragin_farkli_urunleri_ayni_sirayi_paylasir():
 
 def test_farkli_duraklar_ayni_sirayi_paylasmaz():
     """Sıra bir bütün olarak iner; dipteki sıraya öndekiler boşaltılmadan ulaşılmaz."""
-    urun = tip("P", palet_ici=1, arac_palet=0)
+    urun = tip("P", palet_ici=1)
     plan = istif_planla(
         paletleri_kur(
             [
@@ -233,7 +233,7 @@ def test_olcusuz_urun_standart_palet_sayilir():
 
     urun = PaletTipi(
         urun_kodu="X", urun_adi="X", urun_grubu="G", palet_ici_adet=1,
-        en=0, boy=0, yukseklik=120, agirlik=Decimal(0), arac_palet_sayisi=0,
+        en=0, boy=0, yukseklik=120, agirlik=Decimal(0),
     )
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(3))]), TIR
@@ -249,7 +249,7 @@ def test_cizim_verisi_ust_kati_ayri_kutu_olarak_verir(db):
 
     urun = PaletTipi(
         urun_kodu="P", urun_adi="P", urun_grubu="G", palet_ici_adet=1,
-        en=80, boy=120, yukseklik=120, agirlik=Decimal(0), arac_palet_sayisi=33,
+        en=80, boy=120, yukseklik=120, agirlik=Decimal(0),
     )
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(35))]), TIR
@@ -271,7 +271,7 @@ def test_yukleme_sirasi_listesi_dipten_kapiya(db):
     """Ekrandaki liste çizimdeki numaralarla aynı sırayı verir."""
     from app.services.istif_servisi import yukleme_sirasi
 
-    urun = tip("P", palet_ici=10, arac_palet=33)
+    urun = tip("P", palet_ici=10)
     plan = istif_planla(
         paletleri_kur(
             [
@@ -290,7 +290,7 @@ def test_yukleme_sirasi_listesi_dipten_kapiya(db):
 
 def test_zemin_kaplama_bos_sirayi_sayar():
     """Kullanılan uzunluk ile kaplanan alan farklıdır; eksik sıra boşluk bırakır."""
-    urun = tip("P", palet_ici=1, arac_palet=0)          # 80x120 -> 3 yan yana
+    urun = tip("P", palet_ici=1)          # 80x120 -> 3 yan yana
     plan = istif_planla(
         paletleri_kur([(urun, Durak(1, "B", "IZMIR"), Decimal(1))]), TIR
     )
@@ -298,3 +298,56 @@ def test_zemin_kaplama_bos_sirayi_sayar():
     assert plan.kullanilan_uzunluk == Decimal(120)
     assert plan.zemin_doluluk == Decimal("0.0882")
     assert plan.zemin_kaplama == Decimal("0.0288")
+
+
+def test_ihracat_urununun_olcusu_kendi_master_datasindan_okunur(db):
+    """İhracat SKU'ları iç piyasa ürün tablosunda yok; ölçü oradan aranırsa
+    bulunamıyor ve bütün miktar tek palet sayılıyordu (276 adet = 1 palet)."""
+    from datetime import date
+
+    from app.models import (
+        IhracatMusterisi,
+        SevkiyatPlani,
+        SiparisDurumu,
+        SiparisSatiri,
+        IhracatUrunu,
+        PlanDurumu,
+    )
+    from app.services.istif_servisi import istif_plani
+
+    db.add(
+        IhracatUrunu(
+            urun_kodu="E-276", urun_adi="Radiator", urun_grubu="Radiator",
+            palet_ici_adet=Decimal(12), konteyner_yukleme_adeti=Decimal(276),
+            agirlik=Decimal("33.4"), en=90, boy=120, yukseklik=228,
+        )
+    )
+    plan = SevkiyatPlani(
+        sefer_no="2609E1001", donem="2609", plan_tarihi=date(2026, 9, 4), depo_kodu="34",
+        modul="IHRACAT", durum=PlanDurumu.TASLAK, arac_tipi="KONTEYNER",
+        planlama_anahtari="VAILLANT", urun_kodlari="E-276",
+        plan_tipi="IHRACAT_KONTEYNER", olcu="ANAHTAR", musteri_adi="VAILLANT",
+        toplam_birim=Decimal(1), doluluk_yuzdesi=Decimal(100),
+    )
+    db.add(plan)
+    db.flush()
+    db.add(
+        SiparisSatiri(
+            siparis_no="S1", teslimat_no="T1", siparis_satir_no="1",
+            urun_kodu="E-276", urun_adi="Radiator", miktar=Decimal(276),
+            depo_kodu="34", sehir="ISPANYA", modul="IHRACAT",
+            durum=SiparisDurumu.PLANLANDI, plan_id=plan.id,
+        )
+    )
+    db.flush()
+
+    istif = istif_plani(db, plan)
+    # 276 adet / palet içi 12 = 23 palet; tek palet değil.
+    assert istif.palet_sayisi + len(istif.sigmayanlar) == 23
+    assert all(int(y.genislik) == 90 and int(y.derinlik) == 120
+               for y in istif.yerlesimler)
+    # Konteyner 1200x235: 90'lık palet enine iki kez sığar, 10 sıra = 20 palet.
+    assert istif.zemin_paleti == 20
+    # 228 cm palet iki kat olmaz (konteyner iç yüksekliği 239 cm); gerekçesi yazılır.
+    assert len(istif.sigmayanlar) == 3
+    assert "istiflenemiyor" in istif.sigmayanlar[0].gerekce

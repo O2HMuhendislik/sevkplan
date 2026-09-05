@@ -496,7 +496,11 @@ kütüphane yüklenmez: program şirket içi bir sunucuda çalışıyor ve inter
 erişimine bağlı olmamalı. Sürükleyerek çevrilir, tekerlekle yakınlaştırılır.
 
 **Her kutu tek bir palettir.** Palet, master datadaki **eni ve boyu** kadar yer
-kaplar; aracın enine daha çok sığan yönde çevrilir (depo da öyle yapıyor). Bir sıraya
+kaplar; ölçüler modülün **kendi** master datasından okunur — ihracat SKU'ları iç
+piyasa ürün tablosunda yok, yanlış tablodan arayınca bütün miktar tek palet
+sayılıyordu. İhracat master datasındaki `EN / BOY / YÜKSEKLİK` sütunları paletin
+ölçüsüdür (palet içi adet 12 olan üründe 90×120×228 dolu paletin ölçüsü).
+Palet aracın enine daha çok sığan yönde çevrilir (depo da öyle yapıyor). Bir sıraya
 **aynı durağın** paletleri yan yana girer, ürünleri farklı olabilir — tek paletlik
 kalemler sıranın kalanını boş bırakmasın diye. Durak karışmaz: sıra bir bütün olarak
 iner, dipteki sıraya öndekiler boşaltılmadan ulaşılamaz. Ölçüsü tanımsız ürün için

@@ -45,9 +45,11 @@
   <b>{{ istif.sigmayanlar | length }} palet yerleştirilemedi.</b> Ne zemine sığdı ne
   de bir paletin üstüne kondu — ürünün palet yüksekliği master datada eksikse istif
   önerilmez, iki kat araç iç yüksekliğini aşıyorsa istif mümkün değildir.
-  {% for p in istif.sigmayanlar[:8] %}<div class="soluk">{{ p.tip.urun_kodu }} ·
-    {{ p.adet | sayi }} adet · {{ p.durak.ad }}{% if not p.tip.yukseklik %} —
-    palet yüksekliği tanımsız{% endif %}</div>{% endfor %}
+  {% for p in istif.sigmayanlar[:10] %}<div class="soluk">{{ p.tip.urun_kodu }} ·
+    {{ p.adet | sayi }} adet · {{ p.durak.ad }} — {{ p.gerekce }}</div>{% endfor %}
+  {% if istif.sigmayanlar | length > 10 %}
+    <div class="soluk">… ve {{ istif.sigmayanlar | length - 10 }} palet daha</div>
+  {% endif %}
 </div>
 {% endif %}
 

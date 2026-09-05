@@ -25,25 +25,60 @@ VARSAYILAN_PALET_ICI = 1
 """Palet içi adedi tanımsız ürün tek palet sayılır; çizimde 'ölçüsü yok' işaretlenir."""
 
 
-def _palet_tipi(urun: Urun | None, urun_kodu: str, urun_adi: str, arac_tipi: str) -> PaletTipi:
-    kamyon = (arac_tipi or "").strip().upper() == "KAMYON"
-    arac_palet = 0
-    if urun is not None:
-        arac_palet = int((urun.kamyon_palet if kamyon else urun.tir_palet) or 0)
+def _bos_tip(urun_kodu: str, urun_adi: str) -> PaletTipi:
+    """Master datada bulunamayan ürün: tek palet sayılır, ölçüsü varsayılan olur."""
     return PaletTipi(
         urun_kodu=urun_kodu,
-        urun_adi=(urun.urun_adi if urun else "") or urun_adi or urun_kodu,
-        urun_grubu=(urun.urun_grubu if urun else "") or "TANIMSIZ",
-        palet_ici_adet=int(urun.palet_ici_adet or 0) if urun else 0,
-        en=int(urun.palet_en or 0) if urun else 0,
-        boy=int(urun.palet_boy or 0) if urun else 0,
-        yukseklik=int(urun.palet_yukseklik or 0) if urun else 0,
+        urun_adi=urun_adi or urun_kodu,
+        urun_grubu="TANIMSIZ",
+        palet_ici_adet=0,
+        en=0,
+        boy=0,
+        yukseklik=0,
+        agirlik=Decimal(0),
+    )
+
+
+def _ic_palet_tipi(urun: Urun, urun_kodu: str, urun_adi: str) -> PaletTipi:
+    """İç piyasa ürününün palet ölçüsü: `palet_en/boy/yukseklik` alanları."""
+    return PaletTipi(
+        urun_kodu=urun_kodu,
+        urun_adi=urun.urun_adi or urun_adi or urun_kodu,
+        urun_grubu=urun.urun_grubu or "TANIMSIZ",
+        palet_ici_adet=int(urun.palet_ici_adet or 0),
+        en=int(urun.palet_en or 0),
+        boy=int(urun.palet_boy or 0),
+        yukseklik=int(urun.palet_yukseklik or 0),
         agirlik=(
             Decimal(urun.agirlik) * Decimal(urun.palet_ici_adet or 1)
-            if urun is not None and urun.agirlik
+            if urun.agirlik
             else Decimal(0)
         ),
-        arac_palet_sayisi=arac_palet,
+    )
+
+
+def _ihracat_palet_tipi(urun, urun_kodu: str, urun_adi: str) -> PaletTipi:
+    """İhracat ürününün palet ölçüsü.
+
+    İhracat master datasında ölçü sütunları `EN / BOY / YÜKSEKLİK` adını taşır ve
+    **paletin** ölçüsüdür: palet içi adet 12 olan bir üründe 90x120x228 tek ürünün
+    değil, dolu paletin ölçüsüdür. Palet içi adet 1 olan ürünlerde ürün ile palet
+    zaten aynı şeydir.
+    """
+    palet_ici = int(urun.palet_ici_adet or 0)
+    return PaletTipi(
+        urun_kodu=urun_kodu,
+        urun_adi=urun.urun_adi or urun_adi or urun_kodu,
+        urun_grubu=urun.urun_grubu or "TANIMSIZ",
+        palet_ici_adet=palet_ici,
+        en=int(urun.en or 0),
+        boy=int(urun.boy or 0),
+        yukseklik=int(urun.yukseklik or 0),
+        agirlik=(
+            Decimal(urun.agirlik) * Decimal(palet_ici or 1)
+            if urun.agirlik
+            else Decimal(0)
+        ),
     )
 
 
@@ -76,11 +111,21 @@ def istif_plani(db: Session, plan: SevkiyatPlani) -> IstifPlani:
     """Planın araç içi yerleşimini kurar."""
     arac = arac_olcusu(plan.arac_tipi or ("KAMYON" if plan.ic_arac_adi == "Kamyon" else ""))
 
+    # Ürün ölçüsü modülün kendi master datasından okunur: ihracat SKU'ları iç piyasa
+    # ürün tablosunda yok. Yanlış tablodan arayınca ölçü bulunamıyor ve bütün miktar
+    # tek palet sayılıyordu (276 adet = 1 palet).
     kodlar = {s.urun_kodu for s in plan.satirlar}
-    urunler = {
-        u.urun_kodu: u
-        for u in db.scalars(select(Urun).where(Urun.urun_kodu.in_(kodlar))).all()
-    }
+    if plan.ihracat_mi:
+        from app.models import IhracatUrunu
+
+        kayitlar = db.scalars(
+            select(IhracatUrunu).where(IhracatUrunu.urun_kodu.in_(kodlar))
+        ).all()
+        tip_kur = _ihracat_palet_tipi
+    else:
+        kayitlar = db.scalars(select(Urun).where(Urun.urun_kodu.in_(kodlar))).all()
+        tip_kur = _ic_palet_tipi
+    urunler = {u.urun_kodu: u for u in kayitlar}
     durak_bul = _durak_cozucu(db, plan)
 
     tipler: dict[str, PaletTipi] = {}
@@ -91,11 +136,11 @@ def istif_plani(db: Session, plan: SevkiyatPlani) -> IstifPlani:
     for satir in plan.satirlar:
         tip = tipler.get(satir.urun_kodu)
         if tip is None:
-            tip = _palet_tipi(
-                urunler.get(satir.urun_kodu),
-                satir.urun_kodu,
-                satir.gosterilecek_urun_adi,
-                plan.arac_tipi or "",
+            kayit = urunler.get(satir.urun_kodu)
+            tip = (
+                tip_kur(kayit, satir.urun_kodu, satir.gosterilecek_urun_adi)
+                if kayit is not None
+                else _bos_tip(satir.urun_kodu, satir.gosterilecek_urun_adi)
             )
             tipler[satir.urun_kodu] = tip
         durak = durak_bul(satir)
