@@ -16,11 +16,18 @@ from typing import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import IhracatMusterisi, IhracatUrunu, Musteri
+from app.config import KOK_DIZIN
+from app.models import IhracatMusterisi, IhracatUrunu, Musteri, Urun
 from app.services import ice_aktarim
 from app.services.excel import ExcelHatasi
 
-ORNEK_DIZIN = Path("veri/ornek")
+ORNEK_DIZIN = KOK_DIZIN / "veri" / "ornek"
+"""Gömülü dosyalar proje köküne göre bulunur.
+
+Göreli yol ("veri/ornek") kullanıldığında uvicorn başka bir dizinden çalıştırılınca
+dosyalar bulunamıyor ve gömülü master data **sessizce** yüklenmiyordu; program boş
+ürün tablosuyla açılıyordu.
+"""
 
 
 @dataclass(frozen=True)
@@ -32,6 +39,12 @@ class GomuluDosya:
 
 
 GOMULU_DOSYALAR: tuple[GomuluDosya, ...] = (
+    GomuluDosya(
+        "İç piyasa ürün master datası",
+        ORNEK_DIZIN / "urun_masterdata.xlsx",
+        Urun,
+        ice_aktarim.urunleri_aktar,
+    ),
     GomuluDosya(
         "İhracat ürün master datası",
         ORNEK_DIZIN / "ihracat_urun_masterdata.xlsx",

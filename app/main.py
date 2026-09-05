@@ -76,6 +76,7 @@ from app.services import (
     rapor_servisi,
     sablonlar,
     temizleme,
+    urun_bagi_servisi,
     veri_formatlari,
     yukleme_formu,
 )
@@ -453,7 +454,14 @@ def plan_detay(
     kullanici: Kullanici = Depends(modul_yetkisi("RING")),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    return sayfa(istek, "plan_detay.html", kullanici, plan=plan_getir(db, plan_id))
+    plan = plan_getir(db, plan_id)
+    return sayfa(
+        istek,
+        "plan_detay.html",
+        kullanici,
+        plan=plan,
+        bag_uyarilari=urun_bagi_servisi.plan_uyarilari(db, plan),
+    )
 
 
 @uygulama.post("/ring/planlar/{plan_id}/axata")
@@ -1027,6 +1035,7 @@ def rota_plan_detay(
         kullanici,
         plan=plan,
         duraklar=ic_piyasa_servisi.plan_musterileri(db, plan),
+        bag_uyarilari=urun_bagi_servisi.plan_uyarilari(db, plan),
     )
 
 
@@ -1445,8 +1454,13 @@ def ihracat_plan_detay(
     kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT")),
     db: Session = Depends(oturum_bagimliligi),
 ):
+    plan = _ihracat_plan_getir(db, plan_id)
     return sayfa(
-        istek, "ihracat_plan_detay.html", kullanici, plan=_ihracat_plan_getir(db, plan_id)
+        istek,
+        "ihracat_plan_detay.html",
+        kullanici,
+        plan=plan,
+        bag_uyarilari=urun_bagi_servisi.plan_uyarilari(db, plan),
     )
 
 
@@ -2322,6 +2336,10 @@ def masterdata_ozet(
         {"etiket": "Ürün grubu",
          "sayi": len(masterdata_servisi.urun_gruplari_ozeti(db)),
          "aciklama": "Ad değiştirme ve birleştirme", "yol": "/masterdata/gruplar"},
+        {"etiket": "Ürün bağı",
+         "sayi": urun_bagi_servisi.ozet(db)["toplam"],
+         "aciklama": "Birlikte sevk edilecek ürünler",
+         "yol": "/masterdata/urun-baglari"},
         {"etiket": "Depo", "sayi": db.scalar(select(func.count(Depo.id))) or 0,
          "aciklama": "Kod, tesis, form etiketi", "yol": "/masterdata/depolar"},
     ]
@@ -2849,3 +2867,114 @@ def md_grup_sil(
     return yonlendir(
         "/masterdata/gruplar", mesaj=f"{ad} grubu {sayi} üründen kaldırıldı."
     )
+
+
+# ------------------------------------------------- birlikte sevk edilecek ürünler
+BAG_YOLU = "/masterdata/urun-baglari"
+
+
+@uygulama.get(BAG_YOLU)
+def md_urun_baglari(
+    istek: Request,
+    arama: str = "",
+    tip: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    from app.models import BagTipi
+
+    return sayfa(
+        istek,
+        "md_urun_baglari.html",
+        kullanici,
+        baglar=urun_bagi_servisi.baglari_getir(db, arama=arama, tip=tip),
+        ozet=urun_bagi_servisi.ozet(db),
+        arama=arama,
+        tip=tip,
+        tipler=[t.value for t in BagTipi],
+        sorgu=_sorgu_metni(arama=arama, tip=tip),
+    )
+
+
+@uygulama.post(BAG_YOLU + "/kaydet")
+def md_urun_bagi_kaydet(
+    ana_urun_kodu: str = Form(...),
+    bagli_urun_kodu: str = Form(...),
+    tip: str = Form("AKSESUAR"),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        urun_bagi_servisi.bag_kaydet(db, ana_urun_kodu, bagli_urun_kodu, tip, aciklama)
+        db.commit()
+    except urun_bagi_servisi.BagHatasi as hata:
+        db.rollback()
+        return yonlendir(BAG_YOLU, hata=str(hata))
+    return yonlendir(
+        BAG_YOLU, mesaj=f"{ana_urun_kodu} + {bagli_urun_kodu} bağı kaydedildi."
+    )
+
+
+@uygulama.post(BAG_YOLU + "/{bag_id}/sil")
+def md_urun_bagi_sil(
+    bag_id: int,
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        urun_bagi_servisi.bagi_sil(db, bag_id)
+        db.commit()
+    except urun_bagi_servisi.BagHatasi as hata:
+        db.rollback()
+        return yonlendir(BAG_YOLU, hata=str(hata))
+    return yonlendir(BAG_YOLU, mesaj="Bağ silindi.")
+
+
+@uygulama.get(BAG_YOLU + "/excel")
+def md_urun_baglari_excel(
+    arama: str = "",
+    tip: str = "",
+    kullanici: Kullanici = Depends(MD_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Ekrandaki filtrenin aynısını uygular; inen dosya doldurulup geri yüklenebilir."""
+    hedef = urun_bagi_servisi.disari_aktar(
+        urun_bagi_servisi.baglari_getir(db, arama=arama, tip=tip, limit=100000),
+        CIKTI_DIZIN / "urun_baglari.xlsx",
+    )
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get(BAG_YOLU + "/sablon")
+def md_urun_bagi_sablonu(kullanici: Kullanici = Depends(MD_YETKI)):
+    hedef = sablonlar.urun_bagi_sablonu(CIKTI_DIZIN / "urun_baglari_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post(BAG_YOLU + "/yukle")
+async def md_urun_baglari_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(MD_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        sonuc = ice_aktarim.urun_baglarini_aktar(
+            db, dosya.file, dosya.filename or "urun_baglari.xlsx",
+            kullanici.kullanici_adi,
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir(BAG_YOLU, hata=str(hata))
+    mesaj = f"Ürün bağı aktarımı: {sonuc.ozet()}"
+    if sonuc.hatalar:
+        # En sık hata "ürün master datada yok"; sebebi görünmezse kullanıcı
+        # dosyanın neden reddedildiğini anlamıyor.
+        ornekler = "; ".join(
+            f"satır {h.satir_no}: {h.mesaj}" for h in sonuc.hatalar[:3]
+        )
+        mesaj += f" — {ornekler}"
+        if len(sonuc.hatalar) > 3:
+            mesaj += f" (+{len(sonuc.hatalar) - 3} hata daha)"
+    return yonlendir(BAG_YOLU, mesaj=mesaj)

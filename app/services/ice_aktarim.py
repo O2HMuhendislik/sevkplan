@@ -6,17 +6,26 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.iller import yer_adi
 from app.domain.metin import buyuk_harf
-from app.models import IceAktarim, Musteri, SiparisDurumu, SiparisSatiri, Urun
+from app.models import (
+    IceAktarim,
+    Musteri,
+    SiparisDurumu,
+    SiparisSatiri,
+    Urun,
+    UrunBagi,
+)
 from app.services import excel
 from app.services.excel import ExcelHatasi
 from app.services.veri_formatlari import (
     MUSTERI_ALANLARI,
     MUSTERI_ALIAS,
+    URUN_BAGI_ALANLARI,
+    URUN_BAGI_ALIAS,
     SIPARIS_ALANLARI,
     SIPARIS_ALIAS,
     URUN_ALANLARI,
@@ -806,4 +815,51 @@ def ihracat_siparislerini_aktar(
     aktarim.hatali_satir = sonuc.hatali
     aktarim.hata_ozeti = _hata_ozeti(sonuc)
     db.flush()
+    return sonuc
+
+
+def urun_baglarini_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """Birlikte sevk edilecek ürün bağlarını topluca yükler.
+
+    Bağ sayısı elle girilemeyecek kadar çok olabilir (2.585 ürünlük master datada
+    kombi/baca eşleşmeleri yüzlerce satır tutar), bu yüzden Excel'den de yüklenir.
+    Aynı çift tekrar gelirse tipi ve açıklaması güncellenir.
+    """
+    from app.services import urun_bagi_servisi
+
+    _kontrol_et(dosya, URUN_BAGI_ALANLARI, URUN_BAGI_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, URUN_BAGI_ALIAS, zorunlu_alanlar(URUN_BAGI_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        ana = excel.metin(kayit.get("ana_urun_kodu"))
+        bagli = excel.metin(kayit.get("bagli_urun_kodu"))
+        tip = excel.metin(kayit.get("tip")).upper() or "AKSESUAR"
+        try:
+            oncesi = db.scalar(
+                select(func.count(UrunBagi.id)).where(
+                    UrunBagi.ana_urun_kodu.in_({ana, bagli}),
+                    UrunBagi.bagli_urun_kodu.in_({ana, bagli}),
+                )
+            )
+            urun_bagi_servisi.bag_kaydet(
+                db, ana, bagli, tip,
+                aciklama=excel.metin(kayit.get("aciklama")),
+                kaynak="EXCEL",
+            )
+        except urun_bagi_servisi.BagHatasi as hata:
+            sonuc.hatalar.append(SatirHatasi(satir_no, ana or "-", str(hata)))
+            continue
+        if oncesi:
+            sonuc.guncellenen += 1
+        else:
+            sonuc.eklenen += 1
+
+    db.commit()
+    _aktarim_kaydet(db, dosya_adi, "URUN_BAGI", sonuc, kullanici)
     return sonuc

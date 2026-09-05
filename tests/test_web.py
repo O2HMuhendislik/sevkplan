@@ -1160,3 +1160,129 @@ def test_ihracat_plan_listesi_eski_adresten_filtresiyle_yonlenir(istemci):
     assert cevap.headers["location"].startswith("/ihracat/raporlar/plan-excel?")
     assert "durum=TASLAK" in cevap.headers["location"]
     assert "arama=VAILLANT" in cevap.headers["location"]
+
+
+# --------------------------------------------------- birlikte sevk edilecek ürünler
+def _urun_bagi_ortami(fabrika):
+    """Aynı bayinin kombisi ve bacası, ayrı teslimatlarda ve ayrı planlarda."""
+    from datetime import date
+    from decimal import Decimal as D
+
+    from app.models import SevkiyatPlani, SiparisDurumu, SiparisSatiri, Urun
+
+    def plan(sefer, anahtar, urun):
+        return SevkiyatPlani(
+            sefer_no=sefer, donem="2609", depo_kodu="64", planlama_anahtari=anahtar,
+            urun_kodlari=urun, toplam_birim=D(1), doluluk_yuzdesi=D(100), modul="RING",
+            plan_tipi="RING_PALET", plan_tarihi=date(2026, 9, 1),
+        )
+
+    with fabrika() as db:
+        db.add(Urun(urun_kodu="KOMBI-1", urun_adi="ecoTEC 24", urun_grubu="KOMBİ",
+                    palet_ici_adet=10, tir_yukleme_adeti=100))
+        db.add(Urun(urun_kodu="BACA-1", urun_adi="Baca Seti 60/100", urun_grubu="BACA",
+                    palet_ici_adet=20, tir_yukleme_adeti=400))
+        kombi_plan = plan("2609D9001", "KOMBI-1", "KOMBI-1")
+        baca_plan = plan("2609D9002", "BACA-1", "BACA-1")
+        db.add_all([kombi_plan, baca_plan])
+        db.flush()
+        db.add(SiparisSatiri(
+            siparis_no="S1", siparis_satir_no="10", teslimat_no="T1",
+            urun_kodu="KOMBI-1", urun_adi="ecoTEC 24", miktar=D(10), depo_kodu="64",
+            bayi_adi="EGE ISITMA", modul="RING", plan_id=kombi_plan.id,
+            durum=SiparisDurumu.PLANLANDI))
+        db.add(SiparisSatiri(
+            siparis_no="S1", siparis_satir_no="20", teslimat_no="T2",
+            urun_kodu="BACA-1", urun_adi="Baca Seti 60/100", miktar=D(10),
+            depo_kodu="64", bayi_adi="EGE ISITMA", modul="RING",
+            plan_id=baca_plan.id, durum=SiparisDurumu.PLANLANDI))
+        db.commit()
+        return kombi_plan.id, baca_plan.id
+
+
+def test_aksesuar_ana_urunsuz_plana_girince_uyarir(istemci, fabrika):
+    """Sahadaki şikâyet: kombi gidiyor, bacası iki gün sonra gidiyor.
+
+    Teslimat numaraları farklı olduğu için teslimat bazlı koruma bu durumu
+    yakalamıyordu; bağ ürün kodu üzerinden kurulunca yakalanıyor.
+    """
+    kombi_plan_id, baca_plan_id = _urun_bagi_ortami(fabrika)
+
+    istemci.post(
+        "/masterdata/urun-baglari/kaydet",
+        data={"ana_urun_kodu": "KOMBI-1", "bagli_urun_kodu": "BACA-1",
+              "tip": "AKSESUAR", "aciklama": "ecoTEC baca seti"},
+    )
+    liste = istemci.get("/masterdata/urun-baglari")
+    assert "BACA-1" in liste.text and "AKSESUAR" in liste.text
+
+    # Baca planı: aksesuar ana ürünü olmadan gidiyor → ağır uyarı, kombinin seferi.
+    baca = istemci.get(f"/ring/planlar/{baca_plan_id}")
+    assert "Eksik parça" in baca.text
+    assert "KOMBI-1" in baca.text and "2609D9001" in baca.text
+
+    # Kombi planı: aksesuarı başka planda → uyarı var ama ağır değil.
+    kombi = istemci.get(f"/ring/planlar/{kombi_plan_id}")
+    assert "BACA-1" in kombi.text and "2609D9002" in kombi.text
+    assert "Aksesuar uyarısı" in kombi.text
+
+
+def test_set_bagi_iki_yone_de_uyarir(istemci, fabrika):
+    """Klima iç/dış ünite: hangisi planda olursa olsun diğeri aranır."""
+    kombi_plan_id, baca_plan_id = _urun_bagi_ortami(fabrika)
+    istemci.post(
+        "/masterdata/urun-baglari/kaydet",
+        data={"ana_urun_kodu": "KOMBI-1", "bagli_urun_kodu": "BACA-1", "tip": "SET"},
+    )
+    for plan_id in (kombi_plan_id, baca_plan_id):
+        cevap = istemci.get(f"/ring/planlar/{plan_id}")
+        assert "Eksik parça" in cevap.text, plan_id
+        assert "SET" in cevap.text
+
+
+def test_urun_bagi_excel_gidip_geri_yuklenir(istemci, fabrika):
+    """İnen dosya doğrudan geri yüklenebilmeli: başlıklar tek kaynaktan geliyor."""
+    _urun_bagi_ortami(fabrika)
+    istemci.post(
+        "/masterdata/urun-baglari/kaydet",
+        data={"ana_urun_kodu": "KOMBI-1", "bagli_urun_kodu": "BACA-1", "tip": "SET"},
+    )
+    inen = istemci.get("/masterdata/urun-baglari/excel")
+    assert inen.status_code == 200
+
+    geri = istemci.post(
+        "/masterdata/urun-baglari/yukle",
+        files={"dosya": ("urun_baglari.xlsx", BytesIO(inen.content),
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert "1 güncellendi" in sorgu(geri) or "güncellendi" in sorgu(geri)
+    assert istemci.get("/masterdata/urun-baglari").text.count("KOMBI-1") >= 1
+
+
+def test_urun_bagi_tanimsiz_urunu_reddeder(istemci):
+    cevap = istemci.post(
+        "/masterdata/urun-baglari/kaydet",
+        data={"ana_urun_kodu": "YOK-1", "bagli_urun_kodu": "YOK-2", "tip": "SET"},
+    )
+    assert "tanımlı olmayan ürün kodu" in sorgu(cevap)
+
+
+def test_urun_bagi_kendine_baglanmaz(istemci, fabrika):
+    from app.models import Urun
+
+    with fabrika() as db:
+        db.add(Urun(urun_kodu="TEK-1", urun_adi="Tek", urun_grubu="KOMBİ"))
+        db.commit()
+    cevap = istemci.post(
+        "/masterdata/urun-baglari/kaydet",
+        data={"ana_urun_kodu": "TEK-1", "bagli_urun_kodu": "TEK-1", "tip": "SET"},
+    )
+    assert "kendisine bağlanamaz" in sorgu(cevap)
+
+
+def test_bagi_olmayan_planda_uyari_cikmaz(istemci, fabrika):
+    """Bağ tanımlanmadıysa ekran hiçbir uyarı göstermemeli."""
+    kombi_plan_id, _ = _urun_bagi_ortami(fabrika)
+    cevap = istemci.get(f"/ring/planlar/{kombi_plan_id}")
+    assert "Eksik parça" not in cevap.text
+    assert "Aksesuar uyarısı" not in cevap.text

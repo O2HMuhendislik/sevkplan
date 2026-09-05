@@ -386,3 +386,15 @@ td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600;
   background: rgba(255,255,255,.85); padding: 3px 8px; border-radius: 4px;
 }
 @media print { .sahne { height: 340px; } .gorunus-sekmeleri { display: none; } }
+
+/* ------------------------------------------------ eksik parça (ürün bağı) uyarısı
+ *
+ * Kombi bir araca, bacası başka bir araca düşünce müşteride kurulum yapılamıyor.
+ * Uyarı plan detayının en üstünde ve ağırlığına göre iki tonda durur: setin
+ * yarısı eksikse (ya da aksesuar ana ürünsüz gidiyorsa) kırmızı, aksesuar
+ * beklemedeyse sarı.
+ */
+.bag-uyari { border-left: 4px solid var(--vg-sari); }
+.bag-uyari.agir { border-left-color: var(--vg-mor); }
+.bag-uyari h2 { display: flex; align-items: center; gap: 10px; }
+.bag-uyari tr.agir-satir td { background: var(--vg-mor-20); }

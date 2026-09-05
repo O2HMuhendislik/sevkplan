@@ -1,0 +1,147 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'MASTERDATA' %}
+{% set aktif_menu = 'baglar' %}
+{% block icerik %}
+<h1>Birlikte Sevk Edilecek Ürünler</h1>
+
+<div class="kart">
+  <h2>Bu ekran ne işe yarıyor?</h2>
+  <p class="soluk">
+    Bir ürünün <b>aksesuarı</b> (baca, montaj seti, dirsek) ya da <b>setin diğer
+    parçası</b> (klimada iç ünite ile dış ünite) aynı araçta gitmelidir. Sistem bugüne
+    kadar bunu yalnızca <b>teslimat</b> üzerinden koruyordu: bir teslimatın satırları
+    ayrılmaz, bölünürse oransal bölünür. Stoklar farklı zamanlarda geldiği için aynı
+    siparişin parçaları <b>farklı teslimat numaraları</b> alabiliyor ve o anda bağ
+    kopuyordu — kombi bir araca, bacası iki gün sonra başka bir araca düşüyordu.
+    Burada tanımlanan bağ <b>ürün kodu</b> üzerinden kurulur ve aynı müşterinin
+    bekleyen bütün teslimatlarında aranır; eksik kalırsa <b>plan ekranında uyarı</b>
+    çıkar.
+  </p>
+  <p class="soluk" style="margin-bottom:0">
+    <b>SET</b> — bir bütünün iki parçası, hiçbiri tek başına gitmemeli.
+    <b>AKSESUAR</b> — tek yönlü: aksesuar ana ürünü olmadan gitmemeli; ana ürün,
+    aksesuarı sipariş edilmemişse tek başına gidebilir.
+  </p>
+</div>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Tanımlı bağ</div>
+    <div class="deger">{{ ozet.toplam }}</div></div>
+  <div class="metrik"><div class="etiket">Set bağı</div>
+    <div class="deger">{{ ozet.set }}</div></div>
+  <div class="metrik"><div class="etiket">Aksesuar bağı</div>
+    <div class="deger">{{ ozet.aksesuar }}</div></div>
+  <div class="metrik"><div class="etiket">Bağı olan ürün</div>
+    <div class="deger">{{ ozet.urun }}</div></div>
+</div>
+
+{% if kullanici.duzenleyebilir_mi('MASTERDATA') %}
+<div class="kart">
+  <h2>Yeni bağ</h2>
+  <form class="satir" method="post" action="/masterdata/urun-baglari/kaydet">
+    <div><label for="ana_urun_kodu">Ana ürün kodu</label>
+      <input id="ana_urun_kodu" name="ana_urun_kodu" required style="width:190px"
+             placeholder="ör. 10016482"></div>
+    <div><label for="bagli_urun_kodu">Bağlı ürün kodu</label>
+      <input id="bagli_urun_kodu" name="bagli_urun_kodu" required style="width:190px"
+             placeholder="ör. 10016486"></div>
+    <div><label for="tip">Bağ tipi</label>
+      <select id="tip" name="tip">
+        {% for t in tipler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
+    <div style="flex:1; min-width:220px"><label for="aciklama">Açıklama</label>
+      <input id="aciklama" name="aciklama" style="width:100%"
+             placeholder="Hatırlatma notu (isteğe bağlı)"></div>
+    <button type="submit">Ekle</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>Excel</h2>
+  <p class="soluk">
+    Bağ sayısı elle girilemeyecek kadar çoksa listeyi indirip doldurun ve geri
+    yükleyin. <b>İnen dosya doğrudan geri yüklenebilir</b> — başlıklar içe aktarımın
+    tanıdığı başlıklardır. Aynı çift tekrar gelirse tipi ve açıklaması güncellenir.
+  </p>
+  <form class="satir" method="post" action="/masterdata/urun-baglari/yukle"
+        enctype="multipart/form-data">
+    <div><label for="dosya">Excel dosyası</label>
+      <input id="dosya" type="file" name="dosya" accept=".xlsx" required></div>
+    <button type="submit">Yükle</button>
+    <a class="dugme ikincil" href="/masterdata/urun-baglari/excel?{{ sorgu }}">
+      Listeyi indir ({{ baglar | length }} bağ)</a>
+    <a class="dugme ikincil" href="/masterdata/urun-baglari/sablon">Boş şablon</a>
+  </form>
+</div>
+{% endif %}
+
+<div class="kart">
+  <form class="satir" method="get" action="/masterdata/urun-baglari"
+        style="margin-bottom:14px">
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}" style="width:320px"
+             placeholder="Ürün kodu, ürün adı, açıklama"></div>
+    <div><label for="tip_f">Bağ tipi</label>
+      <select id="tip_f" name="tip">
+        <option value="">Tümü</option>
+        {% for t in tipler %}
+        <option value="{{ t }}" {{ 'selected' if tip == t }}>{{ t }}</option>
+        {% endfor %}
+      </select></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/masterdata/urun-baglari">Temizle</a>
+  </form>
+
+  {% if baglar %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Tip</th>
+      <th>Ana ürün</th><th>Bağlı ürün</th><th>Açıklama</th><th>Kaynak</th>
+      {% if kullanici.duzenleyebilir_mi('MASTERDATA') %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for bag in baglar %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><span class="rozet {{ 'TAMAMLANDI' if bag.tip == 'SET' else 'PLANLANDI' }}">
+          {{ bag.tip }}</span></td>
+        <td>
+          <b>{{ bag.ana_urun_kodu }}</b>
+          {% if bag.ana_urun_kodu in bag.tanimsiz %}
+            <span class="rozet IPTAL">MASTER DATADA YOK</span>
+          {% else %}
+            <div class="soluk">{{ bag.ana_urun_adi }}
+              {% if bag.ana_grubu %}· {{ bag.ana_grubu }}{% endif %}</div>
+          {% endif %}
+        </td>
+        <td>
+          <b>{{ bag.bagli_urun_kodu }}</b>
+          {% if bag.bagli_urun_kodu in bag.tanimsiz %}
+            <span class="rozet IPTAL">MASTER DATADA YOK</span>
+          {% else %}
+            <div class="soluk">{{ bag.bagli_urun_adi }}
+              {% if bag.bagli_grubu %}· {{ bag.bagli_grubu }}{% endif %}</div>
+          {% endif %}
+        </td>
+        <td class="soluk">{{ bag.aciklama }}</td>
+        <td class="soluk">{{ bag.kaynak }}</td>
+        {% if kullanici.duzenleyebilir_mi('MASTERDATA') %}
+        <td>
+          <form method="post" action="/masterdata/urun-baglari/{{ bag.id }}/sil"
+                onsubmit="return confirm('Bu bağ silinsin mi?')">
+            <button type="submit" class="ikincil">Sil</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">
+    Henüz ürün bağı tanımlanmadı. Kombi–baca, klima iç–dış ünite gibi birlikte
+    gitmesi gereken ürünleri yukarıdan ekleyin ya da Excel'den yükleyin.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

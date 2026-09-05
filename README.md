@@ -36,6 +36,7 @@ otomatik yüklenir** — hiçbir dosya yüklemeden çalışmaya başlanabilir:
 
 | Dosya | İçerik |
 |---|---|
+| `veri/ornek/urun_masterdata.xlsx` | 2.585 iç piyasa ürünü: ürün grubu, palet içi adet, kamyon ve tır yükleme adetleri, ağırlık, desi, palet ölçüleri |
 | `veri/ornek/ihracat_urun_masterdata.xlsx` | 2.859 ihracat ürünü: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık, ölçüler |
 | `veri/ornek/ihracat_masterdata.xlsx` | 198 ihracat müşterisi: ülke, araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, notlar |
 | `veri/ornek/ic_piyasa_masterdata.xlsx` | 5.108 iç piyasa müşterisi: il, ilçe, bölge, tır girişi |
@@ -178,6 +179,7 @@ bakılıyordu. Artık tek yerdeler, eski adresler yönlendiriliyor.
 | **İhracat Müşterileri** | Araç tipi, sefer kodu, yükleme tipi, azami tonaj (eski adres `/ihracat/musteriler`) |
 | **İhracat Ürünleri** | Sütun filtreleri, filtrelenmiş listeyi indirme, tekil düzenleme; tır/konteyner yükleme adetleri, yeni ve eski hesap (eski adres `/ihracat/urunler`) |
 | **Ürün Grupları** | Grup adı değiştirme ve birleştirme; değişiklik bütün ürünlere işler |
+| **Ürün Bağları** | Birlikte sevk edilmesi gereken ürünler: klima iç/dış ünite (SET), kombi–baca–montaj seti (AKSESUAR). Bağ **ürün kodu** üzerinden kurulur, teslimat üzerinden değil; eksik kalırsa plan detayında uyarı çıkar |
 | **Depolar** | Kod, ad, tesis, yükleme formundaki satır adı ve sırası, Axata açılır mı, parsiyel yapılır mı |
 | **Sistem Tanımları** | Planlama sayıları (kargo desi sınırı, rutin palet sınırı, azami durak, rota sapması, günlük araç sınırları) |
 

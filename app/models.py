@@ -1028,6 +1028,61 @@ class PlanHareketi(Temel):
     plan: Mapped[SevkiyatPlani] = relationship(back_populates="hareketler")
 
 
+class BagTipi(str, enum.Enum):
+    """İki ürünün birbirine ne kadar sıkı bağlı olduğu."""
+
+    SET = "SET"
+    """Bir bütünün iki parçası; hiçbiri tek başına gitmemeli.
+
+    Klimada iç ünite ile dış ünite budur: biri gidip diğeri kalırsa müşteride
+    kurulum yapılamaz.
+    """
+    AKSESUAR = "AKSESUAR"
+    """Ana ürünün yanında gitmesi gereken parça: baca, montaj seti, dirsek.
+
+    Bağ tek yönlüdür. Aksesuar ana ürünü olmadan **gitmemeli**; ana ürün ise
+    aksesuarı sipariş edilmemişse tek başına gidebilir.
+    """
+
+
+class UrunBagi(Temel):
+    """Birlikte sevk edilmesi gereken iki ürün.
+
+    Şirkette bu bağ için 'header kod' alanı vardı ama Vaillant ürünlerinde hiç
+    doldurulmamış (master datadaki 2.585 ürünün tamamında boş). Bağ bilgisi
+    olmayınca kombi bir araca, bacası iki gün sonra başka bir araca düşüyor ve
+    bu bir müşteri şikâyetine dönüşüyor.
+
+    Bağ **ürün kodu** üzerinden kurulur, teslimat üzerinden değil: stoklar farklı
+    zamanlarda geldiği için aynı siparişin parçaları farklı teslimat numaraları
+    alabiliyor ve teslimat bazlı bağ bu durumda kopuyor.
+    """
+
+    __tablename__ = "urun_baglari"
+    __table_args__ = (
+        UniqueConstraint("ana_urun_kodu", "bagli_urun_kodu", name="uq_urun_bagi"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ana_urun_kodu: Mapped[str] = mapped_column(String(50), index=True)
+    """SET bağında çiftin ilk parçası, AKSESUAR bağında ana ürün."""
+    bagli_urun_kodu: Mapped[str] = mapped_column(String(50), index=True)
+    """SET bağında çiftin ikinci parçası, AKSESUAR bağında aksesuarın kendisi."""
+    tip: Mapped[BagTipi] = mapped_column(
+        Enum(BagTipi, native_enum=False, length=20), default=BagTipi.AKSESUAR
+    )
+    kaynak: Mapped[str] = mapped_column(String(20), default="ELLE")
+    """ELLE (ekrandan girildi) ya da GECMIS (sevk geçmişinden önerildi)."""
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+    @property
+    def simetrik_mi(self) -> bool:
+        """SET bağı iki yönlüdür: hangi parça planda olursa olsun diğeri aranır."""
+        return self.tip is BagTipi.SET
+
+
 class Depo(Temel):
     """Depo tanımı: kod, ad, bulunduğu tesis ve yükleme formundaki karşılığı.
 

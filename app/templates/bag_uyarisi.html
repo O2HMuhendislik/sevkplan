@@ -1,0 +1,47 @@
+{#
+  Planda parçası eksik kalan ürünlerin uyarısı. Üç plan detay ekranı da bunu
+  kullanıyor: kural modüle göre değişmiyor.
+#}
+{% if bag_uyarilari %}
+{% set agir = bag_uyarilari | selectattr('agirlik', 'equalto', 'YUKSEK') | list %}
+<div class="kart bag-uyari {{ 'agir' if agir }}">
+  <h2>
+    {% if agir %}Eksik parça — bu plan bu hâliyle çıkmamalı
+    {% else %}Aksesuar uyarısı{% endif %}
+    <span class="rozet {{ 'IPTAL' if agir else 'TASLAK' }}">{{ bag_uyarilari | length }}</span>
+  </h2>
+  <p class="soluk">
+    Aşağıdaki ürünlerin birlikte gitmesi gereken parçası bu planda yok. Bağlar
+    <a href="/masterdata/urun-baglari">Master Data &gt; Ürün Bağları</a> ekranında
+    tanımlanır.
+  </p>
+  <table>
+    <thead><tr>
+      <th>Müşteri</th><th>Planda olan</th><th>Eksik olan</th><th>Bağ</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for uyari in bag_uyarilari %}
+      <tr class="{{ 'agir-satir' if uyari.agirlik == 'YUKSEK' }}">
+        <td>{{ uyari.musteri }}</td>
+        <td><b>{{ uyari.urun_kodu }}</b>
+          <div class="soluk">{{ uyari.urun_adi }}</div></td>
+        <td><b>{{ uyari.eksik_kod }}</b>
+          <div class="soluk">{{ uyari.eksik_adi }}</div></td>
+        <td><span class="rozet {{ 'TAMAMLANDI' if uyari.tip == 'SET' else 'PLANLANDI' }}">
+          {{ uyari.tip }}</span></td>
+        <td>
+          {% if uyari.diger_plan %}
+            <span class="dikkat"><b>{{ uyari.diger_plan }}</b> planında</span>
+          {% elif uyari.bekliyor %}
+            Beklemede — bu plana eklenebilir
+          {% else %}
+            Sipariş edilmemiş
+          {% endif %}
+          <div class="soluk">{{ uyari.gerekce }}</div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

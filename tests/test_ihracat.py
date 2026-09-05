@@ -503,13 +503,17 @@ def test_tekrar_eden_urun_satiri_dolu_olcuyu_silmez(db, tmp_path):
 
 def test_gomulu_master_data_ilk_kurulumda_yuklenir(db):
     """Program kendi master datasıyla gelir: ilk açılışta dosya yüklemek gerekmez."""
-    from app.models import IhracatMusterisi, IhracatUrunu
+    from app.models import IhracatMusterisi, IhracatUrunu, Urun
     from app.services import gomulu_veri
 
     mesajlar = gomulu_veri.eksikleri_yukle(db)
     assert any("İhracat ürün master datası" in m for m in mesajlar)
     assert db.query(IhracatUrunu).count() > 2500
     assert db.query(IhracatMusterisi).count() > 150
+    # İç piyasa ürün master datası da gömülü: dosya depoda duruyordu ama
+    # yükleme listesinde olmadığı için sıfır kurulum 0 ürünle açılıyordu.
+    assert any("İç piyasa ürün master datası" in m for m in mesajlar)
+    assert db.query(Urun).count() > 2500
 
     # Hesaplama dosyasındaki örnek ürün ölçüleriyle birlikte gelmeli.
     urun = db.query(IhracatUrunu).filter_by(urun_kodu="313041213").one()
@@ -593,3 +597,21 @@ def test_plan_toplam_desisi_satirlarin_toplamina_esittir(ihracat_veri, ihracat_u
     assert plan.toplam_desi == Decimal(21000)
     assert plan.toplam_desi == sum(Decimal(s.desi) for s in plan.satirlar)
     assert plan.toplam_agirlik == sum(Decimal(s.agirlik) for s in plan.satirlar)
+
+
+def test_gomulu_dosyalar_calisma_dizininden_bagimsiz_bulunur(db, monkeypatch, tmp_path):
+    """Gömülü veri proje köküne göre aranmalı.
+
+    Göreli yol kullanıldığında uvicorn başka bir dizinden çalıştırılınca dosyalar
+    bulunamıyor ve master data **sessizce** yüklenmiyordu; program boş ürün
+    tablosuyla açılıyordu.
+    """
+    import os
+
+    from app.models import Urun
+    from app.services import gomulu_veri
+
+    monkeypatch.chdir(tmp_path)
+    assert os.getcwd() != str(gomulu_veri.ORNEK_DIZIN.parent.parent)
+    gomulu_veri.eksikleri_yukle(db)
+    assert db.query(Urun).count() > 2500

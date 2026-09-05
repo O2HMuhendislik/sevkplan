@@ -9,6 +9,8 @@
   {% if plan.alt_limit_esnetildi %}<span class="rozet TASLAK">ALT LİMİT ESNETİLDİ</span>{% endif %}
 </h1>
 
+{% include "bag_uyarisi.html" %}
+
 {% if plan.istisna_asim %}
 <div class="uyari hata">
   Bu plan üst limit istisnasıdır: tek teslimat aracı aştığı için bölünemedi.

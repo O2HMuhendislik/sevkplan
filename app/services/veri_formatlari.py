@@ -162,6 +162,23 @@ URUN_ALANLARI: tuple[Alan, ...] = (
     Alan("aktif", "Aktif", False, "E / H. Boş bırakılırsa E kabul edilir.", "E", ()),
 )
 
+URUN_BAGI_ALANLARI: tuple[Alan, ...] = (
+    Alan("ana_urun_kodu", "Ana Ürün Kodu", True,
+         "SET bağında çiftin ilk parçası, AKSESUAR bağında ana ürün (kombi, klima).",
+         10016482, ("Ana Stok Kodu", "Ana Ürün", "Ana SKU")),
+    Alan("bagli_urun_kodu", "Bağlı Ürün Kodu", True,
+         "SET bağında çiftin ikinci parçası, AKSESUAR bağında aksesuarın kendisi "
+         "(baca, montaj seti).", 10016486,
+         ("Bağlı Stok Kodu", "Bagli Urun Kodu", "Aksesuar Kodu", "Parça Kodu")),
+    Alan("tip", "Bağ Tipi", True,
+         "SET = bir bütünün iki parçası, hiçbiri tek başına gitmemeli (klima iç + "
+         "dış ünite). AKSESUAR = ana ürünün yanında gitmeli, tek yönlüdür (baca).",
+         "SET", ("Tip", "Bag Tipi")),
+    Alan("aciklama", "Açıklama", False,
+         "Bağın nereden geldiği ya da hatırlatma notu.", "A4 Inverter 18 çifti",
+         ("Not", "Aciklama")),
+)
+
 SIPARIS_ALANLARI: tuple[Alan, ...] = (
     Alan("siparis_no", "Sipariş No", True, "Sipariş başlık numarası.", 2010421633,
          ("Siparis No", "Talep Numarası", "Belge No", "Order No")),
@@ -362,6 +379,7 @@ def zorunlu_alanlar(alanlar: tuple[Alan, ...]) -> tuple[str, ...]:
 URUN_ALIAS = alias_haritasi(URUN_ALANLARI)
 SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
 MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)
+URUN_BAGI_ALIAS = alias_haritasi(URUN_BAGI_ALANLARI)
 IHRACAT_SIPARIS_ALIAS = alias_haritasi(IHRACAT_SIPARIS_ALANLARI)
 IHRACAT_MUSTERI_ALIAS = alias_haritasi(IHRACAT_MUSTERI_ALANLARI)
 IHRACAT_URUN_ALIAS = alias_haritasi(IHRACAT_URUN_ALANLARI)

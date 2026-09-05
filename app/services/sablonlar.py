@@ -18,6 +18,7 @@ from app.services.veri_formatlari import (
     MUSTERI_ALANLARI,
     SIPARIS_ALANLARI,
     URUN_ALANLARI,
+    URUN_BAGI_ALANLARI,
 )
 
 
@@ -61,6 +62,15 @@ def urun_sablonu(hedef: Path) -> Path:
         URUN_ALANLARI,
         "Ürünler",
         "Ürün Master Data Şablonu — kolon başlıklarını değiştirmeyin, satırları doldurun.",
+        hedef,
+    )
+
+
+def urun_bagi_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        URUN_BAGI_ALANLARI,
+        "Ürün Bağları",
+        "Birlikte Sevk Edilecek Ürünler — her satır iki ürünü birbirine bağlar.",
         hedef,
     )
 
