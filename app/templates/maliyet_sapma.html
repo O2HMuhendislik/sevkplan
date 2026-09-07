@@ -1,0 +1,74 @@
+{#
+  Bir ayın (ya da YTD'nin) sapma açıklaması. `aciklama` = sapma_aciklamasi().
+  Bileşenlerin toplamı farka **tam olarak** eşittir; eşit olmasaydı açıklama
+  değil tahmin olurdu.
+#}
+{% macro sapma(aciklama, baslik) %}
+<div class="kart sapma">
+  <h2>{{ baslik }} — sapma nereden geliyor?</h2>
+  <div class="satir sapma-ust">
+    <div><div class="etiket">Gerçekleşen</div>
+      <div class="deger">{{ aciklama.gerceklesen | para }}</div></div>
+    <div><div class="etiket">Fark</div>
+      <div class="deger {{ 'dikkat' if aciklama.fark > 0 }}">
+        {{ aciklama.fark | para_fark }}</div></div>
+    <div><div class="etiket">Taşınan desi</div>
+      <div class="deger">{{ aciklama.desi | sayi }}</div>
+      {% if aciklama.butce_desi %}
+      <div class="soluk">bütçe {{ aciklama.butce_desi | sayi }}</div>{% endif %}</div>
+    <div><div class="etiket">Araç</div>
+      <div class="deger">{{ aciklama.plan_sayisi }}</div></div>
+  </div>
+
+  {% for uyari in aciklama.uyarilar %}
+  <div class="uyari hata">{{ uyari | replace('**', '') }}</div>
+  {% endfor %}
+
+  {% if aciklama.bilesenler %}
+  <table>
+    <thead><tr><th>Bileşen</th><th class="sag">Tutar</th><th>Neden</th></tr></thead>
+    <tbody>
+    {% for bilesen in aciklama.bilesenler %}
+      <tr>
+        <td><b>{{ bilesen.ad }}</b></td>
+        <td class="sag {{ 'dikkat' if bilesen.tutar > 0 }}">
+          {{ bilesen.tutar | para_fark }}</td>
+        <td class="soluk">{{ bilesen.aciklama }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr>
+      <th>Açıklanan toplam</th>
+      <th class="sag">{{ aciklama.aciklanan | para_fark }}</th>
+      <th class="soluk">
+        {% if aciklama.aciklanan == aciklama.fark %}Farkın tamamı açıklandı.
+        {% else %}Bütçe girilmediği için fark açıklanamıyor.{% endif %}</th>
+    </tr></tfoot>
+  </table>
+  {% endif %}
+
+  <div class="izgara uc" style="margin-top:16px">
+    {% for baslik, satirlar in aciklama.katkilar.items() %}
+    <div>
+      <h2>{{ baslik }} dağılımı</h2>
+      {% if satirlar %}
+      <table>
+        <thead><tr><th>{{ baslik }}</th><th class="sag">Tutar</th>
+          <th class="sag">Pay</th><th class="sag">Desi başı</th></tr></thead>
+        <tbody>
+        {% for satir in satirlar %}
+          <tr>
+            <td>{{ satir.ad }}</td>
+            <td class="sag">{{ satir.tutar | para }}</td>
+            <td class="sag soluk">{% if satir.pay is not none %}%{{ satir.pay }}{% endif %}</td>
+            <td class="sag soluk">{{ satir.desi_basi | para }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<div class="bos">Veri yok.</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}

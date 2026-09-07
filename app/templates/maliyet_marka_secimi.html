@@ -1,0 +1,12 @@
+{#
+  Marka süzgeci. Marka, malın yüklendiği depo kodunun son ekinden okunur
+  (-V Vaillant, -P Protherm, diğerleri DemirDöküm) ve navlun faturası da marka
+  bazında kesildiği için bütçe ile gerçekleşen aynı boyutta karşılaştırılabiliyor.
+#}
+<div><label for="marka">Marka</label>
+  <select id="marka" name="marka">
+    <option value="">Tümü</option>
+    {% for m in markalar %}
+    <option value="{{ m }}" {{ 'selected' if marka == m }}>{{ m }}</option>
+    {% endfor %}
+  </select></div>

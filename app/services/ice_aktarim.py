@@ -946,6 +946,8 @@ def butceyi_aktar(
                 senaryo=excel.metin(kayit.get("senaryo")) or "",
                 tutar=kayit.get("tutar"),
                 surum=excel.metin(kayit.get("surum")) or "",
+                marka=excel.metin(kayit.get("marka")) or "",
+                desi=kayit.get("desi"),
                 sevkiyat_tipi=excel.metin(kayit.get("sevkiyat_tipi")) or "",
                 para_birimi=excel.metin(kayit.get("para_birimi")) or "TRY",
                 aciklama=excel.metin(kayit.get("aciklama")) or "",

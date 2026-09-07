@@ -132,6 +132,7 @@ h2 { font-size: 15px; margin: 0 0 12px; color: var(--ana); }
 }
 .izgara { display: grid; gap: 16px; }
 .izgara.iki { grid-template-columns: 1fr 1fr; }
+.izgara.uc { grid-template-columns: repeat(3, 1fr); }
 .izgara.dort { grid-template-columns: repeat(4, 1fr); }
 .metrik { background: var(--kart); border: 1px solid var(--kenar); border-radius: 10px; padding: 16px; }
 .metrik .deger { font-size: 26px; font-weight: 700; color: var(--vurgu); }
@@ -398,3 +399,24 @@ td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600;
 .bag-uyari.agir { border-left-color: var(--vg-mor); }
 .bag-uyari h2 { display: flex; align-items: center; gap: 10px; }
 .bag-uyari tr.agir-satir td { background: var(--vg-mor-20); }
+
+
+/* ------------------------------------------------------------- sapma açıklaması
+ *
+ * "Bütçeyi aştık" tek başına bir bilgi değil; sapmanın hangi bileşenden geldiği
+ * gösterilir. Bileşenlerin toplamı farka tam olarak eşittir.
+ */
+.kart.sapma { border-left: 4px solid var(--vg-acik-mavi); }
+.sapma-ust {
+  display: flex; flex-wrap: wrap; gap: 34px;
+  margin-bottom: 14px; align-items: flex-start;
+}
+.sapma-ust .etiket {
+  font-size: 11px; letter-spacing: .6px; text-transform: uppercase; color: var(--soluk);
+}
+.sapma-ust .deger { font-size: 20px; font-weight: 700; color: var(--vurgu); }
+.sapma-ust .deger.dikkat { color: var(--vg-mor); }
+.ay-satiri { cursor: pointer; }
+.ay-satiri:hover td { background: var(--vurgu-cok-acik); }
+tr.ay-detay > td { background: var(--vg-gri-20); padding: 0; }
+tr.ay-detay .kart { margin: 0; border: 0; border-left: 4px solid var(--vg-acik-mavi); }

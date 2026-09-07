@@ -1,8 +1,10 @@
 {% extends "temel.html" %}
 {% set aktif_modul = 'RAPORLAMA' %}
 {% set aktif_menu = 'maliyet' %}
+{% from "maliyet_sapma.html" import sapma %}
 {% block icerik %}
-<h1>Maliyet Yönetimi — Bütçe / FC / Gerçekleşen</h1>
+<h1>Maliyet Yönetimi — Bütçe / FC / Gerçekleşen
+  {% if marka %}<span class="rozet PLANLANDI">{{ marka }}</span>{% endif %}</h1>
 {% include "maliyet_sekmeler.html" %}
 
 <div class="kart">
@@ -13,6 +15,7 @@
         <option value="{{ y }}" {{ 'selected' if y == secili_yil }}>{{ y }}</option>
         {% endfor %}
       </select></div>
+    {% include "maliyet_marka_secimi.html" %}
     <div><label for="fc">FC sürümü</label>
       <select id="fc" name="fc">
         <option value="">FC yok</option>
@@ -62,7 +65,39 @@
 {% endif %}
 
 <div class="kart">
+  <h2>Markalara göre</h2>
+  <p class="soluk">
+    Marka, malın yüklendiği <b>depo kodunun son ekinden</b> okunur (-V Vaillant,
+    -P Protherm, diğerleri DemirDöküm). Karma araçlarda maliyet markalara
+    <b>taşınan desi payına göre</b> bölünür — navlun da yer üzerinden oluştuğu için
+    doğru dağıtım ölçüsü budur.
+  </p>
+  {% if markalar_ozeti %}
+  <table>
+    <thead><tr><th>Marka</th><th class="sag">Araç</th><th class="sag">Desi</th>
+      <th class="sag">Maliyet</th><th class="sag">Desi başı</th><th></th></tr></thead>
+    <tbody>
+    {% for satir in markalar_ozeti %}
+      <tr>
+        <td><b>{{ satir.marka }}</b></td>
+        <td class="sag">{{ satir.plan_sayisi }}</td>
+        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.tutar | para }}</td>
+        <td class="sag">{{ satir.desi_basi | para }}</td>
+        <td><a href="/raporlama/maliyet?yil={{ secili_yil }}&fc={{ secili_fc }}&marka={{ satir.marka }}">
+          Yalnızca bunu göster</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Bu yıl için iç piyasa planı yok.</div>{% endif %}
+</div>
+
+{{ sapma(karsilastirma.ytd.aciklama, karsilastirma.yil ~ ' YTD' ~ (' · ' ~ marka if marka else '')) }}
+
+<div class="kart">
   <h2>{{ karsilastirma.yil }} — aylık ve YTD</h2>
+  <p class="soluk">Bir aya tıklayın: sapmanın hangi bileşenden geldiği açılır.</p>
   <table>
     <thead><tr>
       <th>Ay</th>
@@ -74,7 +109,9 @@
     </tr></thead>
     <tbody>
     {% for satir in karsilastirma.satirlar %}
-      <tr class="{{ '' if satir.gecmis_mi else 'soluk' }}">
+      <tr class="ay-satiri {{ '' if satir.gecmis_mi else 'soluk' }}"
+          onclick="document.getElementById('ay{{ satir.ay }}').hidden =
+                   !document.getElementById('ay{{ satir.ay }}').hidden">
         <td><b>{{ satir.ay_adi }}</b></td>
         <td class="sag">{{ satir.butce | para }}</td>
         <td class="sag">{{ satir.fc | para }}</td>
@@ -88,6 +125,9 @@
         <td class="sag {{ 'dikkat' if satir.gecmis_mi and satir.ytd_gerceklesen > satir.ytd_butce }}">
           {% if satir.gecmis_mi %}
             {{ (satir.ytd_gerceklesen - satir.ytd_butce) | para_fark }}{% endif %}</td>
+      </tr>
+      <tr class="ay-detay" id="ay{{ satir.ay }}" hidden>
+        <td colspan="9">{{ sapma(satir.aciklama, satir.ay_adi ~ ' ' ~ karsilastirma.yil) }}</td>
       </tr>
     {% endfor %}
     </tbody>

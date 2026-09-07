@@ -3029,18 +3029,22 @@ def maliyet_ozet(
     istek: Request,
     yil: int = 0,
     fc: str = "",
+    marka: str = "",
     kullanici: Kullanici = Depends(RAPOR_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    """Bütçe / FC / gerçekleşen karşılaştırması: aylık ve YTD."""
+    """Bütçe / FC / gerçekleşen karşılaştırması: aylık ve YTD, marka bazında."""
     yillar = maliyet_servisi.butce_yillari(db) or [date.today().year]
     secili_yil = yil or yillar[0]
     surumler = maliyet_servisi.fc_surumleri(db, secili_yil)
     secili_fc = fc or (surumler[0] if surumler else "")
-    karsilastirma = maliyet_servisi.butce_karsilastirmasi(db, secili_yil, secili_fc)
-    maliyetler = maliyet_servisi.plan_maliyetleri(
+    karsilastirma = maliyet_servisi.butce_karsilastirmasi(
+        db, secili_yil, secili_fc, marka=marka
+    )
+    tum_maliyetler = maliyet_servisi.plan_maliyetleri(
         db, baslangic=date(secili_yil, 1, 1), bitis=date(secili_yil, 12, 31)
     )
+    maliyetler = maliyet_servisi.markaya_indirge(tum_maliyetler, marka)
     return sayfa(
         istek,
         "maliyet_ozet.html",
@@ -3048,10 +3052,13 @@ def maliyet_ozet(
         karsilastirma=karsilastirma,
         ozet=maliyet_servisi.ozet(maliyetler),
         tipler=maliyet_servisi.tip_ozeti(maliyetler),
+        markalar_ozeti=maliyet_servisi.marka_ozeti(tum_maliyetler),
         yillar=yillar,
         secili_yil=secili_yil,
         surumler=surumler,
         secili_fc=secili_fc,
+        markalar=maliyet_servisi.markalari_getir(db),
+        marka=marka,
     )
 
 
@@ -3062,13 +3069,17 @@ def maliyet_planlari(
     bitis: str = "",
     tip: str = "",
     il: str = "",
+    marka: str = "",
     kullanici: Kullanici = Depends(RAPOR_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
     """Araç (plan) bazlı maliyet; fiili fatura tutarı buradan girilir."""
     ilk, son = _maliyet_araligi(baslangic, bitis)
-    maliyetler = maliyet_servisi.plan_maliyetleri(
-        db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+    maliyetler = maliyet_servisi.markaya_indirge(
+        maliyet_servisi.plan_maliyetleri(
+            db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+        ),
+        marka,
     )
     return sayfa(
         istek,
@@ -3082,8 +3093,12 @@ def maliyet_planlari(
         bitis=bitis,
         tip=tip,
         il=il,
+        marka=marka,
+        markalar=maliyet_servisi.markalari_getir(db),
         tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
-        sorgu=_sorgu_metni(baslangic=baslangic, bitis=bitis, tip=tip, il=il),
+        sorgu=_sorgu_metni(
+            baslangic=baslangic, bitis=bitis, tip=tip, il=il, marka=marka
+        ),
     )
 
 
@@ -3116,17 +3131,21 @@ def maliyet_kirilimi(
     bitis: str = "",
     tip: str = "",
     il: str = "",
+    marka: str = "",
     kullanici: Kullanici = Depends(RAPOR_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
-    """Müşteri / ürün / sipariş / teslimat / il bazında maliyet.
+    """Müşteri / ürün / sipariş / teslimat / il / marka bazında maliyet.
 
     Hepsi aynı satır maliyetlerinden çıkar; toplamları birbirini ve plan
     listesini tutar.
     """
     ilk, son = _maliyet_araligi(baslangic, bitis)
-    maliyetler = maliyet_servisi.plan_maliyetleri(
-        db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+    maliyetler = maliyet_servisi.markaya_indirge(
+        maliyet_servisi.plan_maliyetleri(
+            db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+        ),
+        marka,
     )
     try:
         satirlar = maliyet_servisi.kirilim(maliyetler, boyut)
@@ -3145,9 +3164,11 @@ def maliyet_kirilimi(
         bitis=bitis,
         tip=tip,
         il=il,
+        marka=marka,
+        markalar=maliyet_servisi.markalari_getir(db),
         tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
         sorgu=_sorgu_metni(
-            boyut=boyut, baslangic=baslangic, bitis=bitis, tip=tip, il=il
+            boyut=boyut, baslangic=baslangic, bitis=bitis, tip=tip, il=il, marka=marka
         ),
     )
 
@@ -3280,6 +3301,7 @@ def maliyet_butcesi(
         secili_yil=yil,
         aylar=list(enumerate(maliyet_servisi.AY_ADLARI, start=1)),
         tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+        markalar=maliyet_servisi.markalari_getir(db),
     )
 
 
@@ -3290,6 +3312,8 @@ def maliyet_butce_kaydet(
     senaryo: str = Form(...),
     tutar: str = Form(...),
     surum: str = Form(""),
+    marka: str = Form(""),
+    desi: str = Form(""),
     sevkiyat_tipi: str = Form(""),
     aciklama: str = Form(""),
     kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
@@ -3299,7 +3323,8 @@ def maliyet_butce_kaydet(
     try:
         maliyet_servisi.butce_kaydet(
             db, yil=yil, ay=ay, senaryo=senaryo, tutar=tutar,
-            surum=surum, sevkiyat_tipi=sevkiyat_tipi, aciklama=aciklama,
+            surum=surum, marka=marka, desi=desi or None,
+            sevkiyat_tipi=sevkiyat_tipi, aciklama=aciklama,
         )
         db.commit()
     except maliyet_servisi.MaliyetHatasi as hata:

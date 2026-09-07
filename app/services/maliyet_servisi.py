@@ -33,6 +33,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.iller import yer_adi
+from app.domain.marka import marka as depo_markasi
 from app.models import (
     Ayar,
     ButceKalemi,
@@ -54,6 +55,9 @@ SEFER_TIPLERI = {"FTL"}
 
 DESI_TIPLERI = {"RUTIN", "KARGO"}
 """Birim desi ile fiyatlanan sevkiyat tipleri."""
+
+TUM_MARKALAR = ""
+"""Marka süzgecinde 'Tümü' seçeneğinin değeri."""
 
 
 # ------------------------------------------------------------------------ ayarlar
@@ -159,6 +163,8 @@ class SatirMaliyeti:
     siparis_no: str
     musteri: str
     il: str
+    marka: str
+    """Malın yüklendiği depo kodundan okunur; navlun faturası marka bazında kesiliyor."""
     urun_kodu: str
     urun_adi: str
     miktar: Decimal
@@ -266,6 +272,11 @@ def plan_maliyeti(
             sonuc.eksikler.append(
                 f"{fiyat_ili or '—'} · {(plan.arac_tipi or '—').upper()} sefer tarifesi yok"
             )
+            # Maliyet bilinmiyor ama hacim biliniyor: satırlar sıfır tutarla da
+            # üretilir, yoksa plan kırılım ekranlarında hiç görünmezdi.
+            sonuc.satirlar.extend(
+                _satir_maliyeti(satir, il, desi, SIFIR) for satir, il, desi in ham
+            )
             return sonuc
         sonuc.tarife_maliyeti = _kurus(tarife.birim_fiyat)
         # Sefer bedeli tek parça; satırlara desi payına göre dağıtılır. Desi hiç
@@ -321,6 +332,7 @@ def _satir_maliyeti(
         siparis_no=satir.siparis_no,
         musteri=_musteri_anahtari(satir),
         il=il,
+        marka=depo_markasi(satir.depo_kodu),
         urun_kodu=satir.urun_kodu,
         urun_adi=satir.urun_adi or "",
         miktar=Decimal(satir.miktar),
@@ -382,6 +394,7 @@ BOYUTLAR = {
     "SIPARIS": ("Sipariş", lambda s: s.siparis_no),
     "TESLIMAT": ("Teslimat", lambda s: s.teslimat_no),
     "IL": ("İl", lambda s: s.il or "—"),
+    "MARKA": ("Marka", lambda s: s.marka),
 }
 """Maliyetin hangi boyutta toplanacağı. Hepsi aynı satır maliyetlerinden çıkar,
 bu yüzden toplamları birbirini tutar."""
@@ -494,13 +507,43 @@ def fc_surumleri(db: Session, yil: int) -> list[str]:
     return [surum for surum, _ in satirlar if surum]
 
 
-def _senaryo_aylari(
-    db: Session, yil: int, senaryo: ButceSenaryosu, surum: str | None = None
-) -> dict[int, Decimal]:
-    """Ay -> tutar.
+def _tip_kurali(kalemler: list[ButceKalemi], alan: str = "tutar") -> dict[int, Decimal]:
+    """Ay -> değer; sevkiyat tipi boş olan satır (ay toplamı) kırılımı ezer.
 
-    `sevkiyat_tipi` boş olan satır ayın toplamıdır ve varsa kırılım satırları yok
-    sayılır; ikisini toplamak maliyeti iki kez sayardı.
+    İkisini toplamak maliyeti iki kez sayardı.
+    """
+    toplamlar: dict[int, Decimal] = {}
+    kirilimlar: dict[int, Decimal] = defaultdict(Decimal)
+    for kalem in kalemler:
+        deger = getattr(kalem, alan)
+        if deger is None:
+            continue
+        if kalem.sevkiyat_tipi:
+            kirilimlar[kalem.ay] += Decimal(deger)
+        else:
+            toplamlar[kalem.ay] = toplamlar.get(kalem.ay, SIFIR) + Decimal(deger)
+    for ay, deger in kirilimlar.items():
+        toplamlar.setdefault(ay, deger)
+    return toplamlar
+
+
+def _senaryo_aylari(
+    db: Session,
+    yil: int,
+    senaryo: ButceSenaryosu,
+    surum: str | None = None,
+    marka: str = TUM_MARKALAR,
+    alan: str = "tutar",
+) -> dict[int, Decimal]:
+    """Ay -> bütçe tutarı (ya da bütçelenen desi).
+
+    İki kırılım boyutu var ve ikisinde de aynı kural işler: **boş bırakılan satır
+    toplamdır ve kırılımı ezer.**
+
+    * Bir marka seçilmişse yalnızca o markanın satırları okunur.
+    * "Tümü" seçiliyse önce markası boş olan satır (bütün markaların toplamı)
+      aranır; o ay için yoksa markaların satırları toplanır. Böylece bütçe ister
+      tek satır ister marka marka girilsin doğru okunur.
     """
     sorgu = select(ButceKalemi).where(
         ButceKalemi.yil == yil, ButceKalemi.senaryo == senaryo
@@ -509,20 +552,25 @@ def _senaryo_aylari(
         sorgu = sorgu.where(ButceKalemi.surum == surum)
     kalemler = list(db.scalars(sorgu).all())
 
-    toplamlar: dict[int, Decimal] = {}
-    kirilimlar: dict[int, Decimal] = defaultdict(Decimal)
-    for kalem in kalemler:
-        if kalem.sevkiyat_tipi:
-            kirilimlar[kalem.ay] += Decimal(kalem.tutar)
-        else:
-            toplamlar[kalem.ay] = toplamlar.get(kalem.ay, SIFIR) + Decimal(kalem.tutar)
-    for ay, tutar in kirilimlar.items():
-        toplamlar.setdefault(ay, tutar)
-    return toplamlar
+    if marka:
+        return _tip_kurali([k for k in kalemler if k.marka == marka], alan)
+
+    genel = _tip_kurali([k for k in kalemler if not k.marka], alan)
+    markalilar: dict[int, Decimal] = defaultdict(Decimal)
+    for ad in {k.marka for k in kalemler if k.marka}:
+        for ay, deger in _tip_kurali([k for k in kalemler if k.marka == ad], alan).items():
+            markalilar[ay] += deger
+    for ay, deger in markalilar.items():
+        genel.setdefault(ay, deger)
+    return genel
 
 
 def butce_karsilastirmasi(
-    db: Session, yil: int, fc_surum: str = "", bugun: date | None = None
+    db: Session,
+    yil: int,
+    fc_surum: str = "",
+    bugun: date | None = None,
+    marka: str = TUM_MARKALAR,
 ) -> dict:
     """Aylık ve YTD bütçe / FC / gerçekleşen karşılaştırması.
 
@@ -532,16 +580,23 @@ def butce_karsilastirmasi(
     bugun = bugun or date.today()
     son_ay = 12 if yil < bugun.year else (bugun.month if yil == bugun.year else 0)
 
-    butce = _senaryo_aylari(db, yil, ButceSenaryosu.BUTCE)
-    fc = _senaryo_aylari(db, yil, ButceSenaryosu.FC, fc_surum or None)
-
-    maliyetler = plan_maliyetleri(
-        db, baslangic=date(yil, 1, 1), bitis=date(yil, 12, 31)
+    butce = _senaryo_aylari(db, yil, ButceSenaryosu.BUTCE, marka=marka)
+    butce_desi = _senaryo_aylari(
+        db, yil, ButceSenaryosu.BUTCE, marka=marka, alan="desi"
     )
-    gerceklesen: dict[int, Decimal] = defaultdict(Decimal)
+    fc = _senaryo_aylari(db, yil, ButceSenaryosu.FC, fc_surum or None, marka=marka)
+
+    maliyetler = markaya_indirge(
+        plan_maliyetleri(db, baslangic=date(yil, 1, 1), bitis=date(yil, 12, 31)),
+        marka,
+    )
+    aylik: dict[int, list[PlanMaliyeti]] = defaultdict(list)
     for maliyet in maliyetler:
         if maliyet.plan.plan_tarihi:
-            gerceklesen[maliyet.plan.plan_tarihi.month] += maliyet.gerceklesen
+            aylik[maliyet.plan.plan_tarihi.month].append(maliyet)
+    gerceklesen = {
+        ay: sum((m.gerceklesen for m in grup), SIFIR) for ay, grup in aylik.items()
+    }
 
     satirlar = []
     ytd = {"butce": SIFIR, "fc": SIFIR, "gerceklesen": SIFIR}
@@ -553,7 +608,11 @@ def butce_karsilastirmasi(
             "fc": fc.get(ay, SIFIR),
             "gerceklesen": gerceklesen.get(ay, SIFIR),
             "gecmis_mi": ay <= son_ay,
+            "butce_desi": butce_desi.get(ay),
         }
+        satir["aciklama"] = sapma_aciklamasi(
+            aylik.get(ay, []), satir["butce"], butce_desi.get(ay)
+        )
         satir["butce_farki"] = satir["gerceklesen"] - satir["butce"]
         satir["fc_farki"] = satir["gerceklesen"] - satir["fc"]
         satir["butce_orani"] = _oran(satir["gerceklesen"], satir["butce"])
@@ -574,8 +633,19 @@ def butce_karsilastirmasi(
     ytd["son_ay"] = son_ay
     ytd["son_ay_adi"] = AY_ADLARI[son_ay - 1] if son_ay else ""
 
+    ytd_maliyetleri = [m for ay in range(1, son_ay + 1) for m in aylik.get(ay, [])]
+    ytd["aciklama"] = sapma_aciklamasi(
+        ytd_maliyetleri,
+        ytd["butce"],
+        sum(
+            (butce_desi[ay] for ay in range(1, son_ay + 1) if butce_desi.get(ay)),
+            Decimal(0),
+        ) or None,
+    )
+
     return {
         "yil": yil,
+        "marka": marka,
         "fc_surum": fc_surum,
         "satirlar": satirlar,
         "ytd": ytd,
@@ -719,6 +789,7 @@ def tarifeyi_sil(db: Session, tarife_id: int) -> None:
 def butce_kaydet(
     db: Session, yil, ay, senaryo: str, tutar, surum: str = "",
     sevkiyat_tipi: str = "", para_birimi: str = "TRY", aciklama: str = "",
+    marka: str = "", desi=None,
 ) -> ButceKalemi:
     try:
         yil_i, ay_i = int(yil), int(ay)
@@ -744,18 +815,30 @@ def butce_kaydet(
     if senaryo_e is ButceSenaryosu.BUTCE:
         surum_m = ""
 
+    marka_m = (marka or "").strip().upper() or None
+    desi_d = None
+    if desi not in (None, ""):
+        try:
+            desi_d = Decimal(str(desi).replace(",", "."))
+        except Exception:
+            raise MaliyetHatasi(f"Bütçelenen desi sayı olmalı: {desi!r}") from None
+
     mevcut = db.scalar(
         select(ButceKalemi).where(
             ButceKalemi.yil == yil_i, ButceKalemi.ay == ay_i,
             ButceKalemi.senaryo == senaryo_e, ButceKalemi.surum == surum_m,
+            ButceKalemi.marka.is_(None) if marka_m is None
+            else ButceKalemi.marka == marka_m,
             ButceKalemi.sevkiyat_tipi.is_(None) if tip is None
             else ButceKalemi.sevkiyat_tipi == tip,
         )
     )
     kalem = mevcut or ButceKalemi(
-        yil=yil_i, ay=ay_i, senaryo=senaryo_e, surum=surum_m, sevkiyat_tipi=tip
+        yil=yil_i, ay=ay_i, senaryo=senaryo_e, surum=surum_m,
+        marka=marka_m, sevkiyat_tipi=tip,
     )
     kalem.tutar = tutar_d
+    kalem.desi = desi_d
     kalem.para_birimi = (para_birimi or "TRY").strip().upper()[:3] or "TRY"
     kalem.aciklama = (aciklama or "").strip() or None
     if mevcut is None:
@@ -774,8 +857,9 @@ def butce_satirlari(db: Session, yil: int | None = None) -> list[dict]:
         {
             "id": k.id, "yil": k.yil, "ay": k.ay, "ay_adi": AY_ADLARI[k.ay - 1],
             "senaryo": k.senaryo.value, "surum": k.surum,
+            "marka": k.marka or "",
             "sevkiyat_tipi": k.sevkiyat_tipi or "",
-            "tutar": k.tutar, "para_birimi": k.para_birimi,
+            "tutar": k.tutar, "desi": k.desi, "para_birimi": k.para_birimi,
             "aciklama": k.aciklama or "",
         }
         for k in db.scalars(sorgu).all()
@@ -809,3 +893,260 @@ def fiili_maliyet_kaydet(
     plan.maliyet_notu = (not_metni or "").strip() or None
     db.flush()
     return plan
+
+
+# --------------------------------------------------------------------- marka
+def markalari_getir(db: Session) -> list[str]:
+    """Veride geçen markalar. Depo kodlarından türetilir, elle tanımlanmaz."""
+    kodlar = db.execute(
+        select(SiparisSatiri.depo_kodu)
+        .where(SiparisSatiri.modul == MALIYET_MODULU)
+        .distinct()
+    ).all()
+    markalar = {depo_markasi(kod) for (kod,) in kodlar if kod}
+    butcedekiler = {
+        m for (m,) in db.execute(select(ButceKalemi.marka).distinct()).all() if m
+    }
+    return sorted(markalar | butcedekiler)
+
+
+def _marka_paylari(maliyet: PlanMaliyeti) -> dict[str, Decimal]:
+    """Planın markalar arası dağılımı.
+
+    Ölçü **desidir**: tarifesi bulunamayan planda tutar sıfırdır ama hacim
+    bilinir, dağıtım yine de doğru yapılabilir. Satır hiç yoksa planın kendi
+    marka payına düşülür.
+    """
+    desiler: dict[str, Decimal] = defaultdict(Decimal)
+    for satir in maliyet.satirlar:
+        desiler[satir.marka] += satir.desi
+    toplam = sum(desiler.values(), Decimal(0))
+    if toplam > 0:
+        return {ad: deger / toplam for ad, deger in desiler.items()}
+    if desiler:  # desi yok ama satır var: eşit böl
+        pay = Decimal(1) / Decimal(len(desiler))
+        return {ad: pay for ad in desiler}
+    return maliyet.plan.marka_paylari or {depo_markasi(maliyet.plan.depo_kodu): Decimal(1)}
+
+
+def markaya_indirge(maliyetler: list[PlanMaliyeti], marka: str) -> list[PlanMaliyeti]:
+    """Maliyetleri tek markaya indirger: yalnızca o markanın satırları ve payı.
+
+    Aşağıdaki bütün özet, kırılım ve bütçe hesapları bu indirgenmiş listeyle
+    çalışır; böylece marka süzgeci tek yerde uygulanır ve ekranlar arasında
+    tutarsızlık çıkamaz.
+    """
+    if not marka:
+        return maliyetler
+
+    indirgenmis: list[PlanMaliyeti] = []
+    for maliyet in maliyetler:
+        satirlar = [s for s in maliyet.satirlar if s.marka == marka]
+        if satirlar:
+            # Toplamlar **kalan satırlardan** kurulur, plan tutarı oranlanarak
+            # değil: kırılım ekranları da satırlardan hesapladığı için üç ekran
+            # kuruşu kuruşuna aynı sayıyı gösterir.
+            olcek = Decimal(1)
+            if maliyet.fiili_maliyet is not None and maliyet.tarife_maliyeti > 0:
+                olcek = maliyet.fiili_maliyet / maliyet.tarife_maliyeti
+            tarife = sum((s.tutar for s in satirlar), SIFIR)
+            fiili = (
+                sum((_kurus(s.tutar * olcek) for s in satirlar), SIFIR)
+                if maliyet.fiili_maliyet is not None else None
+            )
+        else:
+            # Satırı olmayan plan: planın kendi marka payına düşülür.
+            pay = _marka_paylari(maliyet).get(marka, Decimal(0))
+            if pay <= 0:
+                continue
+            tarife = _kurus(maliyet.tarife_maliyeti * pay)
+            fiili = (
+                _kurus(maliyet.fiili_maliyet * pay)
+                if maliyet.fiili_maliyet is not None else None
+            )
+        indirgenmis.append(PlanMaliyeti(
+            plan=maliyet.plan,
+            tarife_maliyeti=tarife,
+            fiili_maliyet=fiili,
+            birim=maliyet.birim,
+            fiyat_ili=maliyet.fiyat_ili,
+            satirlar=satirlar,
+            eksikler=list(maliyet.eksikler),
+        ))
+    return indirgenmis
+
+
+def marka_ozeti(maliyetler: list[PlanMaliyeti]) -> list[dict]:
+    """Markalara göre gerçekleşen maliyet."""
+    gruplar: dict[str, dict] = {}
+    for maliyet in maliyetler:
+        olcek = Decimal(1)
+        if maliyet.fiili_maliyet is not None and maliyet.tarife_maliyeti > 0:
+            olcek = maliyet.fiili_maliyet / maliyet.tarife_maliyeti
+        # Tutar **satır maliyetlerinden** toplanır; kırılım ekranı da aynı yoldan
+        # hesapladığı için iki ekran kuruşu kuruşuna aynı sayıyı gösterir.
+        for satir in maliyet.satirlar:
+            grup = gruplar.setdefault(
+                satir.marka,
+                {"marka": satir.marka, "tutar": SIFIR, "desi": Decimal(0), "plan": set()},
+            )
+            grup["tutar"] += _kurus(satir.tutar * olcek)
+            grup["desi"] += satir.desi
+            grup["plan"].add(maliyet.plan.sefer_no)
+        if not maliyet.satirlar:
+            # Satırı olmayan plan (sipariş satırı silinmiş): planın kendi payına düş.
+            for ad, pay in _marka_paylari(maliyet).items():
+                grup = gruplar.setdefault(
+                    ad, {"marka": ad, "tutar": SIFIR, "desi": Decimal(0), "plan": set()}
+                )
+                grup["tutar"] += _kurus(maliyet.gerceklesen * pay)
+                grup["plan"].add(maliyet.plan.sefer_no)
+    satirlar = []
+    for grup in gruplar.values():
+        desi = grup["desi"]
+        satirlar.append({
+            **grup,
+            "plan_sayisi": len(grup["plan"]),
+            "desi": desi.quantize(Decimal("0.001")),
+            "desi_basi": (grup["tutar"] / desi).quantize(Decimal("0.0001"))
+            if desi > 0 else SIFIR,
+        })
+    return sorted(satirlar, key=lambda g: g["tutar"], reverse=True)
+
+
+# ------------------------------------------------------------ sapma açıklaması
+def _yuzde(pay: Decimal, taban: Decimal) -> Decimal | None:
+    if not taban:
+        return None
+    return (pay / taban * 100).quantize(Decimal("0.1"))
+
+
+def sapma_aciklamasi(
+    maliyetler: list[PlanMaliyeti], butce: Decimal, butce_desi: Decimal | None
+) -> dict:
+    """Gerçekleşen ile bütçe arasındaki farkın **nereden geldiği**.
+
+    Sapmayı üç bileşene ayırır ve üçünün toplamı **tam olarak** farka eşittir —
+    eşit olmasaydı açıklama değil tahmin olurdu:
+
+    1. **Hacim etkisi** = (gerçekleşen desi − bütçe desi) × bütçelenen desi başı
+       maliyet. Bütçeden farklı hacim taşımanın bedeli.
+    2. **Birim maliyet etkisi** = (tarife desi başı − bütçe desi başı) × gerçekleşen
+       desi. Aynı hacmi daha pahalıya/ucuza taşımanın bedeli; içinde tarife zammı
+       da, uzak illere kayan karma da vardır.
+    3. **Fatura farkı** = fatura − tarife. Bekleme, ek durak, yakıt farkı.
+
+    Cebir: (Gd−Bd)·bü + (tü−bü)·Gd + (G−T) = T − B + G − T = G − B ✓
+
+    Bütçelenen desi girilmemişse ilk iki bileşen ayrıştırılamaz; o zaman sapma
+    "tarife maliyeti sapması" olarak tek parça verilir ve hangi sevkiyat tipinin,
+    ilin ve markanın ne kadar katkı yaptığı listelenir.
+    """
+    gerceklesen = sum((m.gerceklesen for m in maliyetler), SIFIR)
+    tarife = sum((m.tarife_maliyeti for m in maliyetler), SIFIR)
+    fatura_farki = sum((m.fark for m in maliyetler), SIFIR)
+    desi = sum((s.desi for m in maliyetler for s in m.satirlar), Decimal(0))
+    fark = gerceklesen - butce
+
+    bilesenler: list[dict] = []
+    if butce_desi and butce_desi > 0 and desi > 0:
+        butce_birim = butce / butce_desi
+        tarife_birim = tarife / desi
+        hacim = _kurus((desi - butce_desi) * butce_birim)
+        birim = _kurus(tarife - butce - hacim)  # kalanı birim etkisine yaz: toplam tutsun
+        bilesenler.append({
+            "ad": "Hacim etkisi",
+            "tutar": hacim,
+            "aciklama": (
+                f"{_sayi(desi)} desi taşındı, bütçe {_sayi(butce_desi)} desiydi "
+                f"(%{_yuzde(desi - butce_desi, butce_desi)} sapma)."
+            ),
+        })
+        bilesenler.append({
+            "ad": "Birim maliyet etkisi",
+            "tutar": birim,
+            "aciklama": (
+                f"Desi başı tarife maliyeti {_kurus(tarife_birim)}; "
+                f"bütçelenen {_kurus(butce_birim)}."
+            ),
+        })
+    elif butce:
+        bilesenler.append({
+            "ad": "Tarife maliyeti sapması",
+            "tutar": _kurus(tarife - butce),
+            "aciklama": (
+                "Bütçelenen desi girilmediği için hacim ve birim maliyet etkisi "
+                "ayrıştırılamıyor. Bütçe satırına desi yazarsanız bu satır ikiye "
+                "ayrılır."
+            ),
+        })
+
+    if fatura_farki:
+        faturali = [m for m in maliyetler if m.fiili_maliyet is not None]
+        bilesenler.append({
+            "ad": "Fatura farkı",
+            "tutar": _kurus(fatura_farki),
+            "aciklama": (
+                f"{len(faturali)} planda nakliyeci faturası tarifeden farklı "
+                "(bekleme, ek durak, yakıt farkı)."
+            ),
+        })
+
+    uyarilar = []
+    eksik = [m for m in maliyetler if m.eksik_mi]
+    if eksik:
+        uyarilar.append(
+            f"{len(eksik)} planın tarifesi eksik: gerçekleşen olduğundan **düşük** "
+            "görünüyor, sapma bu kadar yanıltıcı."
+        )
+    if not butce:
+        uyarilar.append("Bu ay için bütçe girilmemiş; sapma hesaplanamıyor.")
+
+    return {
+        "fark": fark,
+        "gerceklesen": gerceklesen,
+        "tarife": tarife,
+        "desi": desi.quantize(Decimal("0.001")),
+        "butce_desi": butce_desi,
+        "bilesenler": bilesenler,
+        "aciklanan": sum((b["tutar"] for b in bilesenler), SIFIR),
+        "katkilar": {
+            "Sevkiyat tipi": _katki(maliyetler, lambda s, m: (m.plan.sevkiyat_tipi or "—")),
+            "İl": _katki(maliyetler, lambda s, m: s.il or "—"),
+            "Marka": _katki(maliyetler, lambda s, m: s.marka),
+        },
+        "uyarilar": uyarilar,
+        "plan_sayisi": len(maliyetler),
+    }
+
+
+def _katki(maliyetler: list[PlanMaliyeti], anahtar_fn, en_fazla: int = 5) -> list[dict]:
+    """Gerçekleşen maliyetin bir boyuttaki dağılımı; sapmanın nereye gittiğini gösterir."""
+    gruplar: dict[str, dict] = {}
+    toplam = SIFIR
+    for maliyet in maliyetler:
+        olcek = Decimal(1)
+        if maliyet.fiili_maliyet is not None and maliyet.tarife_maliyeti > 0:
+            olcek = maliyet.fiili_maliyet / maliyet.tarife_maliyeti
+        for satir in maliyet.satirlar:
+            anahtar = anahtar_fn(satir, maliyet)
+            tutar = _kurus(satir.tutar * olcek)
+            grup = gruplar.setdefault(
+                anahtar, {"ad": anahtar, "tutar": SIFIR, "desi": Decimal(0)}
+            )
+            grup["tutar"] += tutar
+            grup["desi"] += satir.desi
+            toplam += tutar
+    satirlar = sorted(gruplar.values(), key=lambda g: g["tutar"], reverse=True)
+    for grup in satirlar:
+        grup["pay"] = _yuzde(grup["tutar"], toplam)
+        grup["desi_basi"] = (
+            (grup["tutar"] / grup["desi"]).quantize(Decimal("0.0001"))
+            if grup["desi"] > 0 else SIFIR
+        )
+        grup["desi"] = grup["desi"].quantize(Decimal("0.001"))
+    return satirlar[:en_fazla]
+
+
+def _sayi(deger: Decimal) -> str:
+    return format(Decimal(deger).quantize(Decimal("0.1")).normalize(), "f").replace(".", ",")

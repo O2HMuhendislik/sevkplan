@@ -211,10 +211,18 @@ BUTCE_ALANLARI: tuple[Alan, ...] = (
     Alan("surum", "Sürüm", False,
          "FC sürümü (FC1, FC2 ...). Bütçe satırlarında boş bırakılır.", None,
          ("Versiyon", "Version")),
+    Alan("marka", "Marka", False,
+         "DEMİRDÖKÜM / VAİLLANT / PROTHERM. Boş bırakılırsa satır bütün "
+         "markaların toplamıdır; aynı ay için hem toplam hem marka kırılımı girilmez.",
+         "VAİLLANT", ("Brand", "Marka Adı")),
     Alan("sevkiyat_tipi", "Sevkiyat Tipi", False,
          "FTL / RUTIN / KARGO kırılımı. Boş bırakılırsa satır ayın toplamıdır; "
          "aynı ay için hem toplam hem kırılım girilmez.", None, ("Tip",)),
     Alan("tutar", "Tutar", True, "Aylık nakliye tutarı.", 1850000, ("Bütçe", "Butce")),
+    Alan("desi", "Bütçelenen Desi", False,
+         "Bu ay için bütçelenen taşıma hacmi. İsteğe bağlı ama girilirse aylık "
+         "sapma 'hacim etkisi' ve 'birim maliyet etkisi' diye ikiye ayrılır.",
+         64000, ("Desi", "Hacim")),
     Alan("para_birimi", "Para Birimi", False, "Boş bırakılırsa TRY.", "TRY", ("Doviz",)),
     Alan("aciklama", "Açıklama", False, "Serbest not.", None, ("Not",)),
 )

@@ -161,7 +161,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Bekleyenler** | Plana giremeyen sipariş satırları, satır satır gerekçesiyle; üç modülde de var |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
 | **Araç İçi Yerleşim** | Planın palet palet yerleşimi: üstten, yandan ve 3B görünüş + yükleme sırası. **İç piyasa ve ihracatta var, ring'de yok** — ring planı tek üründür ve tek noktaya boşaltılır |
-| **Maliyet Yönetimi** (`/raporlama/maliyet`) | Bütçe / FC / gerçekleşen karşılaştırması (aylık + YTD), araç bazlı maliyet ve fatura girişi, müşteri / ürün / sipariş / teslimat / il kırılımı, şehir bazlı nakliye tarifeleri. **İç piyasada; ring'de nakliye bedeli yok** |
+| **Maliyet Yönetimi** (`/raporlama/maliyet`) | Bütçe / FC / gerçekleşen karşılaştırması (aylık + YTD), araç bazlı maliyet ve fatura girişi, müşteri / ürün / sipariş / teslimat / il kırılımı, **marka ayrımı (DemirDöküm / Vaillant / Protherm)** ve aylık **sapma çözümlemesi**, şehir bazlı nakliye tarifeleri. **İç piyasada; ring'de nakliye bedeli yok** |
 | **Sipariş İzleme** (`/raporlama/izleme`) | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama. Sorgu **bütün modüllerde** aradığı için Raporlama modülünde durur (eski adres `/ring/izleme`) |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
@@ -539,15 +539,53 @@ Tarifesi bulunamayan il maliyeti **sıfır saymaz**: plan "eksik hesaplandı" di
 işaretlenir ve hangi ilin tarifesinin eksik olduğu satır satır yazılır. Sıfır ile
 "bilinmiyor" ayrı şeylerdir.
 
+### Marka ayrımı
+
+Navlun faturası her marka için ayrı kesiliyor, bütçe de marka bazında tutuluyor.
+Marka, malın yüklendiği **depo kodunun son ekinden** okunur: `-V` Vaillant, `-P`
+Protherm, diğerleri DemirDöküm (bkz. `app/domain/marka.py`).
+
+Karma araçta maliyet markalara **taşınan desi payına göre** bölünür — navlun da yer
+üzerinden oluştuğu için doğru dağıtım ölçüsü budur. Marka süzgeci üç ekranda da
+(özet, araç bazlı, kırılım) çalışır ve **tek yerde** uygulanır: `markaya_indirge()`
+maliyetleri o markanın satırlarına indirger, bütün özet ve kırılım hesapları bu
+indirgenmiş listeyle çalışır. Ekranlar arasında tutarsızlık bu yüzden çıkamaz —
+üst metrik, marka özeti ve kırılım kuruşu kuruşuna aynı sayıyı gösterir.
+
 ### Bütçe ve FC
 
 `BUTCE` yıl başında onaylanan bütçedir, sürümü yoktur. `FC` yıl içinde revize edilen
 tahmindir ve sürüm adı ister (FC1, FC2 ...); karşılaştırma ekranında hangi sürüme
 bakılacağı seçilir.
 
-Sevkiyat tipi boş bırakılan satır **ayın toplamıdır**, doldurulan satır kırılımdır.
-Bir ay için ikisi birden girilirse toplam satırı kazanır — ikisini toplamak maliyeti
-iki kez sayardı.
+**İki kırılım boyutu var ve ikisinde de aynı kural işler: boş bırakılan satır
+toplamdır ve kırılımı ezer.** Marka boş = bütün markaların toplamı, sevkiyat tipi
+boş = ayın toplamı. Bir ay için hem toplam hem kırılım girilirse toplam kazanır —
+ikisini toplamak maliyeti iki kez sayardı. "Tümü" görünümünde önce markasız satır
+aranır; o ay için yoksa markaların satırları toplanır, böylece bütçe ister tek
+satır ister marka marka girilsin doğru okunur.
+
+### Sapma nereden geliyor?
+
+"Bütçeyi aştık" tek başına bir bilgi değil. Her ay (ve YTD) için sapma üç bileşene
+ayrılır ve **üçünün toplamı tam olarak farka eşittir** — eşit olmasaydı açıklama
+değil tahmin olurdu:
+
+| Bileşen | Hesap | Ne anlatır |
+|---|---|---|
+| **Hacim etkisi** | (gerçekleşen desi − bütçe desi) × bütçelenen desi başı | Bütçeden farklı hacim taşımanın bedeli |
+| **Birim maliyet etkisi** | (tarife desi başı − bütçe desi başı) × gerçekleşen desi | Aynı hacmi daha pahalıya taşımanın bedeli: tarife zammı, uzak illere kayan karma |
+| **Fatura farkı** | fatura − tarife | Bekleme, ek durak, yakıt farkı |
+
+Cebir: `(Gd−Bd)·bü + (tü−bü)·Gd + (G−T) = T−B + G−T = G−B` ✓
+
+Bunun çalışması için bütçe satırına **bütçelenen desi** yazılması gerekir; isteğe
+bağlıdır ama girilmezse sapma tek parça kalır ("tarife maliyeti sapması") ve yalnızca
+katkı bazında açıklanır.
+
+Her ayın altında ayrıca **sevkiyat tipi, il ve marka dağılımı** verilir: sapmanın
+nereye gittiği oradan okunur. Tarifesi eksik plan varsa uyarı çıkar — gerçekleşen
+olduğundan **düşük** görünür ve sapma o kadar yanıltıcıdır.
 
 **YTD yılbaşından bugüne kümülatiftir**; gelecek aylar YTD'ye girmez, yoksa henüz
 gerçekleşmemiş aylar sapmayı olduğundan kötü gösterirdi.

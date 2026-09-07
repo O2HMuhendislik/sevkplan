@@ -13,9 +13,16 @@
     ekranında hangi sürüme bakacağınızı seçersiniz.
   </p>
   <p class="soluk" style="margin-bottom:0">
-    Sevkiyat tipi <b>boş bırakılırsa satır ayın toplamıdır</b>; doldurulursa
-    kırılımdır. Bir ay için ikisini birden girmeyin — toplam satırı varsa kırılım
-    satırları yok sayılır, yoksa maliyet iki kez sayılırdı.
+    Aynı kural iki kırılım boyutunda da işler: <b>marka</b> ve <b>sevkiyat tipi</b>
+    boş bırakılırsa satır toplamdır, doldurulursa kırılımdır. Bir ay için ikisini
+    birden girmeyin — toplam satırı varsa kırılım satırları yok sayılır, yoksa
+    maliyet iki kez sayılırdı.
+  </p>
+  <p class="soluk" style="margin-bottom:0">
+    <b>Bütçelenen desi</b> isteğe bağlı ama çok işe yarıyor: girildiğinde aylık
+    sapma <b>hacim etkisi</b> ve <b>birim maliyet etkisi</b> diye ikiye ayrılıyor —
+    yani "bütçeyi aştık" yerine "%12 daha çok taşıdık, birim maliyet de %8 arttı"
+    denebiliyor.
   </p>
 </div>
 
@@ -38,6 +45,11 @@
       </select></div>
     <div><label for="surum">Sürüm</label>
       <input id="surum" name="surum" style="width:100px" placeholder="FC1"></div>
+    <div><label for="marka_y">Marka</label>
+      <select id="marka_y" name="marka">
+        <option value="">Tüm markalar</option>
+        {% for m in markalar %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select></div>
     <div><label for="sevkiyat_tipi">Sevkiyat tipi</label>
       <select id="sevkiyat_tipi" name="sevkiyat_tipi">
         <option value="">Ay toplamı</option>
@@ -45,6 +57,8 @@
       </select></div>
     <div><label for="tutar">Tutar</label>
       <input id="tutar" name="tutar" required style="width:140px" placeholder="1850000"></div>
+    <div><label for="desi">Bütçelenen desi</label>
+      <input id="desi" name="desi" style="width:120px" placeholder="64000"></div>
     <button type="submit">Kaydet</button>
   </form>
 </div>
@@ -82,7 +96,8 @@
   <table>
     <thead><tr>
       <th class="sag">#</th><th>Yıl</th><th>Ay</th><th>Senaryo</th><th>Sürüm</th>
-      <th>Kırılım</th><th class="sag">Tutar</th><th>Açıklama</th>
+      <th>Marka</th><th>Kırılım</th><th class="sag">Tutar</th>
+      <th class="sag">Bütçe desi</th><th>Açıklama</th>
       {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}<th></th>{% endif %}
     </tr></thead>
     <tbody>
@@ -94,8 +109,10 @@
         <td><span class="rozet {{ 'TAMAMLANDI' if k.senaryo == 'BUTCE' else 'PLANLANDI' }}">
           {{ k.senaryo }}</span></td>
         <td>{{ k.surum }}</td>
+        <td>{{ k.marka or 'tüm markalar' }}</td>
         <td>{{ k.sevkiyat_tipi or 'ay toplamı' }}</td>
         <td class="sag"><b>{{ k.tutar | para }}</b> {{ k.para_birimi }}</td>
+        <td class="sag soluk">{{ k.desi | sayi }}</td>
         <td class="soluk">{{ k.aciklama }}</td>
         {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
         <td>

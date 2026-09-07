@@ -1113,7 +1113,8 @@ class ButceKalemi(Temel):
     __tablename__ = "butce_kalemleri"
     __table_args__ = (
         UniqueConstraint(
-            "yil", "ay", "senaryo", "surum", "sevkiyat_tipi", name="uq_butce_kalemi"
+            "yil", "ay", "senaryo", "surum", "marka", "sevkiyat_tipi",
+            name="uq_butce_kalemi",
         ),
     )
 
@@ -1125,9 +1126,24 @@ class ButceKalemi(Temel):
     )
     surum: Mapped[str] = mapped_column(String(30), default="")
     """FC sürümü (FC1, FC2 ...). Bütçede boş kalır."""
+    marka: Mapped[str | None] = mapped_column(String(40), index=True, default=None)
+    """DEMİRDÖKÜM / VAİLLANT / PROTHERM; boşsa satır **bütün markaların** toplamıdır.
+
+    Navlun faturası her marka için ayrı kesiliyor ve bütçe de marka bazında
+    tutuluyor. Marka, malın yüklendiği depo kodunun son ekinden okunur
+    (bkz. `app/domain/marka.py`).
+    """
     sevkiyat_tipi: Mapped[str | None] = mapped_column(String(10), default=None)
     """FTL / RUTIN / KARGO; boşsa satır ayın toplamıdır."""
     tutar: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    desi: Mapped[Decimal | None] = mapped_column(Numeric(16, 3), default=None)
+    """Bütçelenen taşıma hacmi (desi). İsteğe bağlı ama **çok işe yarar**:
+
+    girildiğinde aylık sapma *hacim etkisi* ve *birim maliyet etkisi* diye ikiye
+    ayrılabiliyor — yani "bütçeyi aştık" değil, "%12 daha çok taşıdık, birim
+    maliyet de %8 arttı" denebiliyor. Girilmezse sapma yalnızca katkı bazında
+    açıklanır.
+    """
     para_birimi: Mapped[str] = mapped_column(String(3), default="TRY")
     aciklama: Mapped[str | None] = mapped_column(Text, default=None)
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
