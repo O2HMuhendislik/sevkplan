@@ -1068,8 +1068,36 @@ class NakliyeTarifesi(Temel):
     """FTL / RUTIN / KARGO. Ring planlarında maliyet yoktur, bu yüzden RING yok."""
     il: Mapped[str] = mapped_column(String(80), index=True)
     """Normalize il adı (bkz. `app.domain.iller.yer_adi`)."""
+    ilce: Mapped[str | None] = mapped_column(String(80), index=True, default=None)
+    """İlçe kırılımı. Sözleşmede il içinde farklı fiyat varsa dolu.
+
+    İstanbul'da Anadolu / Avrupa (Omsan listesinde ayrıca Avcılar ve Silivri)
+    ayrı fiyatlanıyor; Kocaeli'de Gebze ayrı. Doluysa **önce** bu satır aranır,
+    eşleşmezse ilin genel satırına düşülür.
+    """
+    cikis_noktasi: Mapped[str | None] = mapped_column(String(40), index=True, default=None)
+    """ESKİŞEHİR / BOZÜYÜK. Fiyat çıkış tesisine göre değişiyor.
+
+    Planın çıkış tesisi, malın yüklendiği deponun `Depo.tesis` alanından okunur;
+    depo tanımları Master Data'dan düzenlenebildiği için eşleme koda gömülü değil.
+    Boş bırakılan tarife bütün tesisler için geçerlidir.
+    """
     arac_tipi: Mapped[str | None] = mapped_column(String(20), index=True, default=None)
     """TIR / KAMYON. Yalnızca sefer fiyatlı (FTL) tarifelerde dolu."""
+    desi_alt: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
+    desi_ust: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
+    """Parsiyel kademesi: gönderinin desisi bu aralıktaysa bu fiyat geçerlidir.
+
+    Sahadaki liste üç kademeli (0-2000, 2001-4000, 4001+). Kademe **gönderi**
+    bazında seçilir, satır bazında değil: parsiyel navlunu bir müşterinin o
+    plandaki toplam desisine göre fiyatlanır. Üst sınır boşsa üst uç açıktır.
+    """
+    motorin_fiyati: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), default=None)
+    """Bu fiyatın hesaplandığı motorin litre fiyatı.
+
+    Sözleşme yakıta endeksli; motorin değişince fiyatlar yeni bir geçerlilik
+    tarihiyle güncelleniyor ve eskisi geçmiş planları maliyetlemek için kalıyor.
+    """
     birim: Mapped[MaliyetBirimi] = mapped_column(
         Enum(MaliyetBirimi, native_enum=False, length=10), default=MaliyetBirimi.SEFER
     )
@@ -1085,6 +1113,54 @@ class NakliyeTarifesi(Temel):
     guncelleme_tarihi: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()
     )
+
+    def kapsiyor_mu(self, gun: date) -> bool:
+        if gun < self.gecerlilik_baslangic:
+            return False
+        return self.gecerlilik_bitis is None or gun <= self.gecerlilik_bitis
+
+
+class EkUcretTuru(str, enum.Enum):
+    """Sefer/desi fiyatının dışında kalan sözleşme kalemleri."""
+
+    ASGARI_GONDERI = "ASGARI_GONDERI"
+    """Parsiyelde asgari gönderi bedeli: eşiğin altındaki gönderi bu tutardan ücretlenir."""
+    UGRAMA = "UGRAMA"
+    """FTL'de ek uğrama bedeli. Sözleşmede ilk iki uğrama sefer fiyatına dahil;
+    eşiği aşan her uğrama ayrıca ödenir."""
+    EK_KM = "EK_KM"
+    """Tarifede olmayan mesafe için km başına ücret."""
+
+
+class NakliyeEkUcreti(Temel):
+    """Sefer ve desi fiyatının dışında kalan sözleşme kalemleri.
+
+    Bunlar il bazlı değil, sözleşme geneli kurallardır ama **maliyeti gerçekten
+    değiştirirler**: sahadaki FTL planlarında ortalama 3,4 durak var ve sözleşme
+    üçüncü duraktan itibaren uğrama bedeli ödüyor. Hesaba katılmazsa FTL maliyeti
+    sistemli olarak düşük çıkar.
+    """
+
+    __tablename__ = "nakliye_ek_ucretleri"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tur: Mapped[EkUcretTuru] = mapped_column(
+        Enum(EkUcretTuru, native_enum=False, length=20), index=True
+    )
+    sevkiyat_tipi: Mapped[str | None] = mapped_column(String(10), default=None)
+    """FTL / RUTIN / KARGO; boşsa hepsine uygulanır."""
+    arac_tipi: Mapped[str | None] = mapped_column(String(20), default=None)
+    """TIR / KAMYON. Uğrama ve ek km araç tipine göre değişiyor."""
+    cikis_noktasi: Mapped[str | None] = mapped_column(String(40), default=None)
+    tutar: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    esik: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
+    """ASGARI_GONDERI'de desi eşiği, UGRAMA'da ücretsiz uğrama sayısı."""
+    gecerlilik_baslangic: Mapped[date] = mapped_column(Date, index=True)
+    gecerlilik_bitis: Mapped[date | None] = mapped_column(Date, default=None)
+    nakliyeci: Mapped[str | None] = mapped_column(String(150), default=None)
+    motorin_fiyati: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), default=None)
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
 
     def kapsiyor_mu(self, gun: date) -> bool:
         if gun < self.gecerlilik_baslangic:

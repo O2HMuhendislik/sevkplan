@@ -23,6 +23,32 @@ IL_ESANLAMLILARI = {
 }
 """Kaynak dosyalarda kullanılan kısaltmaların resmî il adı karşılığı."""
 
+ISTANBUL_ANADOLU_ILCELERI = frozenset({
+    "ADALAR", "ATASEHIR", "BEYKOZ", "CEKMEKOY", "KADIKOY", "KARTAL", "MALTEPE",
+    "PENDIK", "SANCAKTEPE", "SILE", "SULTANBEYLI", "TUZLA", "UMRANIYE", "USKUDAR",
+})
+"""İstanbul'un Anadolu yakası ilçeleri; gerisi Avrupa yakasıdır.
+
+Nakliye sözleşmesi iki yakayı **ayrı fiyatlıyor** (Bozüyük listesinde ayrıca
+Avcılar ve Silivri var). Sipariş satırında ilçe geldiği için hangi yakaya
+gidildiği bilinebiliyor; bilinmezse ilin genel tarifesine düşülür.
+"""
+
+ISTANBUL_AYRI_FIYATLI_ILCELER = frozenset({"AVCILAR", "SILIVRI"})
+"""Sözleşmede kendi satırı olan İstanbul ilçeleri; yaka adına çevrilmezler."""
+
+
+def istanbul_yakasi(ilce: str) -> str | None:
+    """İlçe adından yaka: ANADOLU / AVRUPA. Tanınmayan ilçe için None."""
+    ad = yer_adi(ilce)
+    if not ad:
+        return None
+    if ad in ISTANBUL_AYRI_FIYATLI_ILCELER:
+        return ad
+    if ad in ISTANBUL_ANADOLU_ILCELERI:
+        return "ANADOLU"
+    return "AVRUPA"
+
 
 def yer_adi(deger: object) -> str:
     """İl/ilçe adını tek biçime indirger.

@@ -458,3 +458,244 @@ def test_marka_gorunumunde_ust_metrik_ile_kirilim_kurusu_kurusuna_tutar(marka_ku
         )
         kirilimdan = sum(s["tutar"] for s in ms.kirilim(indirgenmis, "MUSTERI"))
         assert ust_metrik == marka_ozetinden == kirilimdan, marka
+
+
+# ------------------------------------------- çıkış tesisi, kademe, ek kalemler
+@pytest.fixture()
+def omsan(db):
+    """Omsan sözleşmesinin sadeleştirilmiş hâli: iki tesis, kademeli parsiyel,
+    ek uğrama ve asgari gönderi bedeli."""
+    from app.models import Depo
+
+    db.add(Urun(urun_kodu="P1", urun_adi="Panel", urun_grubu="PANEL", desi=Decimal(2)))
+    db.add(Depo(kod="64", ad="Eskişehir", tesis="ESKİŞEHİR"))
+    db.add(Depo(kod="74", ad="Bozüyük", tesis="BOZÜYÜK"))
+    # Aynı ile iki tesisten farklı fiyat.
+    ms.tarife_kaydet(db, "FTL", "IZMIR", 40000, date(2026, 1, 1),
+                     arac_tipi="TIR", cikis_noktasi="ESKİŞEHİR", motorin_fiyati=90.08)
+    ms.tarife_kaydet(db, "FTL", "IZMIR", 52000, date(2026, 1, 1),
+                     arac_tipi="TIR", cikis_noktasi="BOZÜYÜK", motorin_fiyati=90.08)
+    # İstanbul: ilçe kırılımı + ilin geneli.
+    ms.tarife_kaydet(db, "FTL", "ISTANBUL", 20000, date(2026, 1, 1),
+                     arac_tipi="TIR", cikis_noktasi="ESKİŞEHİR", ilce="ANADOLU")
+    ms.tarife_kaydet(db, "FTL", "ISTANBUL", 27000, date(2026, 1, 1),
+                     arac_tipi="TIR", cikis_noktasi="ESKİŞEHİR")
+    # Parsiyel: üç kademe.
+    for alt, ust, fiyat in ((0, 2000, 10), (2001, 4000, 9), (4001, None, 8)):
+        ms.tarife_kaydet(db, "RUTIN", "ANKARA", fiyat, date(2026, 1, 1),
+                         cikis_noktasi="ESKİŞEHİR", desi_alt=alt, desi_ust=ust)
+    ms.ek_ucret_kaydet(db, "UGRAMA", 2688, date(2026, 1, 1),
+                       sevkiyat_tipi="FTL", arac_tipi="TIR", esik=2)
+    ms.ek_ucret_kaydet(db, "ASGARI_GONDERI", 664.418, date(2026, 1, 1),
+                       sevkiyat_tipi="RUTIN", esik=50)
+    db.commit()
+    return db
+
+
+def _depo(db, teslimat, kod):
+    db.query(SiparisSatiri).filter_by(teslimat_no=teslimat).one().depo_kodu = kod
+
+
+def test_fiyat_cikis_tesisine_gore_degisir(omsan):
+    """Aynı ile Eskişehir'den ve Bozüyük'ten farklı ücret ödeniyor."""
+    db = omsan
+    esk = _plan(db, "2603S300", "FTL", "TIR", "IZMIR")
+    _satir(db, esk, "P1", 100, "IZMIR", "A", "T1")
+    _depo(db, "T1", "64")
+    boz = _plan(db, "2603S301", "FTL", "TIR", "IZMIR")
+    _satir(db, boz, "P1", 100, "IZMIR", "B", "T2")
+    _depo(db, "T2", "74")
+    db.commit()
+    db.expire_all()
+
+    tutarlar = {m.plan.sefer_no: (m.cikis_noktasi, m.tarife_maliyeti)
+                for m in ms.plan_maliyetleri(db)}
+    assert tutarlar["2603S300"] == ("ESKISEHIR", Decimal("40000.00"))
+    assert tutarlar["2603S301"] == ("BOZUYUK", Decimal("52000.00"))
+
+
+def test_istanbul_ilcesi_yakaya_cevrilip_dogru_tarife_bulunur(omsan):
+    """Sözleşme yakaya göre fiyatlıyor ama siparişte ilçe adı geliyor.
+
+    Kadıköy Anadolu yakasıdır; ilin genel (yüksek) satırına düşerse sevkiyat
+    olduğundan pahalı maliyetlenir.
+    """
+    db = omsan
+    yaka = _plan(db, "2603S310", "FTL", "TIR", "ISTANBUL")
+    _satir(db, yaka, "P1", 100, "ISTANBUL", "A", "T1")
+    db.query(SiparisSatiri).filter_by(teslimat_no="T1").one().ilce = "ANADOLU"
+    _depo(db, "T1", "64")
+    ilce = _plan(db, "2603S311", "FTL", "TIR", "ISTANBUL")
+    _satir(db, ilce, "P1", 100, "ISTANBUL", "B", "T2")
+    db.query(SiparisSatiri).filter_by(teslimat_no="T2").one().ilce = "KADIKOY"
+    _depo(db, "T2", "64")
+    db.commit()
+    db.expire_all()
+
+    tutarlar = {m.plan.sefer_no: m.tarife_maliyeti for m in ms.plan_maliyetleri(db)}
+    assert tutarlar["2603S310"] == Decimal("20000.00")   # yaka adı doğrudan
+    assert tutarlar["2603S311"] == Decimal("20000.00")   # Kadıköy -> ANADOLU
+
+
+def test_ilcesi_bilinmeyen_sevkiyat_ilin_geneline_duser(omsan):
+    db = omsan
+    plan = _plan(db, "2603S312", "FTL", "TIR", "ISTANBUL")
+    _satir(db, plan, "P1", 100, "ISTANBUL", "B", "T1")   # ilçe boş
+    _depo(db, "T1", "64")
+    # Avrupa yakasının kendi satırı yok; ilin geneli kullanılır.
+    db.commit()
+    db.expire_all()
+    assert ms.plan_maliyetleri(db)[0].tarife_maliyeti == Decimal("27000.00")
+
+
+def test_avrupa_yakasi_ilcesi_ilin_geneline_duser_kendi_satiri_yoksa(omsan):
+    db = omsan
+    plan = _plan(db, "2603S313", "FTL", "TIR", "ISTANBUL")
+    _satir(db, plan, "P1", 100, "ISTANBUL", "B", "T1")
+    db.query(SiparisSatiri).filter_by(teslimat_no="T1").one().ilce = "BAKIRKOY"
+    _depo(db, "T1", "64")
+    db.commit()
+    db.expire_all()
+    assert ms.plan_maliyetleri(db)[0].tarife_maliyeti == Decimal("27000.00")
+
+
+def test_ugrama_bedeli_esigi_asan_duraklar_icin_eklenir(omsan):
+    """Sözleşmede ilk iki uğrama sefer fiyatına dahil, sonrakiler ödenir."""
+    db = omsan
+    plan = _plan(db, "2603S320", "FTL", "TIR", "IZMIR")
+    plan.durak_sayisi = 5
+    _satir(db, plan, "P1", 100, "IZMIR", "A", "T1")
+    _depo(db, "T1", "64")
+    db.commit()
+    db.expire_all()
+
+    maliyet = ms.plan_maliyetleri(db)[0]
+    # 5 durak - 2 ücretsiz = 3 uğrama × 2.688
+    assert maliyet.tarife_maliyeti == Decimal("48064.00")
+    kalemler = {k["ad"]: k["tutar"] for k in maliyet.kalemler}
+    assert kalemler["Sefer bedeli"] == Decimal("40000.00")
+    assert kalemler["Ek uğrama"] == Decimal("8064.00")
+
+
+def test_esigin_altinda_durak_ugrama_bedeli_dogurmaz(omsan):
+    db = omsan
+    plan = _plan(db, "2603S321", "FTL", "TIR", "IZMIR")
+    plan.durak_sayisi = 2
+    _satir(db, plan, "P1", 100, "IZMIR", "A", "T1")
+    _depo(db, "T1", "64")
+    db.commit()
+    db.expire_all()
+    assert ms.plan_maliyetleri(db)[0].tarife_maliyeti == Decimal("40000.00")
+
+
+def test_parsiyel_kademesi_gonderi_desisine_gore_secilir(omsan):
+    """Kademe bir müşterinin **toplam** desisine bakar, satır satır değil."""
+    db = omsan
+    plan = _plan(db, "2603R300", "RUTIN", "KAMYON", "ANKARA")
+    # Tek müşteri, iki satır: 1500 + 1500 = 3000 desi -> ikinci kademe (9 TL)
+    _satir(db, plan, "P1", 750, "ANKARA", "BÜYÜK BAYİ", "T1")
+    _satir(db, plan, "P1", 750, "ANKARA", "BÜYÜK BAYİ", "T2")
+    _depo(db, "T1", "64")
+    _depo(db, "T2", "64")
+    db.commit()
+    db.expire_all()
+
+    maliyet = ms.plan_maliyetleri(db)[0]
+    assert maliyet.tarife_maliyeti == Decimal("27000.00")   # 3000 desi × 9
+    # Satır bazında hesaplasaydık her satır 1500 desi ile ilk kademeye (10) düşerdi.
+    assert maliyet.tarife_maliyeti != Decimal("30000.00")
+
+
+def test_asgari_gonderi_bedeli_kucuk_gonderiye_uygulanir(omsan):
+    db = omsan
+    plan = _plan(db, "2603R301", "RUTIN", "KAMYON", "ANKARA")
+    _satir(db, plan, "P1", 10, "ANKARA", "KÜÇÜK BAYİ", "T1")   # 20 desi × 10 = 200
+    _depo(db, "T1", "64")
+    db.commit()
+    db.expire_all()
+
+    maliyet = ms.plan_maliyetleri(db)[0]
+    assert maliyet.tarife_maliyeti == Decimal("664.42")   # asgari bedel kazandı
+    assert sum(s.tutar for s in maliyet.satirlar) == maliyet.tarife_maliyeti
+
+
+def test_asgari_bedel_gonderi_basina_uygulanir_satir_basina_degil(omsan):
+    """Aynı müşterinin iki satırı tek gönderidir; asgari bedel bir kez uygulanır."""
+    db = omsan
+    plan = _plan(db, "2603R302", "RUTIN", "KAMYON", "ANKARA")
+    _satir(db, plan, "P1", 5, "ANKARA", "KÜÇÜK BAYİ", "T1")
+    _satir(db, plan, "P1", 5, "ANKARA", "KÜÇÜK BAYİ", "T2")
+    _depo(db, "T1", "64")
+    _depo(db, "T2", "64")
+    db.commit()
+    db.expire_all()
+    assert ms.plan_maliyetleri(db)[0].tarife_maliyeti == Decimal("664.42")
+
+
+# ------------------------------------------------------ motorine endeksli zam
+def test_zam_orani_yakit_payiyla_hesaplanir():
+    # Motorin %10 arttı, fiyatın %40'ı yakıt -> fiyat %4 artar.
+    oran = ms.zam_orani(Decimal(100), Decimal(110), Decimal("0.40"))
+    assert oran == Decimal("0.0400")
+
+
+def test_zam_eski_fiyatlari_kapatir_ama_silmez(omsan):
+    """Geçmiş planlar kendi tarihlerinin fiyatıyla maliyetlenmeye devam etmeli."""
+    db = omsan
+    eski_plan = _plan(db, "2603S330", "FTL", "TIR", "IZMIR", tarih=date(2026, 3, 10))
+    _satir(db, eski_plan, "P1", 100, "IZMIR", "A", "T1")
+    _depo(db, "T1", "64")
+    yeni_plan = _plan(db, "2607S331", "FTL", "TIR", "IZMIR", tarih=date(2026, 7, 10))
+    _satir(db, yeni_plan, "P1", 100, "IZMIR", "B", "T2")
+    _depo(db, "T2", "64")
+    db.commit()
+
+    onizleme = ms.zam_uygula(
+        db, yeni_motorin=99.088, yakit_payi=100, gecerlilik=date(2026, 7, 1),
+        eski_motorin=90.08,
+    )
+    db.commit()
+    db.expire_all()
+    assert onizleme.oran == Decimal("0.1000")
+
+    tutarlar = {m.plan.sefer_no: m.tarife_maliyeti for m in ms.plan_maliyetleri(db)}
+    assert tutarlar["2603S330"] == Decimal("40000.00")   # eski fiyat duruyor
+    assert tutarlar["2607S331"] == Decimal("44000.00")   # %10 zamlı
+
+    from app.models import NakliyeTarifesi
+    izmir = db.query(NakliyeTarifesi).filter_by(
+        il="IZMIR", cikis_noktasi="ESKISEHIR", arac_tipi="TIR"
+    ).all()
+    assert len(izmir) == 2
+    kapanan = [t for t in izmir if t.gecerlilik_bitis]
+    assert kapanan[0].gecerlilik_bitis == date(2026, 6, 30)
+
+
+def test_zam_ek_ucretleri_de_gunceller(omsan):
+    db = omsan
+    ms.zam_uygula(db, yeni_motorin=99.088, yakit_payi=100,
+                  gecerlilik=date(2026, 7, 1), eski_motorin=90.08)
+    db.commit()
+    guncel = [
+        u for u in ms.ek_ucretleri_getir(db)
+        if u.tur.value == "UGRAMA" and u.kapsiyor_mu(date(2026, 7, 15))
+    ]
+    assert len(guncel) == 1
+    assert guncel[0].tutar == Decimal("2956.8000")   # 2688 × 1,10
+
+
+def test_motorin_degismediyse_zam_reddedilir(omsan):
+    with pytest.raises(ms.MaliyetHatasi, match="değişmemiş"):
+        ms.zam_uygula(omsan, yeni_motorin=90.08, yakit_payi=100,
+                      gecerlilik=date(2026, 7, 1), eski_motorin=90.08)
+
+
+def test_zam_onizlemesi_uygulamadan_once_etkiyi_gosterir(omsan):
+    db = omsan
+    onizleme = ms.zam_onizle(db, 94.584, 50, date(2026, 7, 1), eski_motorin=90.08)
+    assert onizleme.oran == Decimal("0.0250")   # %5 motorin × %50 pay
+    assert onizleme.tarife_sayisi == 7
+    assert onizleme.ornekler
+    # Önizleme hiçbir şeyi değiştirmemeli.
+    db.expire_all()
+    assert ms.guncel_motorin(db) == Decimal("90.0800")

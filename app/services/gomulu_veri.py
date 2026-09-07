@@ -17,7 +17,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import KOK_DIZIN
-from app.models import IhracatMusterisi, IhracatUrunu, Musteri, Urun
+from app.models import (
+    IhracatMusterisi,
+    IhracatUrunu,
+    Musteri,
+    NakliyeTarifesi,
+    Urun,
+)
 from app.services import ice_aktarim
 from app.services.excel import ExcelHatasi
 
@@ -56,6 +62,12 @@ GOMULU_DOSYALAR: tuple[GomuluDosya, ...] = (
         ORNEK_DIZIN / "ihracat_masterdata.xlsx",
         IhracatMusterisi,
         ice_aktarim.ihracat_musterilerini_aktar,
+    ),
+    GomuluDosya(
+        "Nakliye tarifesi",
+        ORNEK_DIZIN / "nakliye_tarifesi.xlsx",
+        NakliyeTarifesi,
+        ice_aktarim.nakliye_tarifesini_aktar,
     ),
     GomuluDosya(
         "İç piyasa müşteri master datası",

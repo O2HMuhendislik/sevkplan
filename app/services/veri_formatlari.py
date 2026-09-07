@@ -184,12 +184,31 @@ TARIFE_ALANLARI: tuple[Alan, ...] = (
          "FTL / RUTIN / KARGO. FTL sefer fiyatıyla, rutin ve kargo birim desiyle "
          "fiyatlanır. Ring'de maliyet yoktur.", "FTL", ("Tip", "Sevk Tipi")),
     Alan("il", "İl", True, "Fiyatın geçerli olduğu il.", "IZMIR", ("Sehir", "Şehir")),
+    Alan("ilce", "İlçe", False,
+         "Sözleşmede il içinde farklı fiyat varsa doldurulur (İstanbul'da ANADOLU / "
+         "AVRUPA, Kocaeli'de GEBZE gibi). Önce ilçe satırı aranır, bulunamazsa ilin "
+         "genel satırına düşülür.", None, ("Ilce", "Bölge")),
+    Alan("cikis_noktasi", "Çıkış Noktası", False,
+         "ESKİŞEHİR / BOZÜYÜK. Fiyat çıkış tesisine göre değişiyor; tesis, malın "
+         "yüklendiği deponun tanımından okunur. Boş bırakılan tarife bütün "
+         "tesisler için geçerlidir.", "ESKİŞEHİR", ("Yukleme Noktasi", "Tesis")),
     Alan("arac_tipi", "Araç Tipi", False,
          "TIR / KAMYON. Yalnızca FTL satırlarında doldurulur; parsiyel ve kargoda boş.",
          "TIR", ("Arac", "Araç")),
+    Alan("desi_alt", "Desi Alt", False,
+         "Parsiyel kademesinin alt sınırı. Kademe **gönderi** bazında seçilir: "
+         "bir müşterinin o plandaki toplam desisi hangi aralığa düşüyorsa o fiyat "
+         "geçerlidir.", 0, ("Desi Min",)),
+    Alan("desi_ust", "Desi Üst", False,
+         "Kademenin üst sınırı; boş bırakılırsa üst uç açıktır (4001+ gibi).",
+         2000, ("Desi Max",)),
     Alan("birim_fiyat", "Birim Fiyat", True,
          "FTL'de bir seferin bedeli, rutin/kargoda bir desinin bedeli.", 42500,
          ("Fiyat", "Tutar", "Birim Ucret", "Birim Ücret")),
+    Alan("motorin_fiyati", "Motorin", False,
+         "Bu fiyatın hesaplandığı motorin litre fiyatı. Sözleşme yakıta endeksli; "
+         "motorin değişince fiyatlar yeni bir geçerlilik tarihiyle güncellenir.",
+         90.08, ("Mazot", "Yakit")),
     Alan("gecerlilik_baslangic", "Geçerlilik Başlangıç", True,
          "Tarifenin yürürlüğe girdiği tarih. Plan kendi tarihinde geçerli olan "
          "fiyatla maliyetlenir.", "01.01.2026", ("Baslangic", "Başlangıç")),
@@ -199,6 +218,32 @@ TARIFE_ALANLARI: tuple[Alan, ...] = (
          "Doluysa yalnızca o nakliyecinin planlarına uygulanır; boş satır geneldir.",
          None, ("Tasiyici", "Taşıyıcı")),
     Alan("para_birimi", "Para Birimi", False, "Boş bırakılırsa TRY.", "TRY", ("Doviz",)),
+    Alan("aciklama", "Açıklama", False, "Serbest not.", None, ("Not",)),
+)
+
+EK_UCRET_ALANLARI: tuple[Alan, ...] = (
+    Alan("tur", "Tür", True,
+         "ASGARI_GONDERI = parsiyelde asgari gönderi bedeli, UGRAMA = FTL'de ek "
+         "uğrama bedeli, EK_KM = tarifede olmayan mesafe için km başına ücret.",
+         "UGRAMA", ("Tip", "Kalem")),
+    Alan("sevkiyat_tipi", "Sevkiyat Tipi", False,
+         "FTL / RUTIN / KARGO; boşsa hepsine uygulanır.", "FTL", ("Tip",)),
+    Alan("arac_tipi", "Araç Tipi", False, "TIR / KAMYON.", "TIR", ("Arac",)),
+    Alan("cikis_noktasi", "Çıkış Noktası", False,
+         "ESKİŞEHİR / BOZÜYÜK; boşsa hepsi.", None, ("Tesis",)),
+    Alan("tutar", "Tutar", True, "Kalem bedeli.", 2688, ("Fiyat", "Ucret")),
+    Alan("esik", "Eşik", False,
+         "ASGARI_GONDERI'de desi eşiği (bu desinin altındaki gönderi asgariden "
+         "ücretlenir), UGRAMA'da ücretsiz uğrama sayısı (sözleşmede ilk iki uğrama "
+         "sefer fiyatına dahil).", 2, ("Limit", "Sinir")),
+    Alan("gecerlilik_baslangic", "Geçerlilik Başlangıç", True,
+         "Kalemin yürürlüğe girdiği tarih.", "04.09.2026", ("Baslangic",)),
+    Alan("gecerlilik_bitis", "Geçerlilik Bitiş", False,
+         "Boşsa hâlâ yürürlükte.", None, ("Bitis",)),
+    Alan("nakliyeci", "Nakliyeci", False, "Doluysa yalnızca o nakliyeciye uygulanır.",
+         "OMSAN", ("Tasiyici",)),
+    Alan("motorin_fiyati", "Motorin", False,
+         "Bu tutarın hesaplandığı motorin litre fiyatı.", 90.08, ("Mazot",)),
     Alan("aciklama", "Açıklama", False, "Serbest not.", None, ("Not",)),
 )
 
@@ -429,6 +474,7 @@ SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
 MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)
 URUN_BAGI_ALIAS = alias_haritasi(URUN_BAGI_ALANLARI)
 TARIFE_ALIAS = alias_haritasi(TARIFE_ALANLARI)
+EK_UCRET_ALIAS = alias_haritasi(EK_UCRET_ALANLARI)
 BUTCE_ALIAS = alias_haritasi(BUTCE_ALANLARI)
 IHRACAT_SIPARIS_ALIAS = alias_haritasi(IHRACAT_SIPARIS_ALANLARI)
 IHRACAT_MUSTERI_ALIAS = alias_haritasi(IHRACAT_MUSTERI_ALANLARI)

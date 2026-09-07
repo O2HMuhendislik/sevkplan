@@ -36,6 +36,7 @@ otomatik yüklenir** — hiçbir dosya yüklemeden çalışmaya başlanabilir:
 
 | Dosya | İçerik |
 |---|---|
+| `veri/ornek/nakliye_tarifesi.xlsx` | Omsan 2026 sözleşmesi: 831 tarife satırı (81 il × 2 tesis × tır/kamyon FTL sefer fiyatı + parsiyelin üç desi kademesi) ve 5 ek kalem (asgari gönderi bedeli, ek uğrama, ek km). Motorin 90,08 TL/lt · 04.09.2026 |
 | `veri/ornek/urun_masterdata.xlsx` | 2.585 iç piyasa ürünü: ürün grubu, palet içi adet, kamyon ve tır yükleme adetleri, ağırlık, desi, palet ölçüleri |
 | `veri/ornek/ihracat_urun_masterdata.xlsx` | 2.859 ihracat ürünü: palet içi adet, tır ve konteyner yükleme adetleri (yeni ve eski hesap), desi, ağırlık, ölçüler |
 | `veri/ornek/ihracat_masterdata.xlsx` | 198 ihracat müşterisi: ülke, araç tipi, sefer kodu (N/E), yükleme tipi, azami tonaj, notlar |
@@ -496,13 +497,62 @@ sonraki adım.
 
 | Sevkiyat tipi | Fiyatlama | Anahtar |
 |---|---|---|
-| **FTL** | Sefer başına sabit fiyat | il + araç tipi (tır / kamyon) |
-| **Rutin (parsiyel)** | Birim desi fiyatı | il |
-| **Kargo** | Birim desi fiyatı | il |
+| **FTL** | Sefer başına sabit fiyat | çıkış tesisi + il (+ ilçe) + araç tipi |
+| **Rutin (parsiyel)** | Birim desi fiyatı, **kademeli** | çıkış tesisi + il (+ ilçe) + desi kademesi |
+| **Kargo** | Birim desi fiyatı | çıkış tesisi + il |
 
 Parsiyel ve kargo satırlarında araç tipi **boş bırakılır**: fiyat araca değil desiye
 bağlıdır, araç tipi yazılırsa tarife bulunamaz hâle gelir (sistem bunu kendisi
 temizler).
+
+**Çıkış tesisi fiyatı değiştirir.** Aynı ile Eskişehir'den ve Bozüyük'ten farklı
+ücret ödeniyor. Planın çıkış tesisi, malın yüklendiği deponun `Depo.tesis` alanından
+okunur — eşleme koda gömülü değil, Master Data > Depolar ekranından düzenlenir.
+Karma yüklemede en çok malın geldiği tesis geçerlidir.
+
+**İlçe** yalnızca sözleşmede il içinde farklı fiyat varsa doldurulur. Arama
+**özelden genele** iner: ilçe + çıkış birebir → ilçe → ilin geneli. İstanbul'da
+sözleşme iki yakayı ayrı fiyatlıyor ama siparişte ilçe adı geliyor; sistem ilçeyi
+yakaya çevirir (`app/domain/iller.py: istanbul_yakasi`), böylece Kadıköy'e giden bir
+araç Anadolu fiyatını bulur. Yakası bilinmeyen sevkiyat ilin genel satırına düşer;
+o satır varyantların **en yükseğidir** — hangi yakaya gittiği bilinmeyen bir aracı
+düşük fiyatlamak, maliyet kontrolünde yüksek fiyatlamaktan daha yanıltıcı olurdu.
+
+**Desi kademesi** parsiyelde geçerli (0-2000, 2001-4000, 4001+) ve kademe **gönderi**
+bazında seçilir: bir müşterinin o plandaki toplam desisi hangi aralığa düşüyorsa o
+fiyat uygulanır. Satır bazında seçseydik 3.000 desilik bir gönderi iki 1.500'lük
+satıra bölünüp yanlış (pahalı) kademeden fiyatlanırdı.
+
+### Sözleşmenin ek kalemleri
+
+Sefer ve desi fiyatının dışında kalan ama maliyeti gerçekten değiştiren kalemler
+ayrı tutulur:
+
+| Kalem | Kural |
+|---|---|
+| **Ek uğrama** | İlk iki uğrama sefer fiyatına dahil; eşiği aşan her uğrama ayrıca ödenir (tır 2.688, kamyon 1.680 TL) |
+| **Asgari gönderi bedeli** | Parsiyelde 50 desinin altındaki gönderi bu tutardan ücretlenir (664,42 TL), **gönderi başına** — satır başına değil |
+| **Ek km** | Tarifede olmayan mesafe için km başına |
+
+Ek uğrama önemsiz değil: sahadaki FTL planlarında ortalama **3,4 durak** var, yani
+sözleşme çoğu araçta uğrama bedeli ödüyor. Hesaba katılmazsa FTL maliyeti sistemli
+olarak düşük çıkar.
+
+### Motorine endeksli fiyat güncellemesi
+
+Sözleşme yakıta endeksli. Tarifeler ekranındaki panelde yeni motorin fiyatı, **yakıt
+payı** ve geçerlilik tarihi girilir; sistem önce **önizleme** gösterir (kaç tarife,
+hangi oranla, örnek satırlar), onaydan sonra uygular.
+
+Oran: `değişim = (yeni motorin − eski) / eski × yakıt payı`. Motorin %10 artar ve
+fiyatın %40'ı yakıtsa fiyat %4 artar; yakıt payı 100 verilirse fiyat motorinle
+birebir değişir.
+
+**Eski fiyatlar silinmez.** Yürürlükteki tarifelerin bitişi yeni tarihin bir gün
+öncesine çekilir, yerine yeni satırlar açılır. Geçmiş planlar kendi tarihlerinde
+geçerli olan fiyatla maliyetlenmeye devam eder — yoksa geçmişin maliyeti bugünkü
+fiyatla yeniden yazılırdı. Her tarife satırı hangi motorin fiyatına göre
+hesaplandığını taşır.
 
 **Geçerlilik tarihi zorunludur.** Tarife yıl içinde yenileniyor ve her plan **kendi
 plan tarihinde** geçerli olan fiyatla maliyetlenir; yoksa bütçe karşılaştırması

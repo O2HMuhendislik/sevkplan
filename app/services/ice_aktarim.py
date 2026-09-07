@@ -27,6 +27,8 @@ from app.services.veri_formatlari import (
     MUSTERI_ALIAS,
     BUTCE_ALANLARI,
     BUTCE_ALIAS,
+    EK_UCRET_ALANLARI,
+    EK_UCRET_ALIAS,
     TARIFE_ALANLARI,
     TARIFE_ALIAS,
     URUN_BAGI_ALANLARI,
@@ -894,11 +896,7 @@ def tarifeleri_aktar(
                 raise maliyet_servisi.MaliyetHatasi(
                     "Geçerlilik başlangıcı okunamadı (gg.aa.yyyy bekleniyor)."
                 )
-            oncesi = db.scalar(
-                select(func.count(NakliyeTarifesi.id)).where(
-                    NakliyeTarifesi.il == il.strip().upper()
-                )
-            )
+            oncesi = db.scalar(select(func.count(NakliyeTarifesi.id)))
             maliyet_servisi.tarife_kaydet(
                 db,
                 sevkiyat_tipi=excel.metin(kayit.get("sevkiyat_tipi")) or "",
@@ -910,14 +908,20 @@ def tarifeleri_aktar(
                 nakliyeci=excel.metin(kayit.get("nakliyeci")) or "",
                 para_birimi=excel.metin(kayit.get("para_birimi")) or "TRY",
                 aciklama=excel.metin(kayit.get("aciklama")) or "",
+                ilce=excel.metin(kayit.get("ilce")) or "",
+                cikis_noktasi=excel.metin(kayit.get("cikis_noktasi")) or "",
+                desi_alt=kayit.get("desi_alt"),
+                desi_ust=kayit.get("desi_ust"),
+                motorin_fiyati=kayit.get("motorin_fiyati"),
             )
         except maliyet_servisi.MaliyetHatasi as hata:
             sonuc.hatalar.append(SatirHatasi(satir_no, il or "-", str(hata)))
             continue
-        if oncesi:
-            sonuc.guncellenen += 1
-        else:
+        # Yeni satır mı yoksa mevcut fiyatın düzeltmesi mi: tablo büyüdüyse yeni.
+        if db.scalar(select(func.count(NakliyeTarifesi.id))) > oncesi:
             sonuc.eklenen += 1
+        else:
+            sonuc.guncellenen += 1
 
     db.commit()
     _aktarim_kaydet(db, dosya_adi, "TARIFE", sonuc, kullanici)
@@ -958,4 +962,77 @@ def butceyi_aktar(
 
     db.commit()
     _aktarim_kaydet(db, dosya_adi, "BUTCE", sonuc, kullanici)
+    return sonuc
+
+
+def ek_ucretleri_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """Sözleşmenin sefer/desi dışı kalemlerini yükler: asgari gönderi bedeli,
+    ek uğrama, ek km."""
+    from app.services import maliyet_servisi
+
+    _kontrol_et(dosya, EK_UCRET_ALANLARI, EK_UCRET_ALIAS)
+    kayitlar = excel.satirlari_oku(
+        dosya, EK_UCRET_ALIAS, zorunlu_alanlar(EK_UCRET_ALANLARI)
+    )
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        tur = excel.metin(kayit.get("tur")) or ""
+        try:
+            baslangic = excel.tarih(kayit.get("gecerlilik_baslangic"))
+            if baslangic is None:
+                raise maliyet_servisi.MaliyetHatasi(
+                    "Geçerlilik başlangıcı okunamadı (gg.aa.yyyy bekleniyor)."
+                )
+            maliyet_servisi.ek_ucret_kaydet(
+                db, tur=tur, tutar=kayit.get("tutar"),
+                gecerlilik_baslangic=baslangic,
+                sevkiyat_tipi=excel.metin(kayit.get("sevkiyat_tipi")) or "",
+                arac_tipi=excel.metin(kayit.get("arac_tipi")) or "",
+                cikis_noktasi=excel.metin(kayit.get("cikis_noktasi")) or "",
+                esik=kayit.get("esik"),
+                gecerlilik_bitis=excel.tarih(kayit.get("gecerlilik_bitis")),
+                nakliyeci=excel.metin(kayit.get("nakliyeci")) or "",
+                motorin_fiyati=kayit.get("motorin_fiyati"),
+                aciklama=excel.metin(kayit.get("aciklama")) or "",
+            )
+            sonuc.eklenen += 1
+        except maliyet_servisi.MaliyetHatasi as hata:
+            sonuc.hatalar.append(SatirHatasi(satir_no, tur or "-", str(hata)))
+
+    db.commit()
+    _aktarim_kaydet(db, dosya_adi, "EK_UCRET", sonuc, kullanici)
+    return sonuc
+
+
+def nakliye_tarifesini_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """Tarife ve ek ücretleri **tek dosyadan** yükler.
+
+    Omsan listesi iki parçadan oluşuyor (fiyat tablosu + sözleşmenin ek
+    kalemleri); ikisi ayrı sayfada gelir. 'Ek Ücretler' sayfası yoksa yalnızca
+    tarifeler alınır.
+    """
+    from openpyxl import load_workbook
+
+    sonuc = tarifeleri_aktar(db, dosya, dosya_adi, kullanici)
+    try:
+        if hasattr(dosya, "seek"):
+            dosya.seek(0)
+        kitap = load_workbook(dosya, read_only=True)
+        sayfalar = set(kitap.sheetnames)
+    except Exception:
+        return sonuc
+    if "Ek Ücretler" not in sayfalar:
+        return sonuc
+    if hasattr(dosya, "seek"):
+        dosya.seek(0)
+    ek = ek_ucretleri_aktar(db, dosya, dosya_adi, kullanici)
+    sonuc.toplam += ek.toplam
+    sonuc.eklenen += ek.eklenen
+    sonuc.guncellenen += ek.guncellenen
+    sonuc.hatalar.extend(ek.hatalar)
     return sonuc

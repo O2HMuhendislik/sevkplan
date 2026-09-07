@@ -23,6 +23,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
+from jinja2 import Undefined
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -58,6 +59,7 @@ from app.models import (
     SiparisSatiri,
     Urun,
 )
+from app.models import EkUcretTuru
 from app.moduller import MODUL_HARITASI, MODULLER
 from app.services import (
     gomulu_veri,
@@ -137,8 +139,12 @@ sablon_motoru.env.filters["zaman"] = lambda d: d.strftime("%d.%m.%Y %H:%M") if d
 
 
 def _sayi(deger) -> str:
-    """Gereksiz ondalıkları atar: 610.000 -> 610, 0.750 -> 0,75."""
-    if deger is None:
+    """Gereksiz ondalıkları atar: 610.000 -> 610, 0.750 -> 0,75.
+
+    Şablonda olmayan bir alan `Undefined` gelir; sayı filtresi bunu sessizce boş
+    basar, yoksa tek bir eksik anahtar bütün sayfayı 500'e düşürüyor.
+    """
+    if deger is None or isinstance(deger, Undefined):
         return ""
     return format(Decimal(deger).normalize(), "f").replace(".", ",")
 
@@ -152,7 +158,7 @@ def _para(deger) -> str:
     Maliyet ekranlarında sıfır ile "veri yok" ayrı şeyler: tarifesi olmayan bir
     planın maliyeti sıfır değil, bilinmiyordur.
     """
-    if deger is None:
+    if deger is None or isinstance(deger, Undefined):
         return "—"
     tutar = Decimal(deger).quantize(Decimal("0.01"))
     tam, _, kurus = format(abs(tutar), "f").partition(".")
@@ -163,7 +169,7 @@ def _para(deger) -> str:
 
 def _para_fark(deger) -> str:
     """Sapma: artı işareti bilerek yazılır — bütçe aşımı gözden kaçmasın."""
-    if deger is None:
+    if deger is None or isinstance(deger, Undefined):
         return "—"
     tutar = Decimal(deger)
     if tutar == 0:
@@ -3014,6 +3020,10 @@ async def md_urun_baglari_yukle(
 
 # ------------------------------------------------------------- maliyet yönetimi
 MALIYET_YOLU = "/raporlama/maliyet"
+TARIFE_EKRAN_LIMITI = 100
+"""Tarife listesi 800'ü aşabiliyor (81 il × 2 tesis × 2 araç + parsiyel kademeleri);
+hepsini basmak sayfayı okunmaz hâle getiriyordu. Liste filtreyle daraltılır,
+indirilen dosya sınırsızdır."""
 RAPOR_YETKI = modul_yetkisi("RAPORLAMA")
 RAPOR_DUZENLEME = modul_yetkisi("RAPORLAMA", duzenleme=True)
 
@@ -3182,17 +3192,24 @@ def maliyet_tarifeleri(
     kullanici: Kullanici = Depends(RAPOR_YETKI),
     db: Session = Depends(oturum_bagimliligi),
 ):
+    tumu = maliyet_servisi.tarife_satirlari(db, tip, il, arama)
     return sayfa(
         istek,
         "maliyet_tarifeler.html",
         kullanici,
-        tarifeler=maliyet_servisi.tarife_satirlari(db, tip, il, arama),
+        tarifeler=tumu[:TARIFE_EKRAN_LIMITI],
+        toplam=len(tumu),
+        ekran_limiti=TARIFE_EKRAN_LIMITI,
+        ek_ucretler=maliyet_servisi.ek_ucret_satirlari(db),
         tip=tip,
         il=il,
         arama=arama,
         tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
         ftl_kurali=maliyet_servisi.ftl_il_kurali(db),
         ftl_secenekleri=maliyet_servisi.FTL_IL_SECENEKLERI,
+        motorin=maliyet_servisi.guncel_motorin(db),
+        tesisler=sorted(set(maliyet_servisi.depo_tesisleri(db).values())),
+        ek_turleri=[t.value for t in EkUcretTuru],
         sorgu=_sorgu_metni(tip=tip, il=il, arama=arama),
     )
 
@@ -3207,6 +3224,11 @@ def maliyet_tarife_kaydet(
     gecerlilik_bitis: str = Form(""),
     nakliyeci: str = Form(""),
     aciklama: str = Form(""),
+    ilce: str = Form(""),
+    cikis_noktasi: str = Form(""),
+    desi_alt: str = Form(""),
+    desi_ust: str = Form(""),
+    motorin_fiyati: str = Form(""),
     kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
     db: Session = Depends(oturum_bagimliligi),
 ):
@@ -3217,6 +3239,9 @@ def maliyet_tarife_kaydet(
             db, sevkiyat_tipi=sevkiyat_tipi, il=il, birim_fiyat=birim_fiyat,
             gecerlilik_baslangic=ilk, arac_tipi=arac_tipi,
             gecerlilik_bitis=son, nakliyeci=nakliyeci, aciklama=aciklama,
+            ilce=ilce, cikis_noktasi=cikis_noktasi,
+            desi_alt=desi_alt or None, desi_ust=desi_ust or None,
+            motorin_fiyati=motorin_fiyati or None,
         )
         db.commit()
     except (maliyet_servisi.MaliyetHatasi, ValueError) as hata:
@@ -3371,3 +3396,120 @@ async def maliyet_butce_yukle(
 def maliyet_butce_sablonu(kullanici: Kullanici = Depends(RAPOR_YETKI)):
     hedef = sablonlar.butce_sablonu(CIKTI_DIZIN / "butce_sablonu.xlsx")
     return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.post(MALIYET_YOLU + "/ek-ucret/kaydet")
+def maliyet_ek_ucret_kaydet(
+    tur: str = Form(...),
+    tutar: str = Form(...),
+    gecerlilik_baslangic: str = Form(...),
+    sevkiyat_tipi: str = Form(""),
+    arac_tipi: str = Form(""),
+    cikis_noktasi: str = Form(""),
+    esik: str = Form(""),
+    gecerlilik_bitis: str = Form(""),
+    nakliyeci: str = Form(""),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        ilk, son = _maliyet_araligi(gecerlilik_baslangic, gecerlilik_bitis)
+        maliyet_servisi.ek_ucret_kaydet(
+            db, tur=tur, tutar=tutar, gecerlilik_baslangic=ilk,
+            sevkiyat_tipi=sevkiyat_tipi, arac_tipi=arac_tipi,
+            cikis_noktasi=cikis_noktasi, esik=esik or None,
+            gecerlilik_bitis=son, nakliyeci=nakliyeci, aciklama=aciklama,
+        )
+        db.commit()
+    except (maliyet_servisi.MaliyetHatasi, ValueError) as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj=f"{tur} kalemi kaydedildi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/ek-ucret/{kayit_id}/sil")
+def maliyet_ek_ucret_sil(
+    kayit_id: int,
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        maliyet_servisi.ek_ucreti_sil(db, kayit_id)
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj="Ek ücret silindi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/tarifeler/zam")
+def maliyet_zam(
+    istek: Request,
+    yeni_motorin: str = Form(...),
+    yakit_payi: str = Form(...),
+    gecerlilik: str = Form(...),
+    eski_motorin: str = Form(""),
+    nakliyeci: str = Form(""),
+    aciklama: str = Form(""),
+    uygula: str = Form(""),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Motorin değişimini tarifelere yansıtır.
+
+    `uygula` boşsa yalnızca önizleme gösterilir; kaç tarifenin hangi oranla
+    değişeceği görülmeden fiyat listesi değiştirilmemeli.
+    """
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        gun = datetime.strptime(gecerlilik, "%Y-%m-%d").date()
+        if uygula:
+            onizleme = maliyet_servisi.zam_uygula(
+                db, yeni_motorin, yakit_payi, gun, eski_motorin or None,
+                nakliyeci, aciklama,
+            )
+            db.commit()
+            yuzde = (onizleme.oran * 100).quantize(Decimal("0.01"))
+            return yonlendir(
+                hedef,
+                mesaj=(
+                    f"Motorin {onizleme.eski_motorin} → {onizleme.yeni_motorin}: "
+                    f"{onizleme.tarife_sayisi} tarife ve {onizleme.ek_ucret_sayisi} "
+                    f"ek ücret %{yuzde} değişti, {gun:%d.%m.%Y} tarihinden geçerli. "
+                    "Eski fiyatlar geçmiş planlar için duruyor."
+                ),
+            )
+        onizleme = maliyet_servisi.zam_onizle(
+            db, yeni_motorin, yakit_payi, gun, eski_motorin or None, nakliyeci
+        )
+    except (maliyet_servisi.MaliyetHatasi, ValueError) as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+
+    tumu = maliyet_servisi.tarife_satirlari(db)
+    return sayfa(
+        istek,
+        "maliyet_tarifeler.html",
+        kullanici,
+        tarifeler=tumu[:TARIFE_EKRAN_LIMITI],
+        toplam=len(tumu),
+        ekran_limiti=TARIFE_EKRAN_LIMITI,
+        ek_ucretler=maliyet_servisi.ek_ucret_satirlari(db),
+        tip="", il="", arama="",
+        tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+        ftl_kurali=maliyet_servisi.ftl_il_kurali(db),
+        ftl_secenekleri=maliyet_servisi.FTL_IL_SECENEKLERI,
+        motorin=maliyet_servisi.guncel_motorin(db),
+        tesisler=sorted(set(maliyet_servisi.depo_tesisleri(db).values())),
+        ek_turleri=[t.value for t in EkUcretTuru],
+        sorgu="",
+        onizleme=onizleme,
+        zam_girdisi={
+            "yeni_motorin": yeni_motorin, "yakit_payi": yakit_payi,
+            "gecerlilik": gecerlilik, "eski_motorin": eski_motorin,
+            "nakliyeci": nakliyeci, "aciklama": aciklama,
+        },
+    )

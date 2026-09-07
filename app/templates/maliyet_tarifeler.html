@@ -13,6 +13,24 @@
     fiyatlanır. Parsiyel ve kargo satırlarında araç tipi boş bırakılır — fiyat araca
     değil desiye bağlıdır.
   </p>
+  <p class="soluk">
+    <b>Çıkış noktası</b> fiyatı değiştiriyor: aynı ile Eskişehir'den ve Bozüyük'ten
+    farklı ücret ödeniyor. Planın çıkış tesisi, malın yüklendiği deponun tanımından
+    okunur — eşleme koda gömülü değil, <a href="/masterdata/depolar">Depolar</a>
+    ekranından düzenlenir.
+  </p>
+  <p class="soluk">
+    <b>İlçe</b> yalnızca sözleşmede il içinde farklı fiyat varsa doldurulur
+    (İstanbul'da Anadolu / Avrupa / Avcılar / Silivri, Kocaeli'de Gebze). Arama
+    <b>özelden genele</b> iner: önce ilçe ve çıkış noktası birebir eşleşen satır,
+    sonra ilin geneli.
+  </p>
+  <p class="soluk">
+    <b>Desi kademesi</b> parsiyelde geçerli (0-2000, 2001-4000, 4001+) ve kademe
+    <b>gönderi</b> bazında seçilir: bir müşterinin o plandaki toplam desisi hangi
+    aralığa düşüyorsa o fiyat uygulanır. Satır bazında seçseydik her satır ayrı
+    gönderi sayılırdı.
+  </p>
   <p class="soluk" style="margin-bottom:0">
     <b>Geçerlilik tarihi zorunlu.</b> Tarife yıl içinde yenileniyor; her plan
     <b>kendi plan tarihinde</b> geçerli olan fiyatla maliyetlenir, yoksa bütçe
@@ -40,6 +58,78 @@
 </div>
 
 {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+<div class="kart sapma">
+  <h2>Motorin değişti — fiyatları güncelle</h2>
+  <p class="soluk">
+    Sözleşme yakıta endeksli. Motorin arttığında ya da azaldığında fiyatlar
+    <b>yakıt payı</b> kadarıyla hareket eder: motorin %10 artar ve fiyatın %40'ı
+    yakıtsa fiyat %4 artar. Yakıt payını 100 verirseniz fiyat motorinle birebir
+    değişir.
+  </p>
+  <p class="soluk">
+    <b>Eski fiyatlar silinmez.</b> Yürürlükteki tarifelerin bitişi yeni tarihin bir
+    gün öncesine çekilir, yerine yeni satırlar açılır. Geçmiş planlar kendi
+    tarihlerinde geçerli olan fiyatla maliyetlenmeye devam eder — yoksa geçmişin
+    maliyeti bugünkü fiyatla yeniden yazılırdı.
+    {% if motorin %}Yürürlükteki fiyatlar <b>{{ motorin | sayi }} TL/lt</b>
+    motorine göre.{% endif %}
+  </p>
+  <form class="satir" method="post" action="/raporlama/maliyet/tarifeler/zam">
+    <div><label for="eski_motorin">Eski motorin</label>
+      <input id="eski_motorin" name="eski_motorin" style="width:110px"
+             value="{{ zam_girdisi.eski_motorin if zam_girdisi else '' }}"
+             placeholder="{{ motorin | sayi or '90,08' }}"></div>
+    <div><label for="yeni_motorin">Yeni motorin</label>
+      <input id="yeni_motorin" name="yeni_motorin" required style="width:110px"
+             value="{{ zam_girdisi.yeni_motorin if zam_girdisi else '' }}"></div>
+    <div><label for="yakit_payi">Yakıt payı (%)</label>
+      <input id="yakit_payi" name="yakit_payi" required style="width:110px"
+             value="{{ zam_girdisi.yakit_payi if zam_girdisi else '' }}"></div>
+    <div><label for="zam_gecerlilik">Geçerlilik</label>
+      <input type="date" id="zam_gecerlilik" name="gecerlilik" required
+             value="{{ zam_girdisi.gecerlilik if zam_girdisi else bugun }}"></div>
+    <div><label for="zam_nakliyeci">Nakliyeci</label>
+      <input id="zam_nakliyeci" name="nakliyeci" style="width:130px"
+             value="{{ zam_girdisi.nakliyeci if zam_girdisi else '' }}"
+             placeholder="(hepsi)"></div>
+    <button type="submit">Önizle</button>
+    {% if onizleme %}
+    <input type="hidden" name="aciklama" value="{{ zam_girdisi.aciklama }}">
+    <button type="submit" name="uygula" value="1"
+            onclick="return confirm('{{ onizleme.tarife_sayisi }} tarife güncellenecek. Onaylıyor musunuz?')">
+      Uygula</button>
+    {% endif %}
+  </form>
+
+  {% if onizleme %}
+  <div class="uyari basari" style="margin-top:14px">
+    Motorin <b>{{ onizleme.eski_motorin | sayi }} → {{ onizleme.yeni_motorin | sayi }}</b>,
+    yakıt payı %{{ onizleme.yakit_payi | sayi }} →
+    fiyatlar <b>%{{ (onizleme.oran * 100) | round(2) }}</b>
+    {{ 'artacak' if onizleme.artis_mi else 'azalacak' }}.
+    {{ onizleme.tarife_sayisi }} tarife, {{ onizleme.ek_ucret_sayisi }} ek ücret
+    etkilenir. <b>Henüz uygulanmadı</b> — onaylamak için "Uygula" düğmesine basın.
+  </div>
+  <table>
+    <thead><tr><th>Tip</th><th>İl / İlçe</th><th>Çıkış</th><th>Araç</th>
+      <th class="sag">Eski</th><th class="sag">Yeni</th></tr></thead>
+    <tbody>
+    {% for ornek in onizleme.ornekler %}
+      <tr>
+        <td>{{ ornek.tip }}</td>
+        <td><b>{{ ornek.il }}</b>{% if ornek.ilce %} · {{ ornek.ilce }}{% endif %}</td>
+        <td class="soluk">{{ ornek.cikis }}</td>
+        <td>{{ ornek.arac }}</td>
+        <td class="sag">{{ ornek.eski | para }}</td>
+        <td class="sag"><b>{{ ornek.yeni | para }}</b></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk">İlk {{ onizleme.ornekler | length }} satır örnek olarak gösterildi.</p>
+  {% endif %}
+</div>
+
 <div class="kart">
   <h2>Yeni tarife</h2>
   <form class="satir" method="post" action="/raporlama/maliyet/tarifeler/kaydet">
@@ -48,16 +138,30 @@
         {% for t in tipler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
       </select></div>
     <div><label for="il_y">İl</label>
-      <input id="il_y" name="il" required style="width:150px" placeholder="IZMIR"></div>
+      <input id="il_y" name="il" required style="width:140px" placeholder="IZMIR"></div>
+    <div><label for="ilce_y">İlçe</label>
+      <input id="ilce_y" name="ilce" style="width:120px" placeholder="(genel)"></div>
+    <div><label for="cikis_y">Çıkış</label>
+      <select id="cikis_y" name="cikis_noktasi">
+        <option value="">Tümü</option>
+        {% for t in tesisler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
     <div><label for="arac_tipi">Araç tipi</label>
       <select id="arac_tipi" name="arac_tipi">
         <option value="">— (parsiyel / kargo)</option>
         <option value="TIR">TIR</option>
         <option value="KAMYON">KAMYON</option>
       </select></div>
+    <div><label for="desi_alt_y">Desi alt</label>
+      <input id="desi_alt_y" name="desi_alt" style="width:90px" placeholder="0"></div>
+    <div><label for="desi_ust_y">Desi üst</label>
+      <input id="desi_ust_y" name="desi_ust" style="width:90px" placeholder="2000"></div>
     <div><label for="birim_fiyat">Birim fiyat</label>
       <input id="birim_fiyat" name="birim_fiyat" required style="width:120px"
              placeholder="42500"></div>
+    <div><label for="motorin_y">Motorin</label>
+      <input id="motorin_y" name="motorin_fiyati" style="width:90px"
+             value="{{ motorin | sayi }}"></div>
     <div><label for="gecerlilik_baslangic">Başlangıç</label>
       <input type="date" id="gecerlilik_baslangic" name="gecerlilik_baslangic"
              required value="{{ bugun }}"></div>
@@ -88,6 +192,84 @@
 {% endif %}
 
 <div class="kart">
+  <h2>Sözleşmenin ek kalemleri</h2>
+  <p class="soluk">
+    Sefer ve desi fiyatının dışında kalan ama maliyeti gerçekten değiştiren
+    kalemler. <b>Ek uğrama</b> önemli: sözleşmede ilk iki uğrama sefer fiyatına
+    dahil, sonrakiler ayrıca ödeniyor — sahadaki FTL planlarında ortalama 3,4 durak
+    olduğu için hesaba katılmazsa FTL maliyeti sistemli olarak düşük çıkar.
+    <b>Asgari gönderi bedeli</b> parsiyelde eşiğin altındaki gönderilere uygulanır.
+  </p>
+  {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+  <form class="satir" method="post" action="/raporlama/maliyet/ek-ucret/kaydet"
+        style="margin-bottom:14px">
+    <div><label for="tur">Tür</label>
+      <select id="tur" name="tur">
+        {% for t in ek_turleri %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
+    <div><label for="ek_tip">Sevkiyat tipi</label>
+      <select id="ek_tip" name="sevkiyat_tipi">
+        <option value="">Tümü</option>
+        {% for t in tipler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
+    <div><label for="ek_arac">Araç</label>
+      <select id="ek_arac" name="arac_tipi">
+        <option value="">—</option>
+        <option value="TIR">TIR</option>
+        <option value="KAMYON">KAMYON</option>
+      </select></div>
+    <div><label for="ek_tutar">Tutar</label>
+      <input id="ek_tutar" name="tutar" required style="width:110px"></div>
+    <div><label for="ek_esik">Eşik</label>
+      <input id="ek_esik" name="esik" style="width:90px" placeholder="2"></div>
+    <div><label for="ek_bas">Başlangıç</label>
+      <input type="date" id="ek_bas" name="gecerlilik_baslangic" required
+             value="{{ bugun }}"></div>
+    <div><label for="ek_nak">Nakliyeci</label>
+      <input id="ek_nak" name="nakliyeci" style="width:120px"></div>
+    <button type="submit">Ekle</button>
+  </form>
+  {% endif %}
+
+  {% if ek_ucretler %}
+  <table>
+    <thead><tr>
+      <th>Tür</th><th>Tip</th><th>Araç</th><th>Çıkış</th>
+      <th class="sag">Tutar</th><th class="sag">Eşik</th>
+      <th>Geçerlilik</th><th>Nakliyeci</th><th>Açıklama</th>
+      {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for u in ek_ucretler %}
+      <tr class="{{ '' if u.yururlukte else 'soluk' }}">
+        <td><b>{{ u.tur }}</b></td>
+        <td>{{ u.sevkiyat_tipi or 'tümü' }}</td>
+        <td>{{ u.arac_tipi }}</td>
+        <td class="soluk">{{ u.cikis_noktasi or 'tümü' }}</td>
+        <td class="sag"><b>{{ u.tutar | para }}</b></td>
+        <td class="sag">{{ u.esik | sayi }}</td>
+        <td>{{ u.gecerlilik_baslangic | tarih }} —
+          {{ u.gecerlilik_bitis | tarih if u.gecerlilik_bitis else 'süresiz' }}</td>
+        <td class="soluk">{{ u.nakliyeci or 'genel' }}</td>
+        <td class="soluk">{{ u.aciklama }}</td>
+        {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+        <td>
+          <form method="post" action="/raporlama/maliyet/ek-ucret/{{ u.id }}/sil"
+                onsubmit="return confirm('Bu kalem silinsin mi?')">
+            <button type="submit" class="ikincil">Sil</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">Ek kalem tanımlanmadı.</div>
+  {% endif %}
+</div>
+
+<div class="kart">
   <form class="satir" method="get" action="/raporlama/maliyet/tarifeler"
         style="margin-bottom:14px">
     <div><label for="tip">Sevkiyat tipi</label>
@@ -106,12 +288,18 @@
     <a class="dugme ikincil" href="/raporlama/maliyet/tarifeler">Temizle</a>
   </form>
 
+  {% if toplam and toplam > ekran_limiti %}
+  <div class="uyari basari">
+    <b>{{ toplam }} tarife</b> var, ilk {{ ekran_limiti }} tanesi gösteriliyor.
+    Aradığınızı bulmak için il, sevkiyat tipi ya da arama kutusunu kullanın.
+  </div>
+  {% endif %}
   {% if tarifeler %}
   <table>
     <thead><tr>
-      <th class="sag">#</th><th>Tip</th><th>İl</th><th>Araç</th>
-      <th class="sag">Birim fiyat</th><th>Birim</th>
-      <th>Geçerlilik</th><th>Nakliyeci</th>
+      <th class="sag">#</th><th>Tip</th><th>İl / İlçe</th><th>Çıkış</th><th>Araç</th>
+      <th>Kademe</th><th class="sag">Birim fiyat</th><th>Birim</th>
+      <th>Geçerlilik</th><th class="sag">Motorin</th><th>Nakliyeci</th>
       {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}<th></th>{% endif %}
     </tr></thead>
     <tbody>
@@ -120,14 +308,21 @@
         <td class="sag soluk">{{ loop.index }}</td>
         <td><span class="rozet {{ 'TAMAMLANDI' if t.sevkiyat_tipi == 'FTL' else 'PLANLANDI' }}">
           {{ t.sevkiyat_tipi }}</span></td>
-        <td><b>{{ t.il }}</b></td>
+        <td><b>{{ t.il }}</b>
+          {% if t.ilce %}<div class="soluk">{{ t.ilce }}</div>{% endif %}</td>
+        <td class="soluk">{{ t.cikis_noktasi or 'tümü' }}</td>
         <td>{{ t.arac_tipi }}</td>
+        <td class="soluk">
+          {% if t.desi_alt is not none %}
+            {{ t.desi_alt | sayi }}–{{ t.desi_ust | sayi if t.desi_ust else '∞' }}
+          {% endif %}</td>
         <td class="sag"><b>{{ t.birim_fiyat | para }}</b> {{ t.para_birimi }}</td>
         <td>{{ 'sefer' if t.birim == 'SEFER' else 'desi' }}</td>
         <td>{{ t.gecerlilik_baslangic | tarih }} —
           {{ t.gecerlilik_bitis | tarih if t.gecerlilik_bitis else 'süresiz' }}
           {% if not t.yururlukte %}<span class="rozet IPTAL">YÜRÜRLÜKTE DEĞİL</span>{% endif %}
         </td>
+        <td class="sag soluk">{{ t.motorin_fiyati | sayi }}</td>
         <td class="soluk">{{ t.nakliyeci or 'genel' }}</td>
         {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
         <td>
