@@ -1304,3 +1304,111 @@ def test_bagi_olmayan_planda_uyari_cikmaz(istemci, fabrika):
     cevap = istemci.get(f"/ring/planlar/{kombi_plan_id}")
     assert "Eksik parça" not in cevap.text
     assert "Aksesuar uyarısı" not in cevap.text
+
+
+# ----------------------------------------------------------- maliyet yönetimi
+def test_maliyet_ekranlari_acilir(istemci):
+    for yol in ("/raporlama/maliyet", "/raporlama/maliyet/planlar",
+                "/raporlama/maliyet/kirilim", "/raporlama/maliyet/tarifeler",
+                "/raporlama/maliyet/butce"):
+        assert istemci.get(yol).status_code == 200, yol
+    for yol in ("/raporlama/maliyet/tarifeler/sablon", "/raporlama/maliyet/butce/sablon"):
+        assert istemci.get(yol).status_code == 200, yol
+
+
+def test_maliyet_tarifesi_ekrandan_girilir_ve_plana_uygulanir(istemci, fabrika):
+    """Tarife girilince plan maliyeti ekranda çıkmalı."""
+    from datetime import date
+    from decimal import Decimal as D
+
+    from app.models import SevkiyatPlani, SiparisDurumu, SiparisSatiri, Urun
+
+    with fabrika() as db:
+        db.add(Urun(urun_kodu="PN1", urun_adi="Panel", urun_grubu="PANEL", desi=D(2)))
+        plan = SevkiyatPlani(
+            sefer_no="2609S7001", donem="2609", depo_kodu="64",
+            planlama_anahtari="PANEL", urun_kodlari="PN1", toplam_birim=D(1),
+            doluluk_yuzdesi=D(100), modul="ROTA", plan_tipi="IC_FTL",
+            plan_tarihi=date(2026, 9, 3), sevkiyat_tipi="FTL", arac_tipi="TIR",
+            iller_metni="IZMIR", son_ugrak="IZMIR",
+        )
+        db.add(plan)
+        db.flush()
+        db.add(SiparisSatiri(
+            siparis_no="SP1", siparis_satir_no="1", teslimat_no="TS1",
+            urun_kodu="PN1", urun_adi="Panel", miktar=D(100), depo_kodu="64",
+            sehir="IZMIR", bayi_adi="EGE ISITMA", modul="ROTA",
+            plan_id=plan.id, durum=SiparisDurumu.PLANLANDI,
+        ))
+        db.commit()
+
+    # Tarife yokken maliyet eksik uyarısı çıkar.
+    assert "sefer tarifesi yok" in istemci.get("/raporlama/maliyet/planlar").text
+
+    istemci.post("/raporlama/maliyet/tarifeler/kaydet", data={
+        "sevkiyat_tipi": "FTL", "il": "IZMIR", "arac_tipi": "TIR",
+        "birim_fiyat": "42500", "gecerlilik_baslangic": "2026-01-01",
+    })
+    ekran = istemci.get("/raporlama/maliyet/planlar")
+    assert "42.500,00" in ekran.text
+    assert "sefer tarifesi yok" not in ekran.text
+
+    # Kırılım aynı toplamı vermeli.
+    for boyut in ("MUSTERI", "URUN", "SIPARIS", "IL"):
+        cevap = istemci.get("/raporlama/maliyet/kirilim", params={"boyut": boyut})
+        assert "42.500,00" in cevap.text, boyut
+
+
+def test_maliyet_fatura_tutari_ekrandan_girilir(istemci, fabrika):
+    from datetime import date
+    from decimal import Decimal as D
+
+    from app.models import SevkiyatPlani, SiparisDurumu, SiparisSatiri, Urun
+
+    with fabrika() as db:
+        db.add(Urun(urun_kodu="PN2", urun_adi="Panel", urun_grubu="PANEL", desi=D(2)))
+        plan = SevkiyatPlani(
+            sefer_no="2609S7002", donem="2609", depo_kodu="64",
+            planlama_anahtari="PANEL", urun_kodlari="PN2", toplam_birim=D(1),
+            doluluk_yuzdesi=D(100), modul="ROTA", plan_tipi="IC_FTL",
+            plan_tarihi=date(2026, 9, 3), sevkiyat_tipi="FTL", arac_tipi="TIR",
+            iller_metni="BURSA", son_ugrak="BURSA",
+        )
+        db.add(plan)
+        db.flush()
+        plan_id = plan.id
+        db.add(SiparisSatiri(
+            siparis_no="SP2", siparis_satir_no="1", teslimat_no="TS2",
+            urun_kodu="PN2", urun_adi="Panel", miktar=D(50), depo_kodu="64",
+            sehir="BURSA", bayi_adi="BURSA BAYİ", modul="ROTA",
+            plan_id=plan.id, durum=SiparisDurumu.PLANLANDI,
+        ))
+        db.commit()
+
+    istemci.post("/raporlama/maliyet/tarifeler/kaydet", data={
+        "sevkiyat_tipi": "FTL", "il": "BURSA", "arac_tipi": "TIR",
+        "birim_fiyat": "26000", "gecerlilik_baslangic": "2026-01-01",
+    })
+    istemci.post(f"/raporlama/maliyet/planlar/{plan_id}/fiili", data={
+        "tutar": "28750", "fatura_no": "FTR-9", "maliyet_notu": "bekleme",
+        "donus": "/raporlama/maliyet/planlar",
+    })
+    ekran = istemci.get("/raporlama/maliyet/planlar")
+    assert "FTR-9" in ekran.text
+    assert "+2.750,00" in ekran.text   # fatura ile tarife farkı
+
+
+def test_maliyet_butcesi_ekrandan_girilir(istemci):
+    istemci.post("/raporlama/maliyet/butce/kaydet", data={
+        "yil": "2026", "ay": "3", "senaryo": "BUTCE", "tutar": "1850000",
+    })
+    cevap = istemci.get("/raporlama/maliyet/butce")
+    assert "1.850.000,00" in cevap.text
+    assert "1.850.000,00" in istemci.get("/raporlama/maliyet?yil=2026").text
+
+
+def test_maliyet_fc_surumsuz_reddedilir(istemci):
+    cevap = istemci.post("/raporlama/maliyet/butce/kaydet", data={
+        "yil": "2026", "ay": "3", "senaryo": "FC", "tutar": "1900000",
+    })
+    assert "sürüm" in sorgu(cevap)

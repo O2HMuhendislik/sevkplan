@@ -457,6 +457,18 @@ class SevkiyatPlani(Temel):
     nakliyeci: Mapped[str | None] = mapped_column(String(150), default=None)
     plaka: Mapped[str | None] = mapped_column(String(30), default=None)
 
+    # ------------------------------------------------------------------ maliyet
+    fiili_maliyet: Mapped[Decimal | None] = mapped_column(Numeric(16, 2), default=None)
+    """Nakliyeci faturasındaki gerçek tutar.
+
+    Tarifeden hesaplanan maliyet beklenen tutardır; fatura bekleme, ek durak ya da
+    yakıt farkı yüzünden ondan sapabilir. Bu alan doluysa **gerçekleşen** olarak o
+    kullanılır ve tarifeyle arasındaki fark raporlanır. Boşsa tarife maliyeti
+    gerçekleşen sayılır.
+    """
+    fatura_no: Mapped[str | None] = mapped_column(String(60), default=None)
+    maliyet_notu: Mapped[str | None] = mapped_column(Text, default=None)
+
     # ------------------------------------------------------------------ ihracat
     musteri_adi: Mapped[str | None] = mapped_column(String(250), index=True, default=None)
     """İhracatta araç tek noktaya gider; planın müşterisi budur."""
@@ -1026,6 +1038,99 @@ class PlanHareketi(Temel):
     kullanici: Mapped[str] = mapped_column(String(100), default="sistem")
 
     plan: Mapped[SevkiyatPlani] = relationship(back_populates="hareketler")
+
+
+class MaliyetBirimi(str, enum.Enum):
+    """Tarifenin neye göre fiyatlandığı."""
+
+    SEFER = "SEFER"
+    """Tam araç (FTL): araç başına sabit sefer fiyatı."""
+    DESI = "DESI"
+    """Parsiyel ve kargo: taşınan desi başına birim fiyat."""
+
+
+class NakliyeTarifesi(Temel):
+    """Şehir bazlı nakliye fiyatı.
+
+    Sahadaki tarife iki şekilde kuruluyor: **FTL**'de il ve araç tipi (tır/kamyon)
+    başına sabit bir sefer fiyatı, **parsiyel ve kargoda** il başına birim desi
+    fiyatı. İkisi de aynı tabloda durur, `birim` hangisi olduğunu söyler.
+
+    **Geçerlilik tarihi zorunlu bir ayrım.** Tarife yıl içinde yenileniyor; bir plan
+    kendi plan tarihinde geçerli olan fiyatla maliyetlenmezse bütçe karşılaştırması
+    anlamını yitirir. Bitiş boş bırakılırsa tarife hâlâ yürürlüktedir.
+    """
+
+    __tablename__ = "nakliye_tarifeleri"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sevkiyat_tipi: Mapped[str] = mapped_column(String(10), index=True)
+    """FTL / RUTIN / KARGO. Ring planlarında maliyet yoktur, bu yüzden RING yok."""
+    il: Mapped[str] = mapped_column(String(80), index=True)
+    """Normalize il adı (bkz. `app.domain.iller.yer_adi`)."""
+    arac_tipi: Mapped[str | None] = mapped_column(String(20), index=True, default=None)
+    """TIR / KAMYON. Yalnızca sefer fiyatlı (FTL) tarifelerde dolu."""
+    birim: Mapped[MaliyetBirimi] = mapped_column(
+        Enum(MaliyetBirimi, native_enum=False, length=10), default=MaliyetBirimi.SEFER
+    )
+    birim_fiyat: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    para_birimi: Mapped[str] = mapped_column(String(3), default="TRY")
+    gecerlilik_baslangic: Mapped[date] = mapped_column(Date, index=True)
+    gecerlilik_bitis: Mapped[date | None] = mapped_column(Date, default=None)
+    """Boşsa tarife hâlâ yürürlükte."""
+    nakliyeci: Mapped[str | None] = mapped_column(String(150), default=None)
+    """Doluysa yalnızca o nakliyecinin planlarına uygulanır; boş tarife geneldir."""
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    guncelleme_tarihi: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
+
+    def kapsiyor_mu(self, gun: date) -> bool:
+        if gun < self.gecerlilik_baslangic:
+            return False
+        return self.gecerlilik_bitis is None or gun <= self.gecerlilik_bitis
+
+
+class ButceSenaryosu(str, enum.Enum):
+    BUTCE = "BUTCE"
+    """Yıl başında onaylanan bütçe."""
+    FC = "FC"
+    """Yıl içinde revize edilen tahmin (forecast)."""
+
+
+class ButceKalemi(Temel):
+    """Aylık nakliye bütçesi ve tahmini (FC).
+
+    Karşılaştırma üç sütunludur: bütçe, seçilen FC sürümü ve gerçekleşen. Aylık ve
+    yılbaşından bugüne (YTD) ayrı ayrı okunur.
+
+    `sevkiyat_tipi` boş bırakılırsa satır **ayın toplamıdır**; doluysa kırılımdır.
+    İkisi bir arada kullanılmaz: toplam satırı varsa kırılım satırları yok sayılır,
+    çünkü ikisi toplanınca maliyet iki kez sayılırdı.
+    """
+
+    __tablename__ = "butce_kalemleri"
+    __table_args__ = (
+        UniqueConstraint(
+            "yil", "ay", "senaryo", "surum", "sevkiyat_tipi", name="uq_butce_kalemi"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    yil: Mapped[int] = mapped_column(Integer, index=True)
+    ay: Mapped[int] = mapped_column(Integer, index=True)
+    senaryo: Mapped[ButceSenaryosu] = mapped_column(
+        Enum(ButceSenaryosu, native_enum=False, length=10), index=True
+    )
+    surum: Mapped[str] = mapped_column(String(30), default="")
+    """FC sürümü (FC1, FC2 ...). Bütçede boş kalır."""
+    sevkiyat_tipi: Mapped[str | None] = mapped_column(String(10), default=None)
+    """FTL / RUTIN / KARGO; boşsa satır ayın toplamıdır."""
+    tutar: Mapped[Decimal] = mapped_column(Numeric(16, 2))
+    para_birimi: Mapped[str] = mapped_column(String(3), default="TRY")
+    aciklama: Mapped[str | None] = mapped_column(Text, default=None)
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
 class BagTipi(str, enum.Enum):

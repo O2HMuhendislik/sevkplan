@@ -1,0 +1,130 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'maliyet' %}
+{% block icerik %}
+<h1>Maliyet Yönetimi — Bütçe / FC / Gerçekleşen</h1>
+{% include "maliyet_sekmeler.html" %}
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/maliyet">
+    <div><label for="yil">Yıl</label>
+      <select id="yil" name="yil">
+        {% for y in yillar %}
+        <option value="{{ y }}" {{ 'selected' if y == secili_yil }}>{{ y }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="fc">FC sürümü</label>
+      <select id="fc" name="fc">
+        <option value="">FC yok</option>
+        {% for s in surumler %}
+        <option value="{{ s }}" {{ 'selected' if s == secili_fc }}>{{ s }}</option>
+        {% endfor %}
+      </select></div>
+    <button type="submit">Göster</button>
+  </form>
+  <p class="soluk" style="margin:12px 0 0">
+    <b>Gerçekleşen</b>, planın tarifeden hesaplanan maliyetidir; plana nakliyeci
+    faturası girildiyse fatura tutarı geçerlidir. <b>YTD</b> yılbaşından
+    {{ karsilastirma.ytd.son_ay_adi or 'bugüne' }} kadar kümülatiftir — gelecek aylar
+    sapmayı bozmasın diye YTD'ye girmez. Maliyet <b>yalnızca iç piyasada</b> hesaplanır;
+    ring sevkiyatlarında nakliye bedeli yoktur.
+  </p>
+</div>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">YTD gerçekleşen</div>
+    <div class="deger">{{ karsilastirma.ytd.gerceklesen | para }}</div>
+    <div class="soluk">{{ ozet.plan }} araç · {{ ozet.faturali }} faturalı</div></div>
+  <div class="metrik"><div class="etiket">YTD bütçe</div>
+    <div class="deger">{{ karsilastirma.ytd.butce | para }}</div>
+    <div class="soluk {{ 'dikkat' if karsilastirma.ytd.butce_farki > 0 }}">
+      {{ karsilastirma.ytd.butce_farki | para_fark }}
+      {% if karsilastirma.ytd.butce_orani is not none %}
+        · %{{ karsilastirma.ytd.butce_orani }}{% endif %}</div></div>
+  <div class="metrik"><div class="etiket">YTD {{ secili_fc or 'FC' }}</div>
+    <div class="deger">{{ karsilastirma.ytd.fc | para }}</div>
+    <div class="soluk {{ 'dikkat' if karsilastirma.ytd.fc_farki > 0 }}">
+      {{ karsilastirma.ytd.fc_farki | para_fark }}
+      {% if karsilastirma.ytd.fc_orani is not none %}
+        · %{{ karsilastirma.ytd.fc_orani }}{% endif %}</div></div>
+  <div class="metrik"><div class="etiket">Desi başı maliyet</div>
+    <div class="deger">{{ ozet.desi_basi | para }}</div>
+    <div class="soluk">araç başı {{ ozet.arac_basi | para }}</div></div>
+</div>
+
+{% if ozet.eksik %}
+<div class="uyari hata">
+  <b>{{ ozet.eksik }} planın maliyeti eksik hesaplandı</b> — tarifesi bulunamayan il
+  var. Eksikler <a href="/raporlama/maliyet/planlar">Araç Bazlı</a> ekranında satır
+  satır görünür; tarifeleri <a href="/raporlama/maliyet/tarifeler">Tarifeler</a>
+  ekranından tanımlayın.
+</div>
+{% endif %}
+
+<div class="kart">
+  <h2>{{ karsilastirma.yil }} — aylık ve YTD</h2>
+  <table>
+    <thead><tr>
+      <th>Ay</th>
+      <th class="sag">Bütçe</th><th class="sag">{{ secili_fc or 'FC' }}</th>
+      <th class="sag">Gerçekleşen</th>
+      <th class="sag">Bütçe farkı</th><th class="sag">FC farkı</th>
+      <th class="sag">YTD bütçe</th><th class="sag">YTD gerçekleşen</th>
+      <th class="sag">YTD fark</th>
+    </tr></thead>
+    <tbody>
+    {% for satir in karsilastirma.satirlar %}
+      <tr class="{{ '' if satir.gecmis_mi else 'soluk' }}">
+        <td><b>{{ satir.ay_adi }}</b></td>
+        <td class="sag">{{ satir.butce | para }}</td>
+        <td class="sag">{{ satir.fc | para }}</td>
+        <td class="sag"><b>{{ satir.gerceklesen | para }}</b></td>
+        <td class="sag {{ 'dikkat' if satir.butce_farki > 0 }}">
+          {{ satir.butce_farki | para_fark }}</td>
+        <td class="sag {{ 'dikkat' if satir.fc_farki > 0 }}">
+          {{ satir.fc_farki | para_fark }}</td>
+        <td class="sag soluk">{{ satir.ytd_butce | para if satir.gecmis_mi else '' }}</td>
+        <td class="sag soluk">{{ satir.ytd_gerceklesen | para if satir.gecmis_mi else '' }}</td>
+        <td class="sag {{ 'dikkat' if satir.gecmis_mi and satir.ytd_gerceklesen > satir.ytd_butce }}">
+          {% if satir.gecmis_mi %}
+            {{ (satir.ytd_gerceklesen - satir.ytd_butce) | para_fark }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr>
+      <th>Yıl toplamı</th>
+      <th class="sag">{{ karsilastirma.yillik.butce | para }}</th>
+      <th class="sag">{{ karsilastirma.yillik.fc | para }}</th>
+      <th class="sag">{{ karsilastirma.yillik.gerceklesen | para }}</th>
+      <th colspan="5"></th>
+    </tr></tfoot>
+  </table>
+  {% if not karsilastirma.yillik.butce and not karsilastirma.yillik.fc %}
+  <p class="soluk">
+    Bu yıl için bütçe girilmemiş.
+    <a href="/raporlama/maliyet/butce">Bütçe ve FC Girişi</a> ekranından yükleyin.
+  </p>
+  {% endif %}
+</div>
+
+<div class="kart">
+  <h2>Sevkiyat tipine göre</h2>
+  {% if tipler %}
+  <table>
+    <thead><tr><th>Tip</th><th class="sag">Araç</th><th class="sag">Desi</th>
+      <th class="sag">Maliyet</th><th class="sag">Desi başı</th></tr></thead>
+    <tbody>
+    {% for satir in tipler %}
+      <tr>
+        <td><b>{{ satir.tip }}</b></td>
+        <td class="sag">{{ satir.plan }}</td>
+        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.tutar | para }}</td>
+        <td class="sag">{{ satir.desi_basi | para }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<div class="bos">Bu yıl için iç piyasa planı yok.</div>{% endif %}
+</div>
+{% endblock %}

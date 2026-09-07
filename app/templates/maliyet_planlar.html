@@ -1,0 +1,96 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'maliyet_planlar' %}
+{% block icerik %}
+<h1>Maliyet — Araç Bazlı</h1>
+{% include "maliyet_sekmeler.html" %}
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Araç</div>
+    <div class="deger">{{ ozet.plan }}</div></div>
+  <div class="metrik"><div class="etiket">Gerçekleşen</div>
+    <div class="deger">{{ ozet.gerceklesen | para }}</div>
+    <div class="soluk">tarife {{ ozet.tarife | para }}</div></div>
+  <div class="metrik"><div class="etiket">Fatura farkı</div>
+    <div class="deger {{ 'dikkat' if ozet.fark > 0 }}">{{ ozet.fark | para_fark }}</div>
+    <div class="soluk">{{ ozet.faturali }} planda fatura var</div></div>
+  <div class="metrik"><div class="etiket">Desi başı</div>
+    <div class="deger">{{ ozet.desi_basi | para }}</div>
+    <div class="soluk">araç başı {{ ozet.arac_basi | para }}</div></div>
+</div>
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/maliyet/planlar"
+        style="margin-bottom:14px">
+    <div><label for="baslangic">Başlangıç</label>
+      <input type="date" id="baslangic" name="baslangic" value="{{ baslangic }}"></div>
+    <div><label for="bitis">Bitiş</label>
+      <input type="date" id="bitis" name="bitis" value="{{ bitis }}"></div>
+    <div><label for="tip">Sevkiyat tipi</label>
+      <select id="tip" name="tip">
+        <option value="">Tümü</option>
+        {% for t in tipler %}
+        <option value="{{ t }}" {{ 'selected' if tip == t }}>{{ t }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="il">İl</label>
+      <input id="il" name="il" value="{{ il }}" style="width:160px"></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/raporlama/maliyet/planlar">Temizle</a>
+  </form>
+
+  {% if maliyetler %}
+  {% if toplam > ekran_limiti %}
+  <p class="soluk">{{ toplam }} araçtan ilk {{ ekran_limiti }} tanesi gösteriliyor.</p>
+  {% endif %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Sefer No</th><th>Tarih</th><th>Tip</th><th>Araç</th>
+      <th>İller</th><th class="sag">Desi</th>
+      <th class="sag">Tarife</th><th class="sag">Fatura</th><th class="sag">Fark</th>
+      <th>Nakliyeci</th>
+    </tr></thead>
+    <tbody>
+    {% for m in maliyetler %}
+      <tr class="{{ 'secili' if m.eksik_mi }}">
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><a href="/rota/planlar/{{ m.plan.id }}">{{ m.plan.sefer_no }}</a></td>
+        <td>{{ m.plan.plan_tarihi | tarih }}</td>
+        <td>{{ m.plan.sevkiyat_tipi }}</td>
+        <td>{{ m.plan.ic_arac_adi }}</td>
+        <td>{{ m.plan.iller_metni }}
+          {% if m.fiyat_ili %}<div class="soluk">fiyat ili: {{ m.fiyat_ili }}</div>{% endif %}
+          {% for eksik in m.eksikler %}
+            <div class="dikkat">{{ eksik }}</div>
+          {% endfor %}
+        </td>
+        <td class="sag">{{ m.satirlar | sum(attribute='desi') | sayi }}</td>
+        <td class="sag">{{ m.tarife_maliyeti | para }}</td>
+        <td class="sag">
+          {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+          <form method="post" class="satir"
+                action="/raporlama/maliyet/planlar/{{ m.plan.id }}/fiili"
+                style="gap:4px; align-items:center">
+            <input type="hidden" name="donus" value="/raporlama/maliyet/planlar?{{ sorgu }}">
+            <input name="tutar" style="width:110px; text-align:right"
+                   value="{{ m.fiili_maliyet | sayi }}" placeholder="fatura">
+            <input name="fatura_no" style="width:90px" value="{{ m.plan.fatura_no or '' }}"
+                   placeholder="fatura no">
+            <button type="submit" class="ikincil">Kaydet</button>
+          </form>
+          {% else %}{{ m.fiili_maliyet | para }}{% endif %}
+        </td>
+        <td class="sag {{ 'dikkat' if m.fark > 0 }}">
+          {{ m.fark | para_fark if m.fiili_maliyet is not none else '' }}</td>
+        <td class="soluk">{{ m.plan.nakliyeci or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">
+    Filtreye uyan iç piyasa planı yok. Maliyet yalnızca iç piyasada hesaplanır.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

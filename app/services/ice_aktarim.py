@@ -16,6 +16,7 @@ from app.models import (
     Musteri,
     SiparisDurumu,
     SiparisSatiri,
+    NakliyeTarifesi,
     Urun,
     UrunBagi,
 )
@@ -24,6 +25,10 @@ from app.services.excel import ExcelHatasi
 from app.services.veri_formatlari import (
     MUSTERI_ALANLARI,
     MUSTERI_ALIAS,
+    BUTCE_ALANLARI,
+    BUTCE_ALIAS,
+    TARIFE_ALANLARI,
+    TARIFE_ALIAS,
     URUN_BAGI_ALANLARI,
     URUN_BAGI_ALIAS,
     SIPARIS_ALANLARI,
@@ -862,4 +867,93 @@ def urun_baglarini_aktar(
 
     db.commit()
     _aktarim_kaydet(db, dosya_adi, "URUN_BAGI", sonuc, kullanici)
+    return sonuc
+
+
+def tarifeleri_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """Şehir bazlı nakliye tarifelerini topluca yükler.
+
+    Aynı anahtar (tip + il + araç + başlangıç + nakliyeci) tekrar gelirse fiyat
+    güncellenir; yeni bir başlangıç tarihi yeni tarife satırı açar, eskisi
+    geçmişteki planları maliyetlemek için durur.
+    """
+    from app.services import maliyet_servisi
+
+    _kontrol_et(dosya, TARIFE_ALANLARI, TARIFE_ALIAS)
+    kayitlar = excel.satirlari_oku(dosya, TARIFE_ALIAS, zorunlu_alanlar(TARIFE_ALANLARI))
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        il = excel.metin(kayit.get("il")) or ""
+        try:
+            baslangic = excel.tarih(kayit.get("gecerlilik_baslangic"))
+            if baslangic is None:
+                raise maliyet_servisi.MaliyetHatasi(
+                    "Geçerlilik başlangıcı okunamadı (gg.aa.yyyy bekleniyor)."
+                )
+            oncesi = db.scalar(
+                select(func.count(NakliyeTarifesi.id)).where(
+                    NakliyeTarifesi.il == il.strip().upper()
+                )
+            )
+            maliyet_servisi.tarife_kaydet(
+                db,
+                sevkiyat_tipi=excel.metin(kayit.get("sevkiyat_tipi")) or "",
+                il=il,
+                birim_fiyat=kayit.get("birim_fiyat"),
+                gecerlilik_baslangic=baslangic,
+                arac_tipi=excel.metin(kayit.get("arac_tipi")) or "",
+                gecerlilik_bitis=excel.tarih(kayit.get("gecerlilik_bitis")),
+                nakliyeci=excel.metin(kayit.get("nakliyeci")) or "",
+                para_birimi=excel.metin(kayit.get("para_birimi")) or "TRY",
+                aciklama=excel.metin(kayit.get("aciklama")) or "",
+            )
+        except maliyet_servisi.MaliyetHatasi as hata:
+            sonuc.hatalar.append(SatirHatasi(satir_no, il or "-", str(hata)))
+            continue
+        if oncesi:
+            sonuc.guncellenen += 1
+        else:
+            sonuc.eklenen += 1
+
+    db.commit()
+    _aktarim_kaydet(db, dosya_adi, "TARIFE", sonuc, kullanici)
+    return sonuc
+
+
+def butceyi_aktar(
+    db: Session, dosya: Path | Any, dosya_adi: str, kullanici: str = "sistem"
+) -> IceAktarimSonucu:
+    """Aylık bütçe ve FC satırlarını yükler. Aynı ay/senaryo/sürüm tekrar gelirse
+    tutar güncellenir — FC revizyonu böyle geçilir."""
+    from app.services import maliyet_servisi
+
+    _kontrol_et(dosya, BUTCE_ALANLARI, BUTCE_ALIAS)
+    kayitlar = excel.satirlari_oku(dosya, BUTCE_ALIAS, zorunlu_alanlar(BUTCE_ALANLARI))
+    sonuc = IceAktarimSonucu(toplam=len(kayitlar))
+
+    for kayit in kayitlar:
+        satir_no = kayit["_satir_no"]
+        anahtar = f"{kayit.get('yil')}/{kayit.get('ay')}"
+        try:
+            maliyet_servisi.butce_kaydet(
+                db,
+                yil=kayit.get("yil"),
+                ay=kayit.get("ay"),
+                senaryo=excel.metin(kayit.get("senaryo")) or "",
+                tutar=kayit.get("tutar"),
+                surum=excel.metin(kayit.get("surum")) or "",
+                sevkiyat_tipi=excel.metin(kayit.get("sevkiyat_tipi")) or "",
+                para_birimi=excel.metin(kayit.get("para_birimi")) or "TRY",
+                aciklama=excel.metin(kayit.get("aciklama")) or "",
+            )
+            sonuc.eklenen += 1
+        except maliyet_servisi.MaliyetHatasi as hata:
+            sonuc.hatalar.append(SatirHatasi(satir_no, anahtar, str(hata)))
+
+    db.commit()
+    _aktarim_kaydet(db, dosya_adi, "BUTCE", sonuc, kullanici)
     return sonuc

@@ -51,6 +51,7 @@
       <a href="/raporlama/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Tüm Siparişler</a>
       <a href="/raporlama/planlar" class="{{ 'aktif' if aktif_menu == 'planlar' }}">Tüm Planlar</a>
       <a href="/raporlama/izleme" class="{{ 'aktif' if aktif_menu == 'izleme' }}">Sipariş İzleme</a>
+      <a href="/raporlama/maliyet" class="{{ 'aktif' if aktif_menu and aktif_menu.startswith('maliyet') }}">Maliyet Yönetimi</a>
     {% elif aktif_modul == 'YONETIM' %}
       <a href="/yonetim/kullanicilar" class="{{ 'aktif' if aktif_menu == 'kullanicilar' }}">Kullanıcılar</a>
       <a href="/veri-yonetimi" class="{{ 'aktif' if aktif_menu == 'veri' }}">Veri Yönetimi</a>

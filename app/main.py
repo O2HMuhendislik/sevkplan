@@ -68,6 +68,7 @@ from app.services import (
     ihracat_yukleme_formu,
     istif_servisi,
     kullanici_servisi,
+    maliyet_servisi,
     marka,
     masterdata_servisi,
     musteri_ek_bilgi,
@@ -143,6 +144,35 @@ def _sayi(deger) -> str:
 
 
 sablon_motoru.env.filters["sayi"] = _sayi
+
+
+def _para(deger) -> str:
+    """Türkçe para biçimi: 1.234.567,89. Boş değer '—' yazar.
+
+    Maliyet ekranlarında sıfır ile "veri yok" ayrı şeyler: tarifesi olmayan bir
+    planın maliyeti sıfır değil, bilinmiyordur.
+    """
+    if deger is None:
+        return "—"
+    tutar = Decimal(deger).quantize(Decimal("0.01"))
+    tam, _, kurus = format(abs(tutar), "f").partition(".")
+    basamakli = f"{int(tam):,}".replace(",", ".")
+    isaret = "-" if tutar < 0 else ""
+    return f"{isaret}{basamakli},{kurus}"
+
+
+def _para_fark(deger) -> str:
+    """Sapma: artı işareti bilerek yazılır — bütçe aşımı gözden kaçmasın."""
+    if deger is None:
+        return "—"
+    tutar = Decimal(deger)
+    if tutar == 0:
+        return "0,00"
+    return ("+" if tutar > 0 else "") + _para(tutar)
+
+
+sablon_motoru.env.filters["para"] = _para
+sablon_motoru.env.filters["para_fark"] = _para_fark
 
 
 # ------------------------------------------------------------------ istisna işleme
@@ -236,6 +266,22 @@ MD_DUZENLEME = modul_yetkisi("MASTERDATA", duzenleme=True)
 def _sorgu_metni(**alanlar: str) -> str:
     """Filtreyi indirme bağlantısına taşır: ekranda görülen liste = inen dosya."""
     return urlencode({ad: deger for ad, deger in alanlar.items() if deger})
+
+
+def _aktarim_mesaji(baslik: str, sonuc) -> str:
+    """İçe aktarım özeti + ilk hataların sebebi.
+
+    Yalnızca "12 hatalı" yazmak kullanıcıya dosyanın neden reddedildiğini
+    söylemiyordu; ilk üç sebep mesaja eklenir.
+    """
+    mesaj = f"{baslik}: {sonuc.ozet()}"
+    if not sonuc.hatalar:
+        return mesaj
+    ornekler = "; ".join(f"satır {h.satir_no}: {h.mesaj}" for h in sonuc.hatalar[:3])
+    mesaj += f" — {ornekler}"
+    if len(sonuc.hatalar) > 3:
+        mesaj += f" (+{len(sonuc.hatalar) - 3} hata daha)"
+    return mesaj
 
 
 def plan_getir(db: Session, plan_id: int) -> SevkiyatPlani:
@@ -2963,14 +3009,340 @@ async def md_urun_baglari_yukle(
     except ExcelHatasi as hata:
         db.rollback()
         return yonlendir(BAG_YOLU, hata=str(hata))
-    mesaj = f"Ürün bağı aktarımı: {sonuc.ozet()}"
-    if sonuc.hatalar:
-        # En sık hata "ürün master datada yok"; sebebi görünmezse kullanıcı
-        # dosyanın neden reddedildiğini anlamıyor.
-        ornekler = "; ".join(
-            f"satır {h.satir_no}: {h.mesaj}" for h in sonuc.hatalar[:3]
+    return yonlendir(BAG_YOLU, mesaj=_aktarim_mesaji("Ürün bağı aktarımı", sonuc))
+
+
+# ------------------------------------------------------------- maliyet yönetimi
+MALIYET_YOLU = "/raporlama/maliyet"
+RAPOR_YETKI = modul_yetkisi("RAPORLAMA")
+RAPOR_DUZENLEME = modul_yetkisi("RAPORLAMA", duzenleme=True)
+
+
+def _maliyet_araligi(baslangic: str, bitis: str) -> tuple[date | None, date | None]:
+    ilk = datetime.strptime(baslangic, "%Y-%m-%d").date() if baslangic else None
+    son = datetime.strptime(bitis, "%Y-%m-%d").date() if bitis else None
+    return ilk, son
+
+
+@uygulama.get(MALIYET_YOLU)
+def maliyet_ozet(
+    istek: Request,
+    yil: int = 0,
+    fc: str = "",
+    kullanici: Kullanici = Depends(RAPOR_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bütçe / FC / gerçekleşen karşılaştırması: aylık ve YTD."""
+    yillar = maliyet_servisi.butce_yillari(db) or [date.today().year]
+    secili_yil = yil or yillar[0]
+    surumler = maliyet_servisi.fc_surumleri(db, secili_yil)
+    secili_fc = fc or (surumler[0] if surumler else "")
+    karsilastirma = maliyet_servisi.butce_karsilastirmasi(db, secili_yil, secili_fc)
+    maliyetler = maliyet_servisi.plan_maliyetleri(
+        db, baslangic=date(secili_yil, 1, 1), bitis=date(secili_yil, 12, 31)
+    )
+    return sayfa(
+        istek,
+        "maliyet_ozet.html",
+        kullanici,
+        karsilastirma=karsilastirma,
+        ozet=maliyet_servisi.ozet(maliyetler),
+        tipler=maliyet_servisi.tip_ozeti(maliyetler),
+        yillar=yillar,
+        secili_yil=secili_yil,
+        surumler=surumler,
+        secili_fc=secili_fc,
+    )
+
+
+@uygulama.get(MALIYET_YOLU + "/planlar")
+def maliyet_planlari(
+    istek: Request,
+    baslangic: str = "",
+    bitis: str = "",
+    tip: str = "",
+    il: str = "",
+    kullanici: Kullanici = Depends(RAPOR_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Araç (plan) bazlı maliyet; fiili fatura tutarı buradan girilir."""
+    ilk, son = _maliyet_araligi(baslangic, bitis)
+    maliyetler = maliyet_servisi.plan_maliyetleri(
+        db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+    )
+    return sayfa(
+        istek,
+        "maliyet_planlar.html",
+        kullanici,
+        maliyetler=maliyetler[:EKRAN_LIMITI],
+        toplam=len(maliyetler),
+        ekran_limiti=EKRAN_LIMITI,
+        ozet=maliyet_servisi.ozet(maliyetler),
+        baslangic=baslangic,
+        bitis=bitis,
+        tip=tip,
+        il=il,
+        tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+        sorgu=_sorgu_metni(baslangic=baslangic, bitis=bitis, tip=tip, il=il),
+    )
+
+
+@uygulama.post(MALIYET_YOLU + "/planlar/{plan_id}/fiili")
+def maliyet_fiili_kaydet(
+    plan_id: int,
+    tutar: str = Form(""),
+    fatura_no: str = Form(""),
+    maliyet_notu: str = Form(""),
+    donus: str = Form(MALIYET_YOLU + "/planlar"),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        plan = maliyet_servisi.fiili_maliyet_kaydet(
+            db, plan_id, tutar, fatura_no, maliyet_notu
         )
-        mesaj += f" — {ornekler}"
-        if len(sonuc.hatalar) > 3:
-            mesaj += f" (+{len(sonuc.hatalar) - 3} hata daha)"
-    return yonlendir(BAG_YOLU, mesaj=mesaj)
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(donus, hata=str(hata))
+    return yonlendir(donus, mesaj=f"{plan.sefer_no} fatura tutarı kaydedildi.")
+
+
+@uygulama.get(MALIYET_YOLU + "/kirilim")
+def maliyet_kirilimi(
+    istek: Request,
+    boyut: str = "MUSTERI",
+    baslangic: str = "",
+    bitis: str = "",
+    tip: str = "",
+    il: str = "",
+    kullanici: Kullanici = Depends(RAPOR_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Müşteri / ürün / sipariş / teslimat / il bazında maliyet.
+
+    Hepsi aynı satır maliyetlerinden çıkar; toplamları birbirini ve plan
+    listesini tutar.
+    """
+    ilk, son = _maliyet_araligi(baslangic, bitis)
+    maliyetler = maliyet_servisi.plan_maliyetleri(
+        db, baslangic=ilk, bitis=son, sevkiyat_tipi=tip, il=il
+    )
+    try:
+        satirlar = maliyet_servisi.kirilim(maliyetler, boyut)
+    except maliyet_servisi.MaliyetHatasi as hata:
+        return yonlendir(MALIYET_YOLU + "/kirilim", hata=str(hata))
+    return sayfa(
+        istek,
+        "maliyet_kirilim.html",
+        kullanici,
+        satirlar=satirlar,
+        boyut=boyut,
+        boyutlar=[(kod, ad) for kod, (ad, _) in maliyet_servisi.BOYUTLAR.items()],
+        boyut_adi=maliyet_servisi.BOYUTLAR[boyut][0],
+        ozet=maliyet_servisi.ozet(maliyetler),
+        baslangic=baslangic,
+        bitis=bitis,
+        tip=tip,
+        il=il,
+        tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+        sorgu=_sorgu_metni(
+            boyut=boyut, baslangic=baslangic, bitis=bitis, tip=tip, il=il
+        ),
+    )
+
+
+@uygulama.get(MALIYET_YOLU + "/tarifeler")
+def maliyet_tarifeleri(
+    istek: Request,
+    tip: str = "",
+    il: str = "",
+    arama: str = "",
+    kullanici: Kullanici = Depends(RAPOR_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    return sayfa(
+        istek,
+        "maliyet_tarifeler.html",
+        kullanici,
+        tarifeler=maliyet_servisi.tarife_satirlari(db, tip, il, arama),
+        tip=tip,
+        il=il,
+        arama=arama,
+        tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+        ftl_kurali=maliyet_servisi.ftl_il_kurali(db),
+        ftl_secenekleri=maliyet_servisi.FTL_IL_SECENEKLERI,
+        sorgu=_sorgu_metni(tip=tip, il=il, arama=arama),
+    )
+
+
+@uygulama.post(MALIYET_YOLU + "/tarifeler/kaydet")
+def maliyet_tarife_kaydet(
+    sevkiyat_tipi: str = Form(...),
+    il: str = Form(...),
+    arac_tipi: str = Form(""),
+    birim_fiyat: str = Form(...),
+    gecerlilik_baslangic: str = Form(...),
+    gecerlilik_bitis: str = Form(""),
+    nakliyeci: str = Form(""),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        ilk, son = _maliyet_araligi(gecerlilik_baslangic, gecerlilik_bitis)
+        maliyet_servisi.tarife_kaydet(
+            db, sevkiyat_tipi=sevkiyat_tipi, il=il, birim_fiyat=birim_fiyat,
+            gecerlilik_baslangic=ilk, arac_tipi=arac_tipi,
+            gecerlilik_bitis=son, nakliyeci=nakliyeci, aciklama=aciklama,
+        )
+        db.commit()
+    except (maliyet_servisi.MaliyetHatasi, ValueError) as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj=f"{il.upper()} tarifesi kaydedildi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/tarifeler/{tarife_id}/sil")
+def maliyet_tarife_sil(
+    tarife_id: int,
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        maliyet_servisi.tarifeyi_sil(db, tarife_id)
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj="Tarife silindi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/tarifeler/kural")
+def maliyet_ftl_kurali(
+    kural: str = Form(...),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Çok illi FTL planında sefer fiyatının hangi ilden okunacağı."""
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        maliyet_servisi.ftl_il_kurali_kaydet(db, kural)
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(
+        hedef, mesaj=f"FTL fiyat ili: {maliyet_servisi.FTL_IL_SECENEKLERI[kural]}"
+    )
+
+
+@uygulama.post(MALIYET_YOLU + "/tarifeler/yukle")
+async def maliyet_tarife_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/tarifeler"
+    try:
+        sonuc = ice_aktarim.tarifeleri_aktar(
+            db, dosya.file, dosya.filename or "tarifeler.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj=_aktarim_mesaji("Tarife aktarımı", sonuc))
+
+
+@uygulama.get(MALIYET_YOLU + "/tarifeler/sablon")
+def maliyet_tarife_sablonu(kullanici: Kullanici = Depends(RAPOR_YETKI)):
+    hedef = sablonlar.tarife_sablonu(CIKTI_DIZIN / "nakliye_tarifesi_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)
+
+
+@uygulama.get(MALIYET_YOLU + "/butce")
+def maliyet_butcesi(
+    istek: Request,
+    yil: int = 0,
+    kullanici: Kullanici = Depends(RAPOR_YETKI),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    yillar = maliyet_servisi.butce_yillari(db)
+    return sayfa(
+        istek,
+        "maliyet_butce.html",
+        kullanici,
+        kalemler=maliyet_servisi.butce_satirlari(db, yil or None),
+        yillar=yillar,
+        secili_yil=yil,
+        aylar=list(enumerate(maliyet_servisi.AY_ADLARI, start=1)),
+        tipler=sorted(maliyet_servisi.SEFER_TIPLERI | maliyet_servisi.DESI_TIPLERI),
+    )
+
+
+@uygulama.post(MALIYET_YOLU + "/butce/kaydet")
+def maliyet_butce_kaydet(
+    yil: str = Form(...),
+    ay: str = Form(...),
+    senaryo: str = Form(...),
+    tutar: str = Form(...),
+    surum: str = Form(""),
+    sevkiyat_tipi: str = Form(""),
+    aciklama: str = Form(""),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/butce"
+    try:
+        maliyet_servisi.butce_kaydet(
+            db, yil=yil, ay=ay, senaryo=senaryo, tutar=tutar,
+            surum=surum, sevkiyat_tipi=sevkiyat_tipi, aciklama=aciklama,
+        )
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj="Bütçe kalemi kaydedildi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/butce/{kalem_id}/sil")
+def maliyet_butce_sil(
+    kalem_id: int,
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/butce"
+    try:
+        maliyet_servisi.butceyi_sil(db, kalem_id)
+        db.commit()
+    except maliyet_servisi.MaliyetHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj="Bütçe kalemi silindi.")
+
+
+@uygulama.post(MALIYET_YOLU + "/butce/yukle")
+async def maliyet_butce_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    hedef = MALIYET_YOLU + "/butce"
+    try:
+        sonuc = ice_aktarim.butceyi_aktar(
+            db, dosya.file, dosya.filename or "butce.xlsx", kullanici.kullanici_adi
+        )
+        db.commit()
+    except ExcelHatasi as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj=_aktarim_mesaji("Bütçe aktarımı", sonuc))
+
+
+@uygulama.get(MALIYET_YOLU + "/butce/sablon")
+def maliyet_butce_sablonu(kullanici: Kullanici = Depends(RAPOR_YETKI)):
+    hedef = sablonlar.butce_sablonu(CIKTI_DIZIN / "butce_sablonu.xlsx")
+    return FileResponse(hedef, filename=hedef.name)

@@ -1,0 +1,151 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'maliyet_tarifeler' %}
+{% block icerik %}
+<h1>Nakliye Tarifeleri</h1>
+{% include "maliyet_sekmeler.html" %}
+
+<div class="kart">
+  <h2>Tarife nasıl kurulur?</h2>
+  <p class="soluk">
+    <b>FTL</b> il ve araç tipi (tır/kamyon) başına <b>sefer fiyatıyla</b>,
+    <b>rutin (parsiyel)</b> ve <b>kargo</b> il başına <b>birim desi fiyatıyla</b>
+    fiyatlanır. Parsiyel ve kargo satırlarında araç tipi boş bırakılır — fiyat araca
+    değil desiye bağlıdır.
+  </p>
+  <p class="soluk" style="margin-bottom:0">
+    <b>Geçerlilik tarihi zorunlu.</b> Tarife yıl içinde yenileniyor; her plan
+    <b>kendi plan tarihinde</b> geçerli olan fiyatla maliyetlenir, yoksa bütçe
+    karşılaştırması anlamını yitirir. Bitiş boş bırakılırsa tarife hâlâ yürürlüktedir.
+    Nakliyeci doldurulursa tarife yalnızca o nakliyecinin planlarına uygulanır.
+  </p>
+</div>
+
+<div class="kart">
+  <h2>Çok illi FTL planında fiyat hangi ilden okunur?</h2>
+  <p class="soluk">
+    Bir tam araç birden çok ile uğrayabiliyor. Nakliyeci genelde rotanın en uzak
+    noktasına göre fiyat verdiği için varsayılan <b>en uzak il</b>. Sizin
+    sözleşmeniz farklı çalışıyorsa burada değiştirin.
+  </p>
+  <form class="satir" method="post" action="/raporlama/maliyet/tarifeler/kural">
+    <div><label for="kural">Fiyat ili kuralı</label>
+      <select id="kural" name="kural" style="min-width:300px">
+        {% for kod, ad in ftl_secenekleri.items() %}
+        <option value="{{ kod }}" {{ 'selected' if ftl_kurali == kod }}>{{ ad }}</option>
+        {% endfor %}
+      </select></div>
+    <button type="submit">Kaydet</button>
+  </form>
+</div>
+
+{% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+<div class="kart">
+  <h2>Yeni tarife</h2>
+  <form class="satir" method="post" action="/raporlama/maliyet/tarifeler/kaydet">
+    <div><label for="sevkiyat_tipi">Sevkiyat tipi</label>
+      <select id="sevkiyat_tipi" name="sevkiyat_tipi">
+        {% for t in tipler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
+    <div><label for="il_y">İl</label>
+      <input id="il_y" name="il" required style="width:150px" placeholder="IZMIR"></div>
+    <div><label for="arac_tipi">Araç tipi</label>
+      <select id="arac_tipi" name="arac_tipi">
+        <option value="">— (parsiyel / kargo)</option>
+        <option value="TIR">TIR</option>
+        <option value="KAMYON">KAMYON</option>
+      </select></div>
+    <div><label for="birim_fiyat">Birim fiyat</label>
+      <input id="birim_fiyat" name="birim_fiyat" required style="width:120px"
+             placeholder="42500"></div>
+    <div><label for="gecerlilik_baslangic">Başlangıç</label>
+      <input type="date" id="gecerlilik_baslangic" name="gecerlilik_baslangic"
+             required value="{{ bugun }}"></div>
+    <div><label for="gecerlilik_bitis">Bitiş</label>
+      <input type="date" id="gecerlilik_bitis" name="gecerlilik_bitis"></div>
+    <div><label for="nakliyeci">Nakliyeci</label>
+      <input id="nakliyeci" name="nakliyeci" style="width:150px" placeholder="(genel)"></div>
+    <button type="submit">Ekle</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>Excel</h2>
+  <p class="soluk">
+    Tarife listesi il il elle girilemeyecek kadar uzunsa şablonu indirip doldurun.
+    Aynı anahtar (tip + il + araç + başlangıç + nakliyeci) tekrar gelirse fiyat
+    güncellenir; <b>yeni bir başlangıç tarihi yeni tarife satırı açar</b> ve eskisi
+    geçmiş planları maliyetlemek için durur.
+  </p>
+  <form class="satir" method="post" action="/raporlama/maliyet/tarifeler/yukle"
+        enctype="multipart/form-data">
+    <div><label for="dosya">Excel dosyası</label>
+      <input id="dosya" type="file" name="dosya" accept=".xlsx" required></div>
+    <button type="submit">Yükle</button>
+    <a class="dugme ikincil" href="/raporlama/maliyet/tarifeler/sablon">Boş şablon</a>
+  </form>
+</div>
+{% endif %}
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/maliyet/tarifeler"
+        style="margin-bottom:14px">
+    <div><label for="tip">Sevkiyat tipi</label>
+      <select id="tip" name="tip">
+        <option value="">Tümü</option>
+        {% for t in tipler %}
+        <option value="{{ t }}" {{ 'selected' if tip == t }}>{{ t }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="il">İl</label>
+      <input id="il" name="il" value="{{ il }}" style="width:150px"></div>
+    <div><label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ arama }}" style="width:240px"
+             placeholder="İl, nakliyeci, açıklama"></div>
+    <button type="submit">Filtrele</button>
+    <a class="dugme ikincil" href="/raporlama/maliyet/tarifeler">Temizle</a>
+  </form>
+
+  {% if tarifeler %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Tip</th><th>İl</th><th>Araç</th>
+      <th class="sag">Birim fiyat</th><th>Birim</th>
+      <th>Geçerlilik</th><th>Nakliyeci</th>
+      {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for t in tarifeler %}
+      <tr class="{{ '' if t.yururlukte else 'soluk' }}">
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><span class="rozet {{ 'TAMAMLANDI' if t.sevkiyat_tipi == 'FTL' else 'PLANLANDI' }}">
+          {{ t.sevkiyat_tipi }}</span></td>
+        <td><b>{{ t.il }}</b></td>
+        <td>{{ t.arac_tipi }}</td>
+        <td class="sag"><b>{{ t.birim_fiyat | para }}</b> {{ t.para_birimi }}</td>
+        <td>{{ 'sefer' if t.birim == 'SEFER' else 'desi' }}</td>
+        <td>{{ t.gecerlilik_baslangic | tarih }} —
+          {{ t.gecerlilik_bitis | tarih if t.gecerlilik_bitis else 'süresiz' }}
+          {% if not t.yururlukte %}<span class="rozet IPTAL">YÜRÜRLÜKTE DEĞİL</span>{% endif %}
+        </td>
+        <td class="soluk">{{ t.nakliyeci or 'genel' }}</td>
+        {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+        <td>
+          <form method="post" action="/raporlama/maliyet/tarifeler/{{ t.id }}/sil"
+                onsubmit="return confirm('Bu tarife silinsin mi?')">
+            <button type="submit" class="ikincil">Sil</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">
+    Henüz tarife tanımlanmadı. FTL için şehir bazlı tır/kamyon sefer fiyatlarını,
+    parsiyel için şehir bazlı birim desi fiyatlarını girin.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

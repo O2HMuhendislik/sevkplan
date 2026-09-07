@@ -179,6 +179,46 @@ URUN_BAGI_ALANLARI: tuple[Alan, ...] = (
          ("Not", "Aciklama")),
 )
 
+TARIFE_ALANLARI: tuple[Alan, ...] = (
+    Alan("sevkiyat_tipi", "Sevkiyat Tipi", True,
+         "FTL / RUTIN / KARGO. FTL sefer fiyatıyla, rutin ve kargo birim desiyle "
+         "fiyatlanır. Ring'de maliyet yoktur.", "FTL", ("Tip", "Sevk Tipi")),
+    Alan("il", "İl", True, "Fiyatın geçerli olduğu il.", "IZMIR", ("Sehir", "Şehir")),
+    Alan("arac_tipi", "Araç Tipi", False,
+         "TIR / KAMYON. Yalnızca FTL satırlarında doldurulur; parsiyel ve kargoda boş.",
+         "TIR", ("Arac", "Araç")),
+    Alan("birim_fiyat", "Birim Fiyat", True,
+         "FTL'de bir seferin bedeli, rutin/kargoda bir desinin bedeli.", 42500,
+         ("Fiyat", "Tutar", "Birim Ucret", "Birim Ücret")),
+    Alan("gecerlilik_baslangic", "Geçerlilik Başlangıç", True,
+         "Tarifenin yürürlüğe girdiği tarih. Plan kendi tarihinde geçerli olan "
+         "fiyatla maliyetlenir.", "01.01.2026", ("Baslangic", "Başlangıç")),
+    Alan("gecerlilik_bitis", "Geçerlilik Bitiş", False,
+         "Boş bırakılırsa tarife hâlâ yürürlüktedir.", None, ("Bitis", "Bitiş")),
+    Alan("nakliyeci", "Nakliyeci", False,
+         "Doluysa yalnızca o nakliyecinin planlarına uygulanır; boş satır geneldir.",
+         None, ("Tasiyici", "Taşıyıcı")),
+    Alan("para_birimi", "Para Birimi", False, "Boş bırakılırsa TRY.", "TRY", ("Doviz",)),
+    Alan("aciklama", "Açıklama", False, "Serbest not.", None, ("Not",)),
+)
+
+BUTCE_ALANLARI: tuple[Alan, ...] = (
+    Alan("yil", "Yıl", True, "Bütçe yılı.", 2026, ("Yil", "Year")),
+    Alan("ay", "Ay", True, "1-12 arası ay numarası.", 3, ("Month",)),
+    Alan("senaryo", "Senaryo", True,
+         "BUTCE = yıl başında onaylanan bütçe, FC = yıl içinde revize edilen tahmin.",
+         "BUTCE", ("Tip", "Scenario")),
+    Alan("surum", "Sürüm", False,
+         "FC sürümü (FC1, FC2 ...). Bütçe satırlarında boş bırakılır.", None,
+         ("Versiyon", "Version")),
+    Alan("sevkiyat_tipi", "Sevkiyat Tipi", False,
+         "FTL / RUTIN / KARGO kırılımı. Boş bırakılırsa satır ayın toplamıdır; "
+         "aynı ay için hem toplam hem kırılım girilmez.", None, ("Tip",)),
+    Alan("tutar", "Tutar", True, "Aylık nakliye tutarı.", 1850000, ("Bütçe", "Butce")),
+    Alan("para_birimi", "Para Birimi", False, "Boş bırakılırsa TRY.", "TRY", ("Doviz",)),
+    Alan("aciklama", "Açıklama", False, "Serbest not.", None, ("Not",)),
+)
+
 SIPARIS_ALANLARI: tuple[Alan, ...] = (
     Alan("siparis_no", "Sipariş No", True, "Sipariş başlık numarası.", 2010421633,
          ("Siparis No", "Talep Numarası", "Belge No", "Order No")),
@@ -380,6 +420,8 @@ URUN_ALIAS = alias_haritasi(URUN_ALANLARI)
 SIPARIS_ALIAS = alias_haritasi(SIPARIS_ALANLARI)
 MUSTERI_ALIAS = alias_haritasi(MUSTERI_ALANLARI)
 URUN_BAGI_ALIAS = alias_haritasi(URUN_BAGI_ALANLARI)
+TARIFE_ALIAS = alias_haritasi(TARIFE_ALANLARI)
+BUTCE_ALIAS = alias_haritasi(BUTCE_ALANLARI)
 IHRACAT_SIPARIS_ALIAS = alias_haritasi(IHRACAT_SIPARIS_ALANLARI)
 IHRACAT_MUSTERI_ALIAS = alias_haritasi(IHRACAT_MUSTERI_ALANLARI)
 IHRACAT_URUN_ALIAS = alias_haritasi(IHRACAT_URUN_ALANLARI)

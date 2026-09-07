@@ -1,0 +1,116 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'RAPORLAMA' %}
+{% set aktif_menu = 'maliyet_butce' %}
+{% block icerik %}
+<h1>Bütçe ve FC Girişi</h1>
+{% include "maliyet_sekmeler.html" %}
+
+<div class="kart">
+  <h2>Nasıl çalışır?</h2>
+  <p class="soluk">
+    <b>BUTCE</b> yıl başında onaylanan bütçedir, sürümü yoktur. <b>FC</b> yıl içinde
+    revize edilen tahmindir ve sürüm adı ister (FC1, FC2 ...); karşılaştırma
+    ekranında hangi sürüme bakacağınızı seçersiniz.
+  </p>
+  <p class="soluk" style="margin-bottom:0">
+    Sevkiyat tipi <b>boş bırakılırsa satır ayın toplamıdır</b>; doldurulursa
+    kırılımdır. Bir ay için ikisini birden girmeyin — toplam satırı varsa kırılım
+    satırları yok sayılır, yoksa maliyet iki kez sayılırdı.
+  </p>
+</div>
+
+{% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+<div class="kart">
+  <h2>Yeni kalem</h2>
+  <form class="satir" method="post" action="/raporlama/maliyet/butce/kaydet">
+    <div><label for="yil_y">Yıl</label>
+      <input id="yil_y" name="yil" required style="width:90px" value="{{ bugun.year }}"></div>
+    <div><label for="ay_y">Ay</label>
+      <select id="ay_y" name="ay">
+        {% for no, ad in aylar %}
+        <option value="{{ no }}" {{ 'selected' if no == bugun.month }}>{{ ad }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="senaryo">Senaryo</label>
+      <select id="senaryo" name="senaryo">
+        <option value="BUTCE">BUTCE</option>
+        <option value="FC">FC</option>
+      </select></div>
+    <div><label for="surum">Sürüm</label>
+      <input id="surum" name="surum" style="width:100px" placeholder="FC1"></div>
+    <div><label for="sevkiyat_tipi">Sevkiyat tipi</label>
+      <select id="sevkiyat_tipi" name="sevkiyat_tipi">
+        <option value="">Ay toplamı</option>
+        {% for t in tipler %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select></div>
+    <div><label for="tutar">Tutar</label>
+      <input id="tutar" name="tutar" required style="width:140px" placeholder="1850000"></div>
+    <button type="submit">Kaydet</button>
+  </form>
+</div>
+
+<div class="kart">
+  <h2>Excel</h2>
+  <p class="soluk">
+    Bütün yılı tek dosyada yükleyin. Aynı ay/senaryo/sürüm tekrar gelirse tutar
+    güncellenir — FC revizyonu böyle geçilir.
+  </p>
+  <form class="satir" method="post" action="/raporlama/maliyet/butce/yukle"
+        enctype="multipart/form-data">
+    <div><label for="dosya">Excel dosyası</label>
+      <input id="dosya" type="file" name="dosya" accept=".xlsx" required></div>
+    <button type="submit">Yükle</button>
+    <a class="dugme ikincil" href="/raporlama/maliyet/butce/sablon">Boş şablon</a>
+  </form>
+</div>
+{% endif %}
+
+<div class="kart">
+  <form class="satir" method="get" action="/raporlama/maliyet/butce"
+        style="margin-bottom:14px">
+    <div><label for="yil">Yıl</label>
+      <select id="yil" name="yil">
+        <option value="0">Tümü</option>
+        {% for y in yillar %}
+        <option value="{{ y }}" {{ 'selected' if y == secili_yil }}>{{ y }}</option>
+        {% endfor %}
+      </select></div>
+    <button type="submit">Filtrele</button>
+  </form>
+
+  {% if kalemler %}
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Yıl</th><th>Ay</th><th>Senaryo</th><th>Sürüm</th>
+      <th>Kırılım</th><th class="sag">Tutar</th><th>Açıklama</th>
+      {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}<th></th>{% endif %}
+    </tr></thead>
+    <tbody>
+    {% for k in kalemler %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td>{{ k.yil }}</td>
+        <td>{{ k.ay_adi }}</td>
+        <td><span class="rozet {{ 'TAMAMLANDI' if k.senaryo == 'BUTCE' else 'PLANLANDI' }}">
+          {{ k.senaryo }}</span></td>
+        <td>{{ k.surum }}</td>
+        <td>{{ k.sevkiyat_tipi or 'ay toplamı' }}</td>
+        <td class="sag"><b>{{ k.tutar | para }}</b> {{ k.para_birimi }}</td>
+        <td class="soluk">{{ k.aciklama }}</td>
+        {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+        <td>
+          <form method="post" action="/raporlama/maliyet/butce/{{ k.id }}/sil"
+                onsubmit="return confirm('Bu kalem silinsin mi?')">
+            <button type="submit" class="ikincil">Sil</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="bos">Henüz bütçe kalemi girilmedi.</div>
+  {% endif %}
+</div>
+{% endblock %}

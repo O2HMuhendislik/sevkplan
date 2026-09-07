@@ -161,6 +161,7 @@ Azure seçeneği ve nakliyeci erişimi için → [`docs/SUNUCU-KURULUMU.md`](doc
 | **Bekleyenler** | Plana giremeyen sipariş satırları, satır satır gerekçesiyle; üç modülde de var |
 | **Manuel Planlama** | Beklemedeki teslimatları filtreleyip **seçerek** planlama; üç modülde de var |
 | **Araç İçi Yerleşim** | Planın palet palet yerleşimi: üstten, yandan ve 3B görünüş + yükleme sırası. **İç piyasa ve ihracatta var, ring'de yok** — ring planı tek üründür ve tek noktaya boşaltılır |
+| **Maliyet Yönetimi** (`/raporlama/maliyet`) | Bütçe / FC / gerçekleşen karşılaştırması (aylık + YTD), araç bazlı maliyet ve fatura girişi, müşteri / ürün / sipariş / teslimat / il kırılımı, şehir bazlı nakliye tarifeleri. **İç piyasada; ring'de nakliye bedeli yok** |
 | **Sipariş İzleme** (`/raporlama/izleme`) | Sipariş veya teslimat numarasıyla uçtan uca geçmiş sorgulama. Sorgu **bütün modüllerde** aradığı için Raporlama modülünde durur (eski adres `/ring/izleme`) |
 | **Veri Yönetimi** | Kurumsal logo yükleme; seçerek veri silme: planlanmamış siparişler, planlar, tümü |
 | **Kullanıcılar** | Kullanıcı açma, rol ve modül yetkisi verme, parola sıfırlama |
@@ -481,6 +482,75 @@ Ayrıntı ve verinin doğrulaması: [`docs/IC-PIYASA-ANALIZ.md`](docs/IC-PIYASA-
 * **Uzun metinler kendi kutusuna sarılır.** Kırmızı hasar/HİT uyarısı ile ihracat
   formundaki müşteri notu birleştirilmiş, `wrap_text` verilmiş kutulardır; satır
   yüksekliği metne göre ayarlanır, böylece yazı komşu hücrelerin altında kalmaz.
+
+## Maliyet yönetimi
+
+Raporlama modülünün altında beş ekran: **Bütçe / FC / Gerçekleşen**, **Araç Bazlı**,
+**Kırılım**, **Tarifeler** ve **Bütçe ve FC Girişi**.
+
+**Kapsam iç piyasadır.** Ring planlarında nakliye bedeli yoktur — ring kendi
+deposundan çıkan bir iç sevkiyattır, nakliyeciye sefer bedeli ödenmez. İhracat
+sonraki adım.
+
+### Tarife
+
+| Sevkiyat tipi | Fiyatlama | Anahtar |
+|---|---|---|
+| **FTL** | Sefer başına sabit fiyat | il + araç tipi (tır / kamyon) |
+| **Rutin (parsiyel)** | Birim desi fiyatı | il |
+| **Kargo** | Birim desi fiyatı | il |
+
+Parsiyel ve kargo satırlarında araç tipi **boş bırakılır**: fiyat araca değil desiye
+bağlıdır, araç tipi yazılırsa tarife bulunamaz hâle gelir (sistem bunu kendisi
+temizler).
+
+**Geçerlilik tarihi zorunludur.** Tarife yıl içinde yenileniyor ve her plan **kendi
+plan tarihinde** geçerli olan fiyatla maliyetlenir; yoksa bütçe karşılaştırması
+anlamını yitirir. Yeni bir başlangıç tarihi yeni tarife satırı açar, eskisi geçmiş
+planları maliyetlemek için durur. Nakliyeci doldurulursa tarife yalnızca o
+nakliyecinin planlarına uygulanır; boş satır geneldir.
+
+### Hesap satır bazında yapılır
+
+Maliyet önce **sipariş satırına** düşer, sonra yukarı toplanır. Araç, sipariş, ürün,
+teslimat ve müşteri kırılımları bu yüzden aynı kaynaktan çıkar ve **toplamları
+birbirini tutar** — beş ayrı hesap yazılsaydı tutmazdı.
+
+* **FTL** — sefer bedeli tek parçadır ve satırlara **desi payına göre** dağıtılır.
+  Yuvarlama artığını son satır üstlenir, böylece parçaların toplamı her zaman sefer
+  bedeline eşittir. Ürün ölçüsü hiç yoksa adet payı kullanılır.
+* **Rutin / kargo** — dağıtım gerekmez: her müşterinin kendi ili ve kendi desisi
+  vardır, satır maliyeti doğrudan çıkar.
+
+**Çok illi FTL planında fiyat hangi ilden okunur?** Bir tam araç birden çok ile
+uğrayabiliyor (gerçek veride FTL başına ortalama 1,55 il). Nakliyeci genelde rotanın
+en uzak noktasına göre fiyat verdiği için varsayılan **en uzak il** — `iller_metni`
+yakından uzağa yazılır, sonuncusu en uzaktır. Sözleşme farklı çalışıyorsa Tarifeler
+ekranından **son uğrak** ya da **baskın il** seçilebilir.
+
+### Gerçekleşen iki katmanlıdır
+
+Tarifeden hesaplanan tutar **beklenen** maliyettir. Plana `fiili_maliyet` (nakliyeci
+faturası) girilirse **gerçekleşen** odur ve aradaki fark ayrıca raporlanır: bekleme,
+ek durak ve yakıt farkı buradan görünür. Fatura girilen planlarda kırılım payları
+fatura oranıyla ölçeklenir, böylece kırılım toplamı gerçekleşeni tutar.
+
+Tarifesi bulunamayan il maliyeti **sıfır saymaz**: plan "eksik hesaplandı" diye
+işaretlenir ve hangi ilin tarifesinin eksik olduğu satır satır yazılır. Sıfır ile
+"bilinmiyor" ayrı şeylerdir.
+
+### Bütçe ve FC
+
+`BUTCE` yıl başında onaylanan bütçedir, sürümü yoktur. `FC` yıl içinde revize edilen
+tahmindir ve sürüm adı ister (FC1, FC2 ...); karşılaştırma ekranında hangi sürüme
+bakılacağı seçilir.
+
+Sevkiyat tipi boş bırakılan satır **ayın toplamıdır**, doldurulan satır kırılımdır.
+Bir ay için ikisi birden girilirse toplam satırı kazanır — ikisini toplamak maliyeti
+iki kez sayardı.
+
+**YTD yılbaşından bugüne kümülatiftir**; gelecek aylar YTD'ye girmez, yoksa henüz
+gerçekleşmemiş aylar sapmayı olduğundan kötü gösterirdi.
 
 ## Araç içi yerleşim (istif) planı
 

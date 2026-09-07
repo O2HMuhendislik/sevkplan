@@ -12,11 +12,13 @@ from openpyxl.styles import Alignment, Font
 from app.services.excel import sayfa_yaz, yeni_kitap
 from app.services.veri_formatlari import (
     Alan,
+    BUTCE_ALANLARI,
     IHRACAT_MUSTERI_ALANLARI,
     IHRACAT_URUN_ALANLARI,
     IHRACAT_SIPARIS_ALANLARI,
     MUSTERI_ALANLARI,
     SIPARIS_ALANLARI,
+    TARIFE_ALANLARI,
     URUN_ALANLARI,
     URUN_BAGI_ALANLARI,
 )
@@ -62,6 +64,25 @@ def urun_sablonu(hedef: Path) -> Path:
         URUN_ALANLARI,
         "Ürünler",
         "Ürün Master Data Şablonu — kolon başlıklarını değiştirmeyin, satırları doldurun.",
+        hedef,
+    )
+
+
+def tarife_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        TARIFE_ALANLARI,
+        "Nakliye Tarifeleri",
+        "Şehir Bazlı Nakliye Tarifesi — FTL satırlarında araç tipi doldurulur "
+        "(sefer fiyatı), rutin ve kargoda boş bırakılır (birim desi fiyatı).",
+        hedef,
+    )
+
+
+def butce_sablonu(hedef: Path) -> Path:
+    return _sablon_uret(
+        BUTCE_ALANLARI,
+        "Bütçe ve FC",
+        "Aylık Nakliye Bütçesi ve Tahmini — her satır bir ay/senaryo kalemidir.",
         hedef,
     )
 
