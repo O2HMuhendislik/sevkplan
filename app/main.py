@@ -178,8 +178,21 @@ def _para_fark(deger) -> str:
     return ("+" if tutar > 0 else "") + _para(tutar)
 
 
+def _hacim(deger) -> str:
+    """Desi gibi büyük sayılar için binlik ayraçlı gösterim: 36.884.501.
+
+    Maliyet ekranlarında desi milyonlara çıkıyor; ayraçsız yazınca okunmuyordu.
+    Ondalık atılır — desinin küsuratı bu ölçekte bilgi taşımıyor.
+    """
+    if deger is None or isinstance(deger, Undefined):
+        return "—"
+    tam = Decimal(deger).quantize(Decimal(1))
+    return f"{int(tam):,}".replace(",", ".")
+
+
 sablon_motoru.env.filters["para"] = _para
 sablon_motoru.env.filters["para_fark"] = _para_fark
+sablon_motoru.env.filters["hacim"] = _hacim
 
 
 # ------------------------------------------------------------------ istisna işleme

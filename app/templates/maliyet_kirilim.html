@@ -43,7 +43,7 @@
   <div class="metrik"><div class="etiket">Araç</div>
     <div class="deger">{{ ozet.plan }}</div></div>
   <div class="metrik"><div class="etiket">Toplam desi</div>
-    <div class="deger">{{ ozet.desi | sayi }}</div></div>
+    <div class="deger">{{ ozet.desi | hacim }}</div></div>
   <div class="metrik"><div class="etiket">Desi başı</div>
     <div class="deger">{{ ozet.desi_basi | para }}</div></div>
 </div>
@@ -67,7 +67,7 @@
         <td class="sag soluk">
           {% if ozet.gerceklesen %}%{{ (satir.tutar / ozet.gerceklesen * 100) | round(1) }}
           {% endif %}</td>
-        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.desi | hacim }}</td>
         <td class="sag">{{ satir.desi_basi | para }}</td>
         <td class="sag">{{ satir.adet | sayi }}</td>
         <td class="sag">{{ satir.plan_sayisi }}</td>

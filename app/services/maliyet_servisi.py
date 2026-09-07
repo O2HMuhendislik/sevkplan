@@ -1433,7 +1433,9 @@ def _katki(maliyetler: list[PlanMaliyeti], anahtar_fn, en_fazla: int = 5) -> lis
 
 
 def _sayi(deger: Decimal) -> str:
-    return format(Decimal(deger).quantize(Decimal("0.1")).normalize(), "f").replace(".", ",")
+    """Açıklama metinlerinde geçen hacimler: binlik ayraçlı, ondalıksız."""
+    tam = Decimal(deger).quantize(Decimal(1))
+    return f"{int(tam):,}".replace(",", ".")
 
 
 # ----------------------------------------------------------------- ek ücretler

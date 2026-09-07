@@ -112,7 +112,7 @@
         <td>{{ k.marka or 'tüm markalar' }}</td>
         <td>{{ k.sevkiyat_tipi or 'ay toplamı' }}</td>
         <td class="sag"><b>{{ k.tutar | para }}</b> {{ k.para_birimi }}</td>
-        <td class="sag soluk">{{ k.desi | sayi }}</td>
+        <td class="sag soluk">{{ k.desi | hacim }}</td>
         <td class="soluk">{{ k.aciklama }}</td>
         {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
         <td>

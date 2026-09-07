@@ -102,7 +102,7 @@
             <div class="soluk"><i>{{ not_metni }}</i></div>
           {% endfor %}
         </td>
-        <td class="sag">{{ m.satirlar | sum(attribute='desi') | sayi }}</td>
+        <td class="sag">{{ m.satirlar | sum(attribute='desi') | hacim }}</td>
         <td class="sag">{{ m.tarife_maliyeti | para }}</td>
         <td class="sag">
           {% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}

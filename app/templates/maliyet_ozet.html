@@ -81,7 +81,7 @@
       <tr>
         <td><b>{{ satir.marka }}</b></td>
         <td class="sag">{{ satir.plan_sayisi }}</td>
-        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.desi | hacim }}</td>
         <td class="sag">{{ satir.tutar | para }}</td>
         <td class="sag">{{ satir.desi_basi | para }}</td>
         <td><a href="/raporlama/maliyet?yil={{ secili_yil }}&fc={{ secili_fc }}&marka={{ satir.marka }}">
@@ -158,7 +158,7 @@
       <tr>
         <td><b>{{ satir.tip }}</b></td>
         <td class="sag">{{ satir.plan }}</td>
-        <td class="sag">{{ satir.desi | sayi }}</td>
+        <td class="sag">{{ satir.desi | hacim }}</td>
         <td class="sag">{{ satir.tutar | para }}</td>
         <td class="sag">{{ satir.desi_basi | para }}</td>
       </tr>

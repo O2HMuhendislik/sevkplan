@@ -13,9 +13,9 @@
       <div class="deger {{ 'dikkat' if aciklama.fark > 0 }}">
         {{ aciklama.fark | para_fark }}</div></div>
     <div><div class="etiket">Taşınan desi</div>
-      <div class="deger">{{ aciklama.desi | sayi }}</div>
+      <div class="deger">{{ aciklama.desi | hacim }}</div>
       {% if aciklama.butce_desi %}
-      <div class="soluk">bütçe {{ aciklama.butce_desi | sayi }}</div>{% endif %}</div>
+      <div class="soluk">bütçe {{ aciklama.butce_desi | hacim }}</div>{% endif %}</div>
     <div><div class="etiket">Araç</div>
       <div class="deger">{{ aciklama.plan_sayisi }}</div></div>
   </div>
