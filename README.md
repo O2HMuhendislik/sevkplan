@@ -538,6 +538,34 @@ Ek uğrama önemsiz değil: sahadaki FTL planlarında ortalama **3,4 durak** var
 sözleşme çoğu araçta uğrama bedeli ödüyor. Hesaba katılmazsa FTL maliyeti sistemli
 olarak düşük çıkar.
 
+### Gerçekleşen sevkler
+
+Maliyet modülünün "gerçekleşen" sütunu şirketin **Sevk Planları** dosyasından
+doluyor: her satır bir sipariş kalemi, **Belge No** aracın sefer numarası. Dosya
+Araç Bazlı ekranından yüklenir; aynı dosya tekrar yüklenebilir, seferler sefer
+numarasından bulunup baştan kurulur ve maliyet iki kez sayılmaz.
+
+**Belge kodu sevkiyat tipini ve maliyetin hesaplanıp hesaplanmayacağını söyler:**
+
+| Kod | Anlamı | Maliyet |
+|---|---|---|
+| `D` | Ring | **Alınmaz** — ring kendi deposundan çıkar, nakliyeciye sefer bedeli ödenmez |
+| `S` | FTL (tam araç) | Sefer fiyatı |
+| `R` | Rutin / parsiyel | Kademeli desi fiyatı |
+| `K` | Kargo | Desi fiyatı |
+| `B` | Arçelik / bayi dağıtım deposu | Tam araç sayılır |
+| `A` | Alıcı vasıtası | **Yok** — taşımayı müşteri üstleniyor |
+| `T` | Sistemsel | **Yok** — fiziksel araç hareketi değil |
+| `ST` | Stok aktarımı | **Hesaplanmaz** — depolar arası shuttle, ayrı fiyatlanıyor |
+
+Maliyeti olmayan tipler `sevkiyat_tipi` boş bırakılarak alınır; maliyet motoru
+onları sıfır sayar ve **"tarifesi eksik" diye işaretlemez**. İkisini karıştırmak
+raporu yanıltırdı: bedeli olmayan sevk ile fiyatı bilinmeyen sevk ayrı şeylerdir.
+
+**Nakliyecinin kendi tarifesi yoksa** eldeki liste vekil olarak kullanılır ve plan
+satırına not düşülür ("CEVA tarifesi yok; OMSAN fiyatı vekil kullanıldı"). Sıfır
+yazmaktan iyidir ama kesin değildir, o yüzden görünür.
+
 ### Motorine endeksli fiyat güncellemesi
 
 Sözleşme yakıta endeksli. Tarifeler ekranındaki panelde yeni motorin fiyatı, **yakıt

@@ -19,6 +19,40 @@
     <div class="soluk">araç başı {{ ozet.arac_basi | para }}</div></div>
 </div>
 
+{% if ozet.eksik %}
+<div class="uyari hata">
+  <b>{{ ozet.eksik }} planın tarifesi eksik</b> — bu planların maliyeti sıfır
+  sayıldı, gerçekleşen olduğundan düşük görünüyor. Satırlarda hangi il ve
+  sevkiyat tipinin tarifesinin eksik olduğu yazıyor;
+  <a href="/raporlama/maliyet/tarifeler">Tarifeler</a> ekranından tanımlayın.
+</div>
+{% endif %}
+
+{% if kullanici.duzenleyebilir_mi('RAPORLAMA') %}
+<div class="kart">
+  <h2>Gerçekleşen sevkleri yükle</h2>
+  <p class="soluk">
+    Şirketin <b>Sevk Planları</b> dosyası: her satır bir sipariş kalemi, <b>Belge No</b>
+    aracın sefer numarası. Maliyet numaranın harf bölümünden okunur —
+    <b>S</b> tam araç, <b>R</b> rutin/parsiyel, <b>K</b> kargo, <b>B</b> bayi dağıtım.
+    <b>Ring (D) alınmaz</b>: ring kendi deposundan çıkar, nakliyeciye sefer bedeli
+    ödenmez. <b>A</b> (alıcı vasıtası), <b>T</b> (sistemsel) ve <b>ST</b> (stok
+    aktarımı) maliyetsiz alınır — bedeli olmayan sevk ile fiyatı bilinmeyen sevk
+    ayrı şeylerdir, ikincisi "tarife yok" diye işaretlenir.
+  </p>
+  <p class="soluk" style="margin-bottom:0">
+    Aynı dosya tekrar yüklenebilir: seferler sefer numarasından bulunup baştan
+    kurulur, maliyet iki kez sayılmaz.
+  </p>
+  <form class="satir" method="post" action="/raporlama/maliyet/planlar/sevk-yukle"
+        enctype="multipart/form-data" style="margin-top:12px">
+    <div><label for="sevk_dosya">Sevk planları dosyası</label>
+      <input id="sevk_dosya" type="file" name="dosya" accept=".xlsx" required></div>
+    <button type="submit">Yükle</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="kart">
   <form class="satir" method="get" action="/raporlama/maliyet/planlar"
         style="margin-bottom:14px">
@@ -63,6 +97,9 @@
           {% if m.fiyat_ili %}<div class="soluk">fiyat ili: {{ m.fiyat_ili }}</div>{% endif %}
           {% for eksik in m.eksikler %}
             <div class="dikkat">{{ eksik }}</div>
+          {% endfor %}
+          {% for not_metni in m.notlar %}
+            <div class="soluk"><i>{{ not_metni }}</i></div>
           {% endfor %}
         </td>
         <td class="sag">{{ m.satirlar | sum(attribute='desi') | sayi }}</td>

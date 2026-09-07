@@ -62,6 +62,7 @@ from app.models import (
 from app.models import EkUcretTuru
 from app.moduller import MODUL_HARITASI, MODULLER
 from app.services import (
+    gerceklesen_sevk,
     gomulu_veri,
     ic_piyasa_servisi,
     ic_yukleme_formu,
@@ -3513,3 +3514,24 @@ def maliyet_zam(
             "nakliyeci": nakliyeci, "aciklama": aciklama,
         },
     )
+
+
+@uygulama.post(MALIYET_YOLU + "/planlar/sevk-yukle")
+async def maliyet_sevk_yukle(
+    dosya: UploadFile = File(...),
+    kullanici: Kullanici = Depends(RAPOR_DUZENLEME),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Gerçekleşen sevkleri (Sevk Planları dosyası) sisteme alır.
+
+    Ring seferleri alınmaz. Aynı dosya tekrar yüklenirse seferler baştan kurulur,
+    maliyet iki kez sayılmaz.
+    """
+    hedef = MALIYET_YOLU + "/planlar"
+    try:
+        ozet = gerceklesen_sevk.aktar(db, dosya.file)
+        db.commit()
+    except (gerceklesen_sevk.SevkAktarimHatasi, ExcelHatasi) as hata:
+        db.rollback()
+        return yonlendir(hedef, hata=str(hata))
+    return yonlendir(hedef, mesaj=f"Gerçekleşen sevk aktarımı: {ozet.ozet()}")

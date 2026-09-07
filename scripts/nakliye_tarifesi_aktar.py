@@ -2,6 +2,11 @@
 
 Kullanım:
     python -m scripts.nakliye_tarifesi_aktar <FTL_dosyasi.xlsx> <parsiyel_dosyasi.xlsx>
+                                             [--gecerlilik YYYY-AA-GG]
+
+`--gecerlilik` verilmezse tarih listenin kendi başlığından okunur. Liste yılın
+ortasında revize edilmiş olabilir; geçmiş sevkleri o listeyle değerlemek için
+başlangıç tarihi geriye çekilir (ör. `--gecerlilik 2026-01-01`).
 
 Üretilen dosya: `veri/ornek/nakliye_tarifesi.xlsx` — üç sayfa (Tarifeler,
 Ek Ücretler, Açıklama). Boş bir veritabanı ilk açılışta bunu yükler; ekrandan
@@ -228,20 +233,43 @@ def il_genel_satirlarini_tamamla(tarifeler: list[dict]) -> list[dict]:
 
 
 def main() -> None:
-    if len(sys.argv) < 3:
+    argumanlar = list(sys.argv[1:])
+    gecerlilik = None
+    if "--gecerlilik" in argumanlar:
+        indeks = argumanlar.index("--gecerlilik")
+        gecerlilik = date.fromisoformat(argumanlar[indeks + 1])
+        del argumanlar[indeks:indeks + 2]
+    if len(argumanlar) < 2:
         raise SystemExit(__doc__)
-    ftl_dosyasi, parsiyel_dosyasi = Path(sys.argv[1]), Path(sys.argv[2])
+    ftl_dosyasi, parsiyel_dosyasi = Path(argumanlar[0]), Path(argumanlar[1])
     for dosya in (ftl_dosyasi, parsiyel_dosyasi):
         if not dosya.exists():
             raise SystemExit(f"Bulunamadı: {dosya}")
 
-    ftl, ftl_ek, motorin, tarih = ftl_oku(ftl_dosyasi)
+    ftl, ftl_ek, motorin, liste_tarihi = ftl_oku(ftl_dosyasi)
+    tarih = gecerlilik or liste_tarihi
+    if gecerlilik and gecerlilik != liste_tarihi:
+        # Liste yıl ortasında revize edilmiş; geçmiş sevkleri değerlemek için
+        # başlangıç geriye çekiliyor. Bu bir varsayımdır ve açıklamaya yazılır.
+        for kayit in ftl + ftl_ek:
+            kayit["gecerlilik_baslangic"] = tarih
+            kayit["aciklama"] = (
+                f"{kayit['aciklama']} · {liste_tarihi:%d.%m.%Y} listesi, "
+                f"{tarih:%d.%m.%Y} tarihinden geçerli sayıldı"
+            )
     parsiyel, parsiyel_ek = parsiyel_oku(parsiyel_dosyasi, motorin, tarih)
+    if gecerlilik and gecerlilik != liste_tarihi:
+        for kayit in parsiyel + parsiyel_ek:
+            kayit["aciklama"] = (
+                f"{kayit['aciklama']} · {liste_tarihi:%d.%m.%Y} listesi, "
+                f"{tarih:%d.%m.%Y} tarihinden geçerli sayıldı"
+            )
     tarifeler = ftl + parsiyel
     tarifeler += il_genel_satirlarini_tamamla(tarifeler)
     ek_ucretler = ftl_ek + parsiyel_ek
 
-    print(f"Motorin: {motorin} · tarife tarihi: {tarih:%d.%m.%Y}")
+    print(f"Motorin: {motorin} · liste tarihi: {liste_tarihi:%d.%m.%Y} "
+          f"· geçerlilik: {tarih:%d.%m.%Y}")
     print(f"FTL tarifesi: {len(ftl)} · parsiyel tarifesi: {len(parsiyel)}")
     print(f"İl genel satırı: {len(tarifeler) - len(ftl) - len(parsiyel)}")
     print(f"Ek ücret: {len(ek_ucretler)}")

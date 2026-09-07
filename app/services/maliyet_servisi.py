@@ -244,7 +244,11 @@ class TarifeDefteri:
             return None
         ad = (nakliyeci or "").strip().upper()
         ozel = [t for t in gecerliler if (t.nakliyeci or "").strip().upper() == ad and ad]
-        secilenler = ozel or [t for t in gecerliler if not t.nakliyeci] or gecerliler
+        genel = [t for t in gecerliler if not t.nakliyeci]
+        # Nakliyecinin kendi listesi de genel liste de yoksa eldeki tarife vekil
+        # olarak kullanılır; sıfır maliyet yazmaktan iyidir ama çağıran tarafın
+        # bunu bilmesi gerekir (bkz. PlanMaliyeti.notlar).
+        secilenler = ozel or genel or gecerliler
         return max(secilenler, key=lambda t: t.gecerlilik_baslangic)
 
     def ek_ucret(
@@ -309,6 +313,10 @@ class PlanMaliyeti:
     satirlar: list[SatirMaliyeti] = field(default_factory=list)
     eksikler: list[str] = field(default_factory=list)
     """Tarifesi bulunamayan iller; maliyet bu kadarıyla eksik hesaplandı."""
+    notlar: list[str] = field(default_factory=list)
+    """Maliyet hesaplandı ama bir varsayımla: örneğin nakliyecinin kendi tarifesi
+    yok, başka nakliyecinin listesi vekil olarak kullanıldı. Eksikten farkıdır:
+    burada bir tutar var, ama kesin değil."""
 
     @property
     def gerceklesen(self) -> Decimal:
@@ -434,6 +442,7 @@ def _ftl_maliyeti(sonuc, plan, defter, ham, il_desileri, gun, ftl_kurali):
         )
         return sonuc
 
+    _vekil_notu(sonuc, tarife, plan.nakliyeci)
     sefer = _kurus(tarife.birim_fiyat)
     sonuc.kalemler.append({"ad": "Sefer bedeli", "tutar": sefer,
                            "aciklama": f"{fiyat_ili} · {(plan.arac_tipi or '').upper()}"})
@@ -514,6 +523,7 @@ def _parsiyel_maliyeti(sonuc, plan, defter, ham, gun, tip):
                 sonuc.satirlar.append(_satir_maliyeti(satir, satir_il, desi, SIFIR))
             continue
 
+        _vekil_notu(sonuc, tarife, plan.nakliyeci)
         bedel = _kurus(tarife.birim_fiyat * gonderi_desi)
         if asgari is not None and asgari.esik and gonderi_desi <= asgari.esik:
             if _kurus(asgari.tutar) > bedel:
@@ -547,6 +557,17 @@ def _parsiyel_maliyeti(sonuc, plan, defter, ham, gun, tip):
         f"{il} · {tip} desi tarifesi yok" for il in sorted(eksik_iller)
     )
     return sonuc
+
+
+def _vekil_notu(sonuc: PlanMaliyeti, tarife, nakliyeci: str | None) -> None:
+    """Başka nakliyecinin tarifesi kullanıldıysa not düşer."""
+    ad = (nakliyeci or "").strip().upper()
+    tarife_sahibi = (tarife.nakliyeci or "").strip().upper()
+    if not ad or not tarife_sahibi or ad == tarife_sahibi:
+        return
+    not_metni = f"{ad} tarifesi yok; {tarife_sahibi} fiyatı vekil kullanıldı"
+    if not_metni not in sonuc.notlar:
+        sonuc.notlar.append(not_metni)
 
 
 def _satir_maliyeti(
@@ -1232,6 +1253,7 @@ def markaya_indirge(maliyetler: list[PlanMaliyeti], marka: str) -> list[PlanMali
             fiyat_ili=maliyet.fiyat_ili,
             satirlar=satirlar,
             eksikler=list(maliyet.eksikler),
+            notlar=list(maliyet.notlar),
             cikis_noktasi=maliyet.cikis_noktasi,
             kalemler=list(maliyet.kalemler),
         ))
