@@ -175,7 +175,9 @@ IHRACAT_MUSTERI_DEGERLERI: dict[str, Callable[[IhracatMusterisi], Any]] = {
     "ulke": lambda m: m.ulke,
     "ulke_kodu": lambda m: m.ulke_kodu,
     "sevk_adresi": lambda m: m.sevk_adresi,
-    "arac_tipi": lambda m: m.arac_tipi.value if m.arac_tipi else None,
+    # Düz metin sütunu, enum değil: `.value` çağırmak dışa aktarımı 500 ile
+    # düşürüyordu (bkz. test_masterdata_indirmeleri_calisir).
+    "arac_tipi": lambda m: m.arac_tipi,
     "sefer_kodu": lambda m: m.sefer_kodu,
     "yukleme_tipi": lambda m: m.yukleme_tipi,
     "azami_agirlik": lambda m: m.azami_agirlik,

@@ -1412,3 +1412,78 @@ def test_maliyet_fc_surumsuz_reddedilir(istemci):
         "yil": "2026", "ay": "3", "senaryo": "FC", "tutar": "1900000",
     })
     assert "sürüm" in sorgu(cevap)
+
+
+# ------------------------------------------------------- master data indirmeleri
+MASTERDATA_INDIRMELERI = (
+    "/masterdata/urunler/excel",
+    "/masterdata/musteriler/excel",
+    "/masterdata/ihracat-musteriler/excel",
+    "/masterdata/ihracat-urunler/excel",
+    "/masterdata/urun-baglari/excel",
+    "/raporlama/maliyet/tarifeler/sablon",
+    "/raporlama/maliyet/butce/sablon",
+)
+
+
+@pytest.mark.parametrize("yol", MASTERDATA_INDIRMELERI)
+def test_masterdata_indirmeleri_calisir(istemci, fabrika, yol):
+    """Her indirme **dolu** tabloyla denenmeli.
+
+    İhracat müşterisi indirmesi 500 veriyordu: dışa aktarım `arac_tipi` alanını
+    enum sanıp `.value` çağırıyordu, oysa düz metin sütunu. Tablo boşken hata
+    çıkmıyordu — döngü hiç dönmüyordu — bu yüzden test veriyi önce yazar.
+    """
+    from decimal import Decimal as D
+
+    from app.models import IhracatMusterisi, IhracatUrunu, Musteri, Urun
+
+    with fabrika() as db:
+        db.add(Urun(urun_kodu="PN9", urun_adi="Panel", urun_grubu="PANEL",
+                    palet_ici_adet=10, desi=D(2)))
+        db.add(Musteri(anahtar="EGE ISITMA", bayi_adi="EGE ISITMA", il="IZMIR"))
+        db.add(IhracatMusterisi(anahtar="VAILLANT DOO", musteri_adi="VAILLANT D.O.O.",
+                                ulke="HIRVATİSTAN", ulke_kodu="HR", arac_tipi="TIR",
+                                sefer_kodu="N", azami_agirlik=D(22000)))
+        db.add(IhracatUrunu(urun_kodu="IH9", urun_adi="İhracat ürünü",
+                            tir_yukleme_adeti=D(600)))
+        db.commit()
+
+    cevap = istemci.get(yol)
+    assert cevap.status_code == 200, f"{yol} → {cevap.status_code}"
+    assert cevap.headers["content-type"].startswith("application/"), yol
+    assert len(cevap.content) > 0, yol
+
+
+def test_ihracat_musteri_indirmesi_geri_yuklenebilir(istemci, fabrika):
+    """İnen dosya doğrudan geri yüklenebilmeli: master datayı Excel'de güncelleyip
+    sisteme geri koymanın yolu bu."""
+    from decimal import Decimal as D
+
+    from app.models import IhracatMusterisi
+
+    from app.domain.iller import yer_adi
+
+    ad = "VAILLANT D.O.O."
+    with fabrika() as db:
+        # Anahtar içe aktarımın kendi kuralıyla kurulur; uydurulursa geri yükleme
+        # eşleşmeyip ikinci bir kayıt açar.
+        db.add(IhracatMusterisi(anahtar=yer_adi(ad), musteri_adi=ad,
+                                ulke="HIRVATİSTAN", ulke_kodu="HR", arac_tipi="TIR",
+                                sefer_kodu="N", azami_agirlik=D(22000)))
+        db.commit()
+
+    inen = istemci.get("/masterdata/ihracat-musteriler/excel")
+    assert inen.status_code == 200
+    assert "VAILLANT" in str(inen.content) or len(inen.content) > 1000
+
+    geri = istemci.post(
+        "/masterdata/ihracat-musteriler/yukle",
+        files={"dosya": ("ihracat_masterdata.xlsx", BytesIO(inen.content),
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert "hatalı" not in sorgu(geri) or "0 hatalı" in sorgu(geri)
+    with fabrika() as db:
+        kayit = db.query(IhracatMusterisi).one()
+        assert kayit.arac_tipi == "TIR"
+        assert kayit.ulke_kodu == "HR"
