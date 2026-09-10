@@ -20,6 +20,7 @@ from app.models import (
     Urun,
     UrunBagi,
 )
+from app.db import parcali_scalars
 from app.services import excel
 from app.services.excel import ExcelHatasi
 from app.services.veri_formatlari import (
@@ -233,14 +234,6 @@ def _tanitici_alanlari_tazele(satir: SiparisSatiri, kayit: dict) -> None:
         satir.incoterms = incoterms
 
 
-SORGU_PARCA_BOYU = 900
-"""Tek `IN (...)` sorgusuna konacak en fazla değer.
-
-SQLite'ın değişken sınırı (varsayılan 999) aşılırsa sorgu hata verir; parçalayarak
-sorulur.
-"""
-
-
 def _mevcut_siparis_satirlari(db: Session, kayitlar: list[dict]) -> dict:
     """Dosyadaki anahtarlara karşılık gelen mevcut satırları **tek seferde** okur.
 
@@ -257,15 +250,12 @@ def _mevcut_siparis_satirlari(db: Session, kayitlar: list[dict]) -> dict:
         if excel.metin(kayit.get("siparis_no"))
     }
     mevcutlar: dict[tuple[str, str, str], SiparisSatiri] = {}
-    numaralar = sorted(siparis_numaralari)
-    for bas in range(0, len(numaralar), SORGU_PARCA_BOYU):
-        parca = numaralar[bas:bas + SORGU_PARCA_BOYU]
-        for satir in db.scalars(
-            select(SiparisSatiri).where(SiparisSatiri.siparis_no.in_(parca))
-        ).all():
-            mevcutlar[
-                (satir.siparis_no, satir.teslimat_no, satir.siparis_satir_no)
-            ] = satir
+    for satir in parcali_scalars(
+        db,
+        lambda parca: select(SiparisSatiri).where(SiparisSatiri.siparis_no.in_(parca)),
+        sorted(siparis_numaralari),
+    ):
+        mevcutlar[(satir.siparis_no, satir.teslimat_no, satir.siparis_satir_no)] = satir
     return mevcutlar
 
 
@@ -424,16 +414,22 @@ def _teslimatlari_dogrula(db: Session, teslimat_nolar: set[str]) -> list[SatirHa
     if not teslimat_nolar:
         return hatalar
 
-    satirlar = db.scalars(
-        select(SiparisSatiri).where(SiparisSatiri.teslimat_no.in_(teslimat_nolar))
-    ).all()
+    # Değer listeleri veri büyüdükçe binleri buluyor; parçalanmazsa SQLite
+    # "too many SQL variables" ile düşer.
+    satirlar = parcali_scalars(
+        db,
+        lambda parca: select(SiparisSatiri).where(
+            SiparisSatiri.teslimat_no.in_(parca)
+        ),
+        teslimat_nolar,
+    )
     urun_haritasi = {
         urun.urun_kodu: urun
-        for urun in db.scalars(
-            select(Urun).where(
-                Urun.urun_kodu.in_({satir.urun_kodu for satir in satirlar})
-            )
-        ).all()
+        for urun in parcali_scalars(
+            db,
+            lambda parca: select(Urun).where(Urun.urun_kodu.in_(parca)),
+            {satir.urun_kodu for satir in satirlar},
+        )
     }
 
     gruplar: dict[str, list[SiparisSatiri]] = {}

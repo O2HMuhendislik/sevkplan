@@ -37,6 +37,7 @@ from app.domain.kapasite import (
     KapasiteProfili,
 )
 from app.domain.marka import paylari_hesapla, paylari_metne_cevir
+from app.db import parcali_scalars
 from app.models import (
     Musteri,
     PlanDurumu,
@@ -309,11 +310,11 @@ def plan_uret(
     # ürünlerin palet ve yükleme adetleri gerekiyor.
     urunler = {
         urun.urun_kodu: urun
-        for urun in db.scalars(
-            select(Urun).where(
-                Urun.urun_kodu.in_({s.urun_kodu for s in satirlar})
-            )
-        ).all()
+        for urun in parcali_scalars(
+            db,
+            lambda parca: select(Urun).where(Urun.urun_kodu.in_(parca)),
+            {s.urun_kodu for s in satirlar},
+        )
     }
     palet_haritasi_ = palet_haritasi(urunler)
     yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL.arac_tipi)
@@ -530,9 +531,11 @@ def plan_musterileri(db: Session, plan: SevkiyatPlani) -> list[dict]:
     anahtarlar = {_bayi_anahtari(satir) for satir in plan.satirlar}
     kayitlar = {
         m.anahtar: m
-        for m in db.scalars(
-            select(Musteri).where(Musteri.anahtar.in_(anahtarlar))
-        ).all()
+        for m in parcali_scalars(
+            db,
+            lambda parca: select(Musteri).where(Musteri.anahtar.in_(parca)),
+            anahtarlar,
+        )
     }
 
     gruplar: dict[str, dict] = {}

@@ -33,6 +33,7 @@ from app.domain.planlama import (
 from app.domain.iller import BOLUNEBILIR_DEPOLAR
 from app.domain.marka import paylari_hesapla, paylari_metne_cevir
 from app.services.planlama_anahtari import teslimat_anahtari, urun_grubu
+from app.db import parcali_scalars
 from app.models import (
     AxataNumarasi,
     PlanDurumu,
@@ -229,9 +230,11 @@ def teslimatlari_hazirla(
     """
     urun_haritasi = {
         urun.urun_kodu: urun
-        for urun in db.scalars(
-            select(Urun).where(Urun.urun_kodu.in_({s.urun_kodu for s in satirlar}))
-        ).all()
+        for urun in parcali_scalars(
+            db,
+            lambda _parca: select(Urun).where(Urun.urun_kodu.in_(_parca)),
+            {s.urun_kodu for s in satirlar},
+        )
     }
 
     gruplar: dict[str, list[SiparisSatiri]] = {}
@@ -537,9 +540,11 @@ def mix_plan_olustur(
     if not teslimat_nolar:
         raise PlanHatasi("En az bir teslimat seçilmeli.")
 
-    satirlar = db.scalars(
-        select(SiparisSatiri).where(SiparisSatiri.teslimat_no.in_(teslimat_nolar))
-    ).all()
+    satirlar = parcali_scalars(
+        db,
+        lambda parca: select(SiparisSatiri).where(SiparisSatiri.teslimat_no.in_(parca)),
+        teslimat_nolar,
+    )
     if not satirlar:
         raise PlanHatasi("Seçilen teslimatlara ait sipariş satırı bulunamadı.")
     planli = [s.teslimat_no for s in satirlar if s.durum != SiparisDurumu.BEKLEMEDE]

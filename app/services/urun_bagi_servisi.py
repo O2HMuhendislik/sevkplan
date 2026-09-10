@@ -29,6 +29,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db import parcali_scalars
 from app.models import BagTipi, SiparisDurumu, SiparisSatiri, Urun, UrunBagi
 from app.services.veri_formatlari import URUN_BAGI_ALANLARI
 
@@ -82,7 +83,9 @@ def baglari_getir(
     kodlar = {b.ana_urun_kodu for b in baglar} | {b.bagli_urun_kodu for b in baglar}
     adlar = {
         u.urun_kodu: u
-        for u in db.scalars(select(Urun).where(Urun.urun_kodu.in_(kodlar))).all()
+        for u in parcali_scalars(
+            db, lambda parca: select(Urun).where(Urun.urun_kodu.in_(parca)), kodlar
+        )
     }
 
     satirlar = []
@@ -246,13 +249,21 @@ def plan_uyarilari(db: Session, plan) -> list[dict]:
     # Aranan parça nerede: başka bir planda mı, beklemede mi?
     baska_plan: dict[tuple[str, str], str] = {}
     bekleyen: dict[tuple[str, str], int] = defaultdict(int)
-    diger_satirlar = db.scalars(
-        select(SiparisSatiri).where(
-            SiparisSatiri.urun_kodu.in_(ilgili_kodlar),
-            SiparisSatiri.modul == plan.modul,
-            SiparisSatiri.id.notin_([s.id for s in plan.satirlar]),
+    plan_satir_idleri = {s.id for s in plan.satirlar}
+    diger_satirlar = [
+        satir
+        for satir in parcali_scalars(
+            db,
+            lambda parca: select(SiparisSatiri).where(
+                SiparisSatiri.urun_kodu.in_(parca),
+                SiparisSatiri.modul == plan.modul,
+            ),
+            ilgili_kodlar,
         )
-    ).all()
+        # Planın kendi satırları Python tarafında elenir: `notin_` listesi de
+        # değişken sınırına takılabiliyordu.
+        if satir.id not in plan_satir_idleri
+    ]
     for satir in diger_satirlar:
         anahtar = (_musteri_anahtari(satir), satir.urun_kodu)
         adlar.setdefault(satir.urun_kodu, satir.urun_adi or "")
@@ -263,7 +274,11 @@ def plan_uyarilari(db: Session, plan) -> list[dict]:
 
     eksik_adlar = {
         u.urun_kodu: u.urun_adi
-        for u in db.scalars(select(Urun).where(Urun.urun_kodu.in_(ilgili_kodlar))).all()
+        for u in parcali_scalars(
+            db,
+            lambda parca: select(Urun).where(Urun.urun_kodu.in_(parca)),
+            ilgili_kodlar,
+        )
     }
 
     uyarilar: list[dict] = []

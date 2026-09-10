@@ -12,6 +12,7 @@ from datetime import date
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.db import parcalar, parcali_scalars
 from app.models import (
     AxataNumarasi,
     IceAktarim,
@@ -88,17 +89,21 @@ def _planlari_sil(db: Session, planlar: list[SevkiyatPlani]) -> int:
     if not planlar:
         return 0
     plan_idleri = [plan.id for plan in planlar]
-    for satir in db.scalars(
-        select(SiparisSatiri).where(SiparisSatiri.plan_id.in_(plan_idleri))
-    ).all():
+    for satir in parcali_scalars(
+        db,
+        lambda parca: select(SiparisSatiri).where(SiparisSatiri.plan_id.in_(parca)),
+        plan_idleri,
+    ):
         satir.plan_id = None
         satir.durum = SiparisDurumu.BEKLEMEDE
     db.flush()
     # Plana bağlı bütün kayıtlar plandan önce silinmeli: toplu `delete()` ORM
     # ilişkilerini çalıştırmaz, kalan satır yabancı anahtar hatası verir.
-    db.execute(delete(PlanHareketi).where(PlanHareketi.plan_id.in_(plan_idleri)))
-    db.execute(delete(AxataNumarasi).where(AxataNumarasi.plan_id.in_(plan_idleri)))
-    db.execute(delete(SevkiyatPlani).where(SevkiyatPlani.id.in_(plan_idleri)))
+    # Silme de parçalanır: binlerce plan tek `IN (...)` sorgusuna sığmıyor.
+    for parca in parcalar(plan_idleri):
+        db.execute(delete(PlanHareketi).where(PlanHareketi.plan_id.in_(parca)))
+        db.execute(delete(AxataNumarasi).where(AxataNumarasi.plan_id.in_(parca)))
+        db.execute(delete(SevkiyatPlani).where(SevkiyatPlani.id.in_(parca)))
     db.flush()
     return len(plan_idleri)
 
@@ -144,9 +149,11 @@ def planlari_sil(
     silinen_siparis = 0
     if siparisleri_de_sil and planlar:
         plan_idleri = [plan.id for plan in planlar]
-        satirlar = db.scalars(
-            select(SiparisSatiri).where(SiparisSatiri.plan_id.in_(plan_idleri))
-        ).all()
+        satirlar = parcali_scalars(
+            db,
+            lambda parca: select(SiparisSatiri).where(SiparisSatiri.plan_id.in_(parca)),
+            plan_idleri,
+        )
         silinen_siparis = len(satirlar)
         for satir in satirlar:
             db.delete(satir)

@@ -184,6 +184,42 @@ def _uyumsuzluk_kontrolu() -> None:
         )
 
 
+SORGU_PARCA_BOYU = 900
+"""Tek bir `IN (...)` sorgusuna konacak en fazla değer.
+
+SQLite'ın bağlanabilir değişken sınırı var (eski sürümlerde 999). Sınır aşılınca
+sorgu `too many SQL variables` ile düşer. Sınır veri büyüdükçe kendiliğinden
+aşılıyor: 139 bin satırlık bir sipariş dosyası 132 bin teslimat numarası üretiyor
+ve bunların hepsini tek sorguya koymak imkânsız. Bu yüzden değer listeleri her
+zaman parçalanarak sorulur.
+"""
+
+
+def parcalar(degerler, boyut: int = SORGU_PARCA_BOYU):
+    """Değer listesini `IN` sorgusuna sığacak parçalara böler.
+
+    Kullanım::
+
+        for parca in parcalar(kodlar):
+            db.scalars(select(Urun).where(Urun.urun_kodu.in_(parca)))
+    """
+    liste = list(degerler)
+    for bas in range(0, len(liste), boyut):
+        yield liste[bas:bas + boyut]
+
+
+def parcali_scalars(db: Session, sorgu_kur, degerler) -> list:
+    """`IN` listesi büyük olabilen bir sorguyu parça parça çalıştırır.
+
+    `sorgu_kur(parca)` her parça için sorguyu kurar; sonuçlar tek listede birleşir.
+    """
+    sonuclar: list = []
+    for parca in parcalar(degerler):
+        if parca:
+            sonuclar.extend(db.scalars(sorgu_kur(parca)).all())
+    return sonuclar
+
+
 @contextmanager
 def oturum() -> Iterator[Session]:
     db = OturumFabrikasi()
