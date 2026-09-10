@@ -10,6 +10,9 @@ bir motor; ortak olan tek şey `Teslimat` ve kapasite profilidir.
   aracın en az %15'ini kaplamalı, günde en fazla 35 araç.
 * **Rutin / parsiyel (`R`)** — müşterinin *toplam* siparişi 3 paleti aşmıyorsa. Araç
   %50-60 dolulukta bırakılır, günde en fazla 3-4 araç.
+
+Günlük araç sınırı dolunca hacim **ertesi çalışma gününe** kayar (pazar hariç); bu
+dağıtımı takvimi bilen servis katmanı yapar.
 * **Kargo (`K`)** — müşteri toplamı 10 desinin altında kalanlar. Araç kapasitesi
   aranmaz; günün tek kargo listesinde toplanır.
 * **EXW (`X`)** — nakliyeyi müşteri üstlenir, malı kendi aracıyla alır. Araç
@@ -92,7 +95,15 @@ class Kurallar:
     """Son uğrak (en uzak il) aracın en az bu kadarını kaplamalı."""
     gunluk_ftl_siniri: int = 35
     gunluk_rutin_siniri: int = 4
-    """Günlük araç sınırları; aşan hacim sonraki güne kalır."""
+    """Günlük araç sınırları; aşan hacim sonraki çalışma gününe kayar."""
+    planlama_ufku_gun: int = 14
+    """Planlama en fazla kaç **çalışma günü** ileriye taşabilir.
+
+    Günlük sınır dolunca hacim ertesi güne kayar (pazar atlanır) ama bu sonsuza
+    kadar sürmemeli: bir yıllık sipariş havuzu tek çalıştırmada 100 günlük araç
+    üretirdi. Ufka sığmayan hacim gerekçesiyle beklemede kalır ve bir sonraki
+    çalıştırmada planlanır.
+    """
     azami_sapma_km: int = 100
     """Rotanın doğrudan gidişten ne kadar uzun olabileceği.
 
@@ -1010,7 +1021,6 @@ def planla(
     tip: SevkiyatTipi,
     profil: KapasiteProfili,
     kurallar: Kurallar = VARSAYILAN_KURALLAR,
-    gunluk_sinir: int | None = None,
     kalanlari_zorla: bool = False,
     palet_ici: Mapping[str, int] | None = None,
     yukleme_adeti: Mapping[str, int] | None = None,
@@ -1029,6 +1039,10 @@ def planla(
 
     `kalanlari_zorla` verilmezse alt limiti dolduramayan araçlar açılmaz; müşterileri
     beklemede kalır ve ertesi gün planlanır.
+
+    Günlük araç sınırı burada uygulanmaz: motor hacmin gerektirdiği bütün araçları
+    üretir, en dolu olan başta olacak şekilde sıralar. Bu araçların hangi güne
+    düşeceğini takvimi bilen servis katmanı belirler.
     """
     sonuc = IcPiyasaSonucu()
     if not musteriler:
@@ -1146,24 +1160,11 @@ def planla(
                     )
                 )
 
-    # En dolu araçlar önce planlanır; günlük sınıra takılan hacim ertesi güne kalır.
+    # En dolu araçlar başa: günlük sınır dolunca sona kalanlar ertesi güne kayar,
+    # o yüzden sıra bir öncelik sırasıdır. Hangi aracın hangi güne düşeceğine
+    # takvimi bilen servis karar verir (`ic_piyasa_servisi._gunlere_dagit`).
     uygunlar.sort(key=lambda p: (-p.toplam_birim, p.bolge_kodu))
-    if gunluk_sinir is not None and len(uygunlar) > gunluk_sinir:
-        for plan in uygunlar[gunluk_sinir:]:
-            for musteri in plan.musteriler:
-                sonuc.bekleyenler.append(
-                    BekleyenMusteri(
-                        musteri=musteri,
-                        tip=tip,
-                        sebep=(
-                            f"Günlük {gunluk_sinir} araç sınırına ulaşıldı; "
-                            "sonraki güne aktarılacak"
-                        ),
-                    )
-                )
-        uygunlar = uygunlar[:gunluk_sinir]
-
-    sonuc.planlar = sorted(uygunlar, key=lambda p: (p.bolge_kodu, -p.toplam_birim))
+    sonuc.planlar = uygunlar
     return sonuc
 
 

@@ -198,14 +198,22 @@ def test_duraklar_yakindan_uzaga_siralanir():
     assert plan.son_ugrak == "VAN"
 
 
-def test_gunluk_arac_siniri_asilan_hacim_bekler():
+def test_motor_hacmin_gerektirdigi_butun_araclari_uretir():
+    """Günlük sınır motorun işi değil: hacim kaç araç gerektiriyorsa o kadar üretilir.
+
+    Aracın hangi güne düşeceğine takvimi bilen servis karar verir; motor araçları
+    en dolu olan başta olacak şekilde sıralar.
+    """
     musteriler = [
-        musteri(f"BAYİ{sira}", "ISTANBUL", 0.95, ilce=f"ILCE{sira}") for sira in range(5)
+        musteri(f"BAYİ{sira}", "ISTANBUL", Decimal("0.95") - sira * Decimal("0.02"),
+                ilce=f"ILCE{sira}")
+        for sira in range(5)
     ]
-    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, gunluk_sinir=2)
-    assert len(sonuc.planlar) == 2
-    assert len(sonuc.bekleyenler) == 3
-    assert "sonraki güne" in sonuc.bekleyenler[0].sebep
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL)
+    assert len(sonuc.planlar) == 5
+    assert not sonuc.bekleyenler
+    birimler = [p.toplam_birim for p in sonuc.planlar]
+    assert birimler == sorted(birimler, reverse=True)
 
 
 def test_farkli_bolgeler_ayni_araca_binmez():
@@ -417,25 +425,90 @@ def test_ortak_yukleme_notu_plana_islenir(ic_veri):
     assert plan.aktarma_notu(altmis_dort) == ""
 
 
-def test_gunluk_sinir_daha_once_uretilen_planlari_sayar(ic_veri):
-    """Aynı gün ikinci kez çalıştırıldığında sınır sıfırdan başlamaz."""
+def test_gunluk_sinir_dolunca_ertesi_gune_planlanir(ic_veri):
+    """Günlük sınıra takılan hacim beklemez, sonraki çalışma gününe kayar."""
     db = ic_veri
     kurallar = Kurallar(gunluk_ftl_siniri=1)
     for sira in range(3):
         _siparis(db, f"T{sira}", 95, f"BAYİ {sira}", "IZMIR", ilce=f"ILCE{sira}")
     db.flush()
 
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL],
+        kurallar=kurallar, kullanici="test",
+    )
+    assert len(sonuc.planlar) == 3
+    assert not sonuc.bekleyenler
+    assert [p.plan_tarihi for p in sonuc.planlar] == [
+        date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)
+    ]
+    assert "3 iş gününe dağıtıldı" in sonuc.ozet()
+
+
+def test_pazar_gunune_plan_uretilmez(ic_veri):
+    """Sevkiyat pazar günü yapılmaz; o güne düşen araç pazartesiye kayar."""
+    db = ic_veri
+    kurallar = Kurallar(gunluk_ftl_siniri=1)
+    for sira in range(2):
+        _siparis(db, f"P{sira}", 95, f"BAYİ {sira}", "IZMIR", ilce=f"ILCE{sira}")
+    db.flush()
+
+    # 5 Eylül 2026 cumartesi, 6 Eylül pazar, 7 Eylül pazartesi.
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 5), tipler=[SevkiyatTipi.FTL],
+        kurallar=kurallar, kullanici="test",
+    )
+    assert [p.plan_tarihi for p in sonuc.planlar] == [
+        date(2026, 9, 5), date(2026, 9, 7)
+    ]
+
+
+def test_pazara_verilen_plan_tarihi_pazartesiye_alinir(ic_veri):
+    db = ic_veri
+    _siparis(db, "PZ-1", 95, "BAYİ", "IZMIR")
+    db.flush()
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 6), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert [p.plan_tarihi for p in sonuc.planlar] == [date(2026, 9, 7)]
+
+
+def test_gunluk_sinir_daha_once_uretilen_planlari_sayar(ic_veri):
+    """Aynı gün ikinci kez çalıştırıldığında sınır sıfırdan başlamaz."""
+    db = ic_veri
+    kurallar = Kurallar(gunluk_ftl_siniri=1)
+    _siparis(db, "T0", 95, "BAYİ 0", "IZMIR")
+    db.flush()
     ilk = ic_piyasa_servisi.plan_uret(
         db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL],
         kurallar=kurallar, kullanici="test",
     )
-    assert len(ilk.planlar) == 1
+    assert [p.plan_tarihi for p in ilk.planlar] == [date(2026, 9, 1)]
 
+    _siparis(db, "T1", 95, "BAYİ 1", "IZMIR", ilce="BORNOVA")
+    db.flush()
     ikinci = ic_piyasa_servisi.plan_uret(
         db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL],
         kurallar=kurallar, kullanici="test",
     )
-    assert ikinci.planlar == []
+    assert [p.plan_tarihi for p in ikinci.planlar] == [date(2026, 9, 2)]
+
+
+def test_planlama_ufkuna_sigmayan_hacim_beklemede_kalir(ic_veri):
+    """Ufuk sonsuz değil: bir yıllık havuz tek çalıştırmada 100 günlük araç üretmemeli."""
+    db = ic_veri
+    kurallar = Kurallar(gunluk_ftl_siniri=1, planlama_ufku_gun=2)
+    for sira in range(4):
+        _siparis(db, f"U{sira}", 95, f"BAYİ {sira}", "IZMIR", ilce=f"ILCE{sira}")
+    db.flush()
+
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL],
+        kurallar=kurallar, kullanici="test",
+    )
+    assert len(sonuc.planlar) == 2
+    assert len(sonuc.bekleyenler) == 2
+    assert "planlama ufkuna sığmadı" in sonuc.bekleyenler[0].sebep
 
 
 def test_marka_sonekli_depolar_ayni_depodur():

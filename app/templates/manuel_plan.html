@@ -44,6 +44,15 @@
     </div>
     <div><label for="plan_tarihi">Plan tarihi</label>
       <input type="date" id="plan_tarihi" name="plan_tarihi" value="{{ bugun }}"></div>
+    {% if modul_kodu == 'ROTA' %}
+    <div><label for="sevkiyat_tipi">Sevkiyat tipi</label>
+      <select id="sevkiyat_tipi" name="sevkiyat_tipi">
+        <option value="">Kurala göre</option>
+        {% for kod, ad in sevkiyat_tipleri %}
+          <option value="{{ kod }}">{{ ad }}</option>
+        {% endfor %}
+      </select></div>
+    {% endif %}
     <div>
       <label>Doluluk</label>
       <label style="font-weight:400;text-transform:none;color:var(--metin)">
@@ -56,10 +65,38 @@
     <button type="button" class="ikincil" id="secimi-temizle">Seçimi temizle</button>
     <button type="submit" id="planla-dugmesi" disabled>Seçilenleri planla</button>
   </div>
+  <div class="kart" id="doluluk-kutusu" style="margin-bottom:14px">
+    <div class="izgara uc">
+      <div>
+        <div class="etiket">Tır doluluğu</div>
+        <div class="deger" style="font-size:26px" id="tir-yuzde">—</div>
+        <div class="doluluk" style="max-width:280px">
+          <span id="tir-cubuk" style="width:0%"></span></div>
+        <div class="soluk" id="tir-anahtar">seçim yok</div>
+      </div>
+      <div>
+        <div class="etiket">Kamyon doluluğu</div>
+        <div class="deger" style="font-size:26px" id="kamyon-yuzde">—</div>
+        <div class="doluluk" style="max-width:280px">
+          <span id="kamyon-cubuk" style="width:0%"></span></div>
+        <div class="soluk" id="kamyon-anahtar">seçim yok</div>
+      </div>
+      <div>
+        <div class="etiket">Bu seçim hangi araçla gider</div>
+        <div class="deger" style="font-size:22px" id="arac-onerisi">—</div>
+        <div class="soluk" id="arac-aciklama">
+          Teslimat seçtikçe doluluk ve araç tipi burada güncellenir.</div>
+      </div>
+    </div>
+  </div>
   <p class="soluk" style="margin:-6px 0 14px">
     <b>Alt limiti esnet</b> açıkken az sayıda teslimat seçseniz de plan üretilir ve
     plan "alt limit esnetildi" olarak işaretlenir. Kapalıyken seçim aracı dolduramazsa
     plan çıkmaz, teslimatlar beklemede kalır.
+    {% if modul_kodu == 'ROTA' %}
+    <b>Sevkiyat tipi</b> "kurala göre" bırakılırsa tip müşteri hacmine bakılarak
+    belirlenir; bir tip seçerseniz kural ezilir ve seçim o tiple planlanır.
+    {% endif %}
   </p>
 
   <div class="kart">
@@ -76,14 +113,22 @@
         <tr>
           <td class="secim">
             <input type="checkbox" name="teslimat_nolar" value="{{ t.teslimat_no }}"
-                   class="teslimat-secim"></td>
+                   class="teslimat-secim"
+                   data-tir="{{ t.tir_anahtar if t.tir_anahtar is not none else '' }}"
+                   data-kamyon="{{ t.kamyon_anahtar if t.kamyon_anahtar is not none else '' }}"></td>
           <td class="sag soluk">{{ loop.index }}</td>
           <td><b>{{ t.teslimat_no }}</b></td>
           <td class="soluk">{{ t.siparis_no }}</td>
-          <td>{{ t.bayi }}{% if t.alici %}<div class="soluk">{{ t.alici }}</div>{% endif %}</td>
+          <td>{{ t.bayi }}
+            {% if t.alici %}<div class="soluk">{{ t.alici }}</div>{% endif %}
+            {% if t.adres %}<div class="soluk">{{ t.adres }}</div>{% endif %}</td>
           <td>{{ t.il or '—' }}<div class="soluk">{{ t.ilce or '' }}</div></td>
           <td>{{ t.depolar }}</td>
-          <td>{{ t.urun_kodu }}<div class="soluk">{{ t.urun_adi }}</div></td>
+          <td>{{ t.urun_kodu }}<div class="soluk">{{ t.urun_adi }}</div>
+            {% if t.tir_anahtar is none %}
+              <div class="soluk" style="color:var(--uyari, #b45309)">
+                ölçü yok — yükleme adeti master datada tanımsız</div>
+            {% endif %}</td>
           <td class="sag">{{ t.satir_sayisi }}</td>
           <td class="sag">{{ t.adet | sayi }}</td>
           <td>{{ t.termin_tarihi | tarih }}</td>
@@ -106,17 +151,140 @@
   var dugme = document.getElementById('planla-dugmesi');
   var baslik = document.getElementById('baslik-secim');
 
+  // Doluluk ölçüsü motorun kullandığı anahtar değerin aynısıdır:
+  // Σ (miktar / yükleme adeti); 1,00 = araç %100 dolu. Tır ve kamyon ayrı ölçülür,
+  // çünkü aynı yük tırın yarısını doldururken kamyonun tamamına yakınını doldurur.
+  var SINIRLAR = {{ kapasite_sinirlari | default('{}') | safe }};
+  var TAM = 1;
+  var tipSecimi = document.getElementById('sevkiyat_tipi');
+
+  function secilenTip() {
+    var deger = tipSecimi ? tipSecimi.value : '';
+    // Tip seçilmediyse modülün kendi profili geçerlidir (Ring 0,90; iç piyasa 0,85).
+    return SINIRLAR[deger] ? deger : '_varsayilan';
+  }
+  var alanlar = {
+    tirYuzde: document.getElementById('tir-yuzde'),
+    tirCubuk: document.getElementById('tir-cubuk'),
+    tirAnahtar: document.getElementById('tir-anahtar'),
+    kamyonYuzde: document.getElementById('kamyon-yuzde'),
+    kamyonCubuk: document.getElementById('kamyon-cubuk'),
+    kamyonAnahtar: document.getElementById('kamyon-anahtar'),
+    oneri: document.getElementById('arac-onerisi'),
+    aciklama: document.getElementById('arac-aciklama')
+  };
+
+  function sayiyaCevir(metin) {
+    if (metin === '' || metin === null || metin === undefined) { return null; }
+    var deger = parseFloat(metin);
+    return isNaN(deger) ? null : deger;
+  }
+
+  function bicimle(deger, hane) {
+    return deger.toFixed(hane).replace('.', ',');
+  }
+
+  function olcuYaz(toplam, olcusuz, yuzdeAlani, cubukAlani, anahtarAlani) {
+    // Ölçüsü olmayan teslimatlar toplamın dışında bırakılır ama sayıları yazılır:
+    // tek bir tanımsız SKU yüzünden bütün göstergeyi "—" yapmak, ölçülen 39
+    // teslimatın bilgisini de saklıyordu. O teslimatlar zaten planlamaya giremez.
+    var yuzde = (toplam / TAM) * 100;
+    yuzdeAlani.textContent = '%' + bicimle(yuzde, 1);
+    cubukAlani.style.width = Math.min(yuzde, 100) + '%';
+    var metin = bicimle(toplam, 3) + ' anahtar değer';
+    if (olcusuz > 0) {
+      metin += ' · ' + olcusuz + ' teslimat ölçülemedi (yükleme adeti tanımsız)';
+    }
+    anahtarAlani.textContent = metin;
+  }
+
+  function dolulugaBak(secililer) {
+    if (!alanlar.tirYuzde) { return; }
+    if (secililer.length === 0) {
+      ['tirYuzde', 'kamyonYuzde'].forEach(function (ad) { alanlar[ad].textContent = '—'; });
+      alanlar.tirCubuk.style.width = '0%';
+      alanlar.kamyonCubuk.style.width = '0%';
+      alanlar.tirAnahtar.textContent = 'seçim yok';
+      alanlar.kamyonAnahtar.textContent = 'seçim yok';
+      alanlar.oneri.textContent = '—';
+      alanlar.aciklama.textContent =
+        'Teslimat seçtikçe doluluk ve araç tipi burada güncellenir.';
+      return;
+    }
+
+    var tir = 0, kamyon = 0, tirOlcusuz = 0, kamyonOlcusuz = 0;
+    secililer.forEach(function (kutu) {
+      var t = sayiyaCevir(kutu.dataset.tir);
+      var k = sayiyaCevir(kutu.dataset.kamyon);
+      if (t === null) { tirOlcusuz += 1; } else { tir += t; }
+      if (k === null) { kamyonOlcusuz += 1; } else { kamyon += k; }
+    });
+    var tirOlculur = tirOlcusuz < secililer.length;
+    var kamyonOlculur = kamyonOlcusuz === 0;
+
+    olcuYaz(tir, tirOlcusuz, alanlar.tirYuzde, alanlar.tirCubuk, alanlar.tirAnahtar);
+    olcuYaz(kamyon, kamyonOlcusuz, alanlar.kamyonYuzde, alanlar.kamyonCubuk,
+            alanlar.kamyonAnahtar);
+
+    var tip = secilenTip();
+    var sinir = SINIRLAR[tip] || SINIRLAR['_varsayilan'] || {alt: 0.85, ust: 1, aracsiz: false};
+    var tipAdi = tip === '_varsayilan' ? 'araç' : tip;
+
+    if (sinir.aracsiz) {
+      alanlar.oneri.textContent = tip === 'EXW' ? 'MÜŞTERİ ARACI' : 'KARGO';
+      alanlar.aciklama.textContent = tip === 'EXW'
+        ? 'EXW: malı müşteri kendi aracıyla alır, araç planlanmaz.'
+        : 'Kargo listesinde araç yoktur; kapasite ve doluluk aranmaz.';
+      return;
+    }
+
+    if (!tirOlculur && !kamyonOlculur) {
+      alanlar.oneri.textContent = '—';
+      alanlar.aciklama.textContent =
+        'Ölçü hesaplanamadı: seçilen ürünlerin yükleme adeti master datada tanımsız.';
+      return;
+    }
+
+    // Araç tipi motordaki kuralın aynısıyla seçilir: yük bir kamyona sığıyorsa
+    // kamyon, sığmıyorsa tır. Yarım kalan bir tır aslında dolu bir kamyondur.
+    var kamyonaSigar = kamyonOlculur && kamyon > 0 && kamyon <= sinir.ust;
+    var olcu = kamyonaSigar ? kamyon : tir;
+    var arac = kamyonaSigar ? 1 : Math.max(1, Math.ceil(tir / sinir.ust - 0.000001));
+
+    if (olcu < sinir.alt) {
+      // Motor bu seçimden plan üretmez; "alt limiti esnet" açık değilse beklemede kalır.
+      alanlar.oneri.textContent = 'Araç dolmuyor';
+      alanlar.aciklama.textContent =
+        'Seçim ' + bicimle(olcu, 3) + ' anahtar; ' + tipAdi + ' alt limiti ' +
+        bicimle(sinir.alt, 2) + '. Daha fazla teslimat seçin, "Alt limiti esnet" ' +
+        'kutusunu işaretli bırakın ya da sevkiyat tipini değiştirin.';
+      return;
+    }
+
+    alanlar.oneri.textContent = (kamyonaSigar ? 'KAMYON' : 'TIR') + ' — ' + arac + ' araç';
+    if (kamyonaSigar) {
+      alanlar.aciklama.textContent =
+        'Yük bir kamyona sığıyor; tırın yalnızca %' + bicimle(tir * 100, 1) +
+        "'ini doldurur.";
+    } else {
+      alanlar.aciklama.textContent = arac > 1
+        ? 'Seçim tek araca sığmıyor; teslimatlar ' + arac + ' araca bölünür.'
+        : 'Yük bir araca sığıyor.';
+    }
+  }
+
   function tazele() {
-    var secili = 0;
+    var secililer = [];
     kutular.forEach(function (kutu) {
       var satir = kutu.closest('tr');
-      if (kutu.checked) { secili += 1; satir.classList.add('secili'); }
+      if (kutu.checked) { secililer.push(kutu); satir.classList.add('secili'); }
       else { satir.classList.remove('secili'); }
     });
-    sayac.textContent = secili;
-    dugme.disabled = secili === 0;
-    baslik.checked = secili === kutular.length && secili > 0;
-    baslik.indeterminate = secili > 0 && secili < kutular.length;
+    sayac.textContent = secililer.length;
+    dugme.disabled = secililer.length === 0;
+    baslik.checked = secililer.length === kutular.length && secililer.length > 0;
+    baslik.indeterminate = secililer.length > 0 && secililer.length < kutular.length;
+    dolulugaBak(secililer);
   }
 
   function hepsi(deger) {
@@ -125,6 +293,7 @@
   }
 
   kutular.forEach(function (kutu) { kutu.addEventListener('change', tazele); });
+  if (tipSecimi) { tipSecimi.addEventListener('change', tazele); }
   baslik.addEventListener('change', function () { hepsi(baslik.checked); });
   document.getElementById('tumunu-sec').addEventListener('click', function () { hepsi(true); });
   document.getElementById('secimi-temizle').addEventListener('click', function () { hepsi(false); });

@@ -14,6 +14,7 @@ Her ekran bir modüle bağlıdır ve kullanıcının o modüldeki yetkisine gör
 """
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -48,6 +49,7 @@ from app.db import OturumFabrikasi, oturum_bagimliligi, semayi_olustur
 from app.guvenlik import PAROLA_KURALLARI, ParolaHatasi
 from app.domain.bolgeler import VARSAYILAN_BOLGELER
 from app.domain.ic_piyasa import SevkiyatTipi
+from app.domain.kapasite import IC_FTL, IHRACAT_TIR, RING_ANAHTAR
 from app.models import (
     IhracatMusterisi,
     IhracatUrunu,
@@ -2279,7 +2281,42 @@ def _manuel_sayfa(
         arama=arama,
         depo=depo,
         depolar=depo_kodlari,
+        # Manuel planlamada kullanıcı kuralın kararını ezebilir: "bunu parsiyel
+        # gönderelim", "bunu kargoya verelim". Liste yalnızca iç piyasada anlamlı.
+        sevkiyat_tipleri=[(t.value, t.ad) for t in SevkiyatTipi],
+        # Ekrandaki doluluk göstergesi araç önerisini motorun kendi sınırlarıyla
+        # verir; sayılar burada kopyalanmaz, profillerden okunur.
+        kapasite_sinirlari=json.dumps(_manuel_kapasiteler(modul_kodu)),
     )
+
+
+MANUEL_VARSAYILAN_PROFIL = {
+    "RING": RING_ANAHTAR,
+    "ROTA": IC_FTL,
+    "IHRACAT": IHRACAT_TIR,
+}
+"""Sevkiyat tipi seçilmediğinde ekrandaki doluluk göstergesinin kullandığı profil.
+
+Sevkiyat tipi yalnızca iç piyasada seçilebiliyor; Ring ve ihracat ekranları kendi
+profillerinin alt limitiyle "araç doluyor mu" sorusunu yanıtlamalı, iç piyasanınkiyle
+değil (Ring alt limiti 0,90; iç piyasa FTL 0,85).
+"""
+
+
+def _manuel_kapasiteler(modul_kodu: str) -> dict:
+    def sinir(profil) -> dict:
+        return {
+            "alt": float(profil.alt_limit),
+            "ust": float(profil.ust_limit),
+            "aracsiz": False,
+        }
+
+    kapasiteler = {}
+    for tip in SevkiyatTipi:
+        kapasiteler[tip.value] = sinir(ic_piyasa_servisi.profil(tip))
+        kapasiteler[tip.value]["aracsiz"] = tip.aracsiz_mi
+    kapasiteler["_varsayilan"] = sinir(MANUEL_VARSAYILAN_PROFIL[modul_kodu])
+    return kapasiteler
 
 
 def _manuel_secim(teslimat_nolar: list[str]) -> list[str]:
@@ -2353,12 +2390,18 @@ def rota_manuel_plan_uret(
     teslimat_nolar: list[str] = Form([]),
     plan_tarihi: str = Form(""),
     kalanlari_zorla: bool = Form(False),
+    sevkiyat_tipi: str = Form(""),
     kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
     db: Session = Depends(oturum_bagimliligi),
 ):
     secilenler = _manuel_secim(teslimat_nolar)
     if not secilenler:
         return yonlendir("/rota/manuel-plan", hata="Planlanacak teslimat seçilmedi.")
+    # Boş bırakılırsa tip kurala göre belirlenir; seçilirse kural ezilir.
+    try:
+        zorlanan = SevkiyatTipi(sevkiyat_tipi) if sevkiyat_tipi else None
+    except ValueError:
+        zorlanan = None
     try:
         sonuc = ic_piyasa_servisi.plan_uret(
             db,
@@ -2366,6 +2409,7 @@ def rota_manuel_plan_uret(
             kullanici=kullanici.kullanici_adi,
             kalanlari_zorla=kalanlari_zorla,
             teslimat_nolar=secilenler,
+            zorlanan_tip=zorlanan,
             kurallar=masterdata_servisi.kurallari_kur(db),
         )
         db.commit()

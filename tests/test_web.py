@@ -828,6 +828,64 @@ def test_manuel_planlama_moduller_arasi_sizmaz(istemci):
     assert 'value="T2"' not in ring.text
 
 
+def test_manuel_planlama_ekraninda_adres_ve_doluluk_gorunur(istemci):
+    """Planlamacı listeden adresi okuyabilmeli ve seçtikçe doluluğu görebilmeli."""
+    ic_piyasa_verisi_yukle(istemci)
+    ekran = istemci.get("/rota/manuel-plan").text
+
+    # Sevk adresi satırda yazar; hangi kapıya gittiği listeden görülür.
+    assert "1234 SOK. NO:5" in ekran
+    assert "SANAYİ CAD. NO:8" in ekran
+
+    # Doluluk ölçüsü satırın kendisinde taşınır: 60 adet / 100 tır adeti = 0,6 tır.
+    assert 'data-tir="0.6000"' in ekran
+    # Kamyon yükleme adeti master datada tanımsız; ölçü **yok** sayılır.
+    assert 'data-kamyon=""' in ekran
+    assert "Tır doluluğu" in ekran and "Kamyon doluluğu" in ekran
+
+
+def test_manuel_planlamada_sevkiyat_tipi_secilebilir(istemci, fabrika):
+    """Planlamacı kuralın kararını ezip seçimi kargoya verebilmeli."""
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    assert 'name="sevkiyat_tipi"' in istemci.get("/rota/manuel-plan").text
+
+    # T1 tek başına 0,6 tır: kural bunu FTL sayar. Kullanıcı kargo diyor.
+    cevap = istemci.post(
+        "/rota/manuel-plan/uret",
+        data={
+            "teslimat_nolar": ["T1"],
+            "plan_tarihi": "2026-09-01",
+            "sevkiyat_tipi": "KARGO",
+            "kalanlari_zorla": "1",
+        },
+    )
+    assert "Manuel planlama" in sorgu(cevap)
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
+        assert plan.sevkiyat_tipi == "KARGO"
+        assert {s.teslimat_no for s in plan.satirlar} == {"T1"}
+
+
+def test_manuel_planlamada_parsiyel_secilebilir(istemci, fabrika):
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post(
+        "/rota/manuel-plan/uret",
+        data={
+            "teslimat_nolar": ["T1"],
+            "plan_tarihi": "2026-09-01",
+            "sevkiyat_tipi": "RUTIN",
+            "kalanlari_zorla": "1",
+        },
+    )
+    with fabrika() as db:
+        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
+        assert plan.sevkiyat_tipi == "RUTIN"
+
+
 def test_manuel_planlama_aramayla_daraltilir(istemci):
     ic_piyasa_verisi_yukle(istemci)
     cevap = istemci.get("/rota/manuel-plan", params={"arama": "MANİSA"})

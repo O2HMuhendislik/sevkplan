@@ -443,6 +443,11 @@ AYAR_TANIMLARI: tuple[AyarTanimi, ...] = (
                "Bir günde açılabilecek en fazla tam araç sayısı.", "sayi", "35", "araç"),
     AyarTanimi("gunluk_rutin_siniri", "Günlük rutin sınırı",
                "Bir günde açılabilecek en fazla rutin/parsiyel aracı.", "sayi", "4", "araç"),
+    AyarTanimi("planlama_ufku_gun", "Planlama ufku",
+               "Günlük araç sınırı dolunca hacim ertesi çalışma gününe kayar "
+               "(pazar hariç). Bir çalıştırmada en fazla kaç iş günü ileriye plan "
+               "üretilsin? Ufka sığmayan hacim beklemede kalır.",
+               "sayi", "14", "iş günü"),
 )
 """Ekrandan değiştirilebilen planlama sayıları.
 
@@ -533,6 +538,7 @@ def kurallari_kur(db: Session):
         gunluk_ftl_siniri=int(d["gunluk_ftl_siniri"]),
         gunluk_rutin_siniri=int(d["gunluk_rutin_siniri"]),
         azami_sapma_km=int(d["azami_sapma_km"]),
+        planlama_ufku_gun=int(d["planlama_ufku_gun"]),
     )
 
 

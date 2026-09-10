@@ -28,6 +28,7 @@ from app.domain.ic_piyasa import (
     yukleme_deposu,
 )
 from app.domain.iller import yer_adi
+from app.domain.takvim import calisma_gunune_al, sonraki_calisma_gunu
 from app.domain.kapasite import (
     IC_EXW,
     IC_FTL,
@@ -111,8 +112,28 @@ class IcPlanSonucu:
         )
         if dagilim:
             metin = f"{metin} · {dagilim}"
+        takvim = self.gun_araligi()
+        if takvim:
+            metin = f"{metin} · {takvim}"
         baskin = self.en_cok_bekleme_sebebi()
         return f"{metin} · Bekleyenlerin çoğu: {baskin}" if baskin else metin
+
+    def gun_araligi(self) -> str:
+        """Planların hangi günlere dağıldığı.
+
+        Günlük araç sınırı dolunca hacim ertesi çalışma gününe kaydığı için tek
+        çalıştırma birden çok güne plan üretebilir; kullanıcı kaç günlük araç
+        çıktığını mesajdan görmeli.
+        """
+        gunler = sorted({p.plan_tarihi for p in self.planlar if p.plan_tarihi})
+        if not gunler:
+            return ""
+        if len(gunler) == 1:
+            return f"{gunler[0]:%d.%m.%Y} gününe planlandı"
+        return (
+            f"{gunler[0]:%d.%m.%Y} – {gunler[-1]:%d.%m.%Y} arası "
+            f"{len(gunler)} iş gününe dağıtıldı"
+        )
 
     def en_cok_bekleme_sebebi(self) -> str:
         """Beklemede kalan müşterilerin en sık gerekçesi.
@@ -259,18 +280,57 @@ def _gunluk_plan_sayisi(db: Session, plan_tarihi: date, tip: SevkiyatTipi) -> in
     )
 
 
-def _gunluk_sinir(
-    db: Session, plan_tarihi: date, tip: SevkiyatTipi, kurallar: Kurallar
-) -> int | None:
-    """O gün için kalan araç hakkı. Kargoda sınır yoktur."""
-    if tip.aracsiz_mi:
-        return None
-    tavan = (
+def _gunluk_tavan(tip: SevkiyatTipi, kurallar: Kurallar) -> int:
+    return (
         kurallar.gunluk_ftl_siniri
         if tip is SevkiyatTipi.FTL
         else kurallar.gunluk_rutin_siniri
     )
-    return max(0, tavan - _gunluk_plan_sayisi(db, plan_tarihi, tip))
+
+
+def _gunlere_dagit(
+    db: Session,
+    baslangic: date,
+    tip: SevkiyatTipi,
+    kurallar: Kurallar,
+    plan_sayisi: int,
+) -> list[date]:
+    """Üretilen araçları çalışma günlerine dağıtır: gün dolunca ertesi güne geçer.
+
+    Sahanın kuralı: bir günde en fazla 35 tam araç, 4 parsiyel çıkar. Eskiden bu
+    sınıra takılan hacim **beklemede kalıyordu** ve kullanıcı ertesi gün için elle
+    yeniden planlama çalıştırmak zorundaydı; bir yıllık havuzda ekran "plan
+    üretilmiyor" gibi görünüyordu. Artık aşan hacim kendiliğinden sonraki çalışma
+    gününe kayar.
+
+    * **Pazar günü plan üretilmez** (bkz. `app.domain.takvim`); başlangıç günü pazara
+      denk gelirse pazartesiye alınır.
+    * O güne daha önce üretilmiş planlar sayılır: aynı gün ikinci kez çalıştırıldığında
+      sınır sıfırdan başlamaz.
+    * Kargo ve EXW'de araç yoktur; iki liste de tek güne yazılır.
+    * `planlama_ufku_gun` kadar çalışma günü denendikten sonra durulur; sığmayan
+      araçların müşterileri gerekçesiyle beklemede kalır.
+
+    Döner: her araç için bir gün — plan sayısından **kısa** olabilir.
+    """
+    if plan_sayisi <= 0:
+        return []
+    gun = calisma_gunune_al(baslangic)
+    if tip.aracsiz_mi:
+        return [gun] * plan_sayisi
+
+    tavan = _gunluk_tavan(tip, kurallar)
+    if tavan <= 0:
+        return []
+
+    gunler: list[date] = []
+    for _ in range(max(1, kurallar.planlama_ufku_gun)):
+        yer = max(0, tavan - _gunluk_plan_sayisi(db, gun, tip))
+        gunler.extend([gun] * min(yer, plan_sayisi - len(gunler)))
+        if len(gunler) >= plan_sayisi:
+            break
+        gun = sonraki_calisma_gunu(gun)
+    return gunler
 
 
 # --------------------------------------------------------------------- plan üretimi
@@ -285,18 +345,24 @@ def plan_uret(
     kurallar: Kurallar = VARSAYILAN_KURALLAR,
     depolar: list[str] | None = None,
     teslimat_nolar: Collection[str] | None = None,
+    zorlanan_tip: SevkiyatTipi | None = None,
 ) -> IcPlanSonucu:
     """Beklemedeki iç piyasa siparişlerinden plan üretir.
 
-    `tipler` verilmezse üç tip de çalıştırılır. Sevkiyat tipi müşteri bazında
+    `tipler` verilmezse bütün tipler çalıştırılır. Sevkiyat tipi müşteri bazında
     belirlenir; kullanıcının seçtiği tipler yalnızca **hangi kovaların planlanacağını**
     sınırlar, müşterinin tipini değiştirmez.
 
     `teslimat_nolar` verilirse yalnızca o teslimatlar planlanır; manuel planlama
     ekranı (/rota/manuel-plan) seçilen siparişleri böyle geçirir.
+
+    `zorlanan_tip` verilirse kural sonucu ne olursa olsun bütün müşteriler o tiple
+    planlanır. Manuel planlamada kullanılır: planlamacı bir seçimi "bunu parsiyel
+    gönderelim" ya da "bunu kargoya verelim" diyerek kuraldan farklı yönlendirebilir.
+    Kuralın ne dediği gerekçede saklanır, karar kaybolmaz.
     """
     plan_tarihi = plan_tarihi or date.today()
-    tipler = tipler or list(SevkiyatTipi)
+    tipler = [zorlanan_tip] if zorlanan_tip is not None else (tipler or list(SevkiyatTipi))
 
     sorgu = select(SiparisSatiri).where(
         SiparisSatiri.durum == SiparisDurumu.BEKLEMEDE,
@@ -322,6 +388,9 @@ def plan_uret(
     gerekceler: dict[str, str] = {}
     for musteri in musteriler:
         tip, gerekce = tip_belirle(musteri, kurallar)
+        if zorlanan_tip is not None and tip is not zorlanan_tip:
+            gerekce = f"Manuel seçim: {zorlanan_tip.ad} (kural: {gerekce})"
+            tip = zorlanan_tip
         kovalar[tip].append(musteri)
         gerekceler[musteri.anahtar] = gerekce
     sonuc.tip_dagilimi = {
@@ -354,20 +423,35 @@ def plan_uret(
             tip,
             tip_profili,
             kurallar,
-            gunluk_sinir=_gunluk_sinir(db, plan_tarihi, tip, kurallar),
             kalanlari_zorla=kalanlari_zorla,
             palet_ici=palet_haritasi_,
             yukleme_adeti=yukleme_haritasi_,
             kamyon_profili=kamyon_profili(tip),
             kamyon_yukleme_adeti=kamyon_yukleme_haritasi_,
         )
-        for taslak in planlama.planlar:
+        # Motor hacmin gerektirdiği bütün araçları üretti; günlük sınır dolunca
+        # sonrakiler ertesi çalışma gününe kayar. En dolu araç en erken güne.
+        gunler = _gunlere_dagit(db, plan_tarihi, tip, kurallar, len(planlama.planlar))
+        for taslak, gun in zip(planlama.planlar, gunler):
             sonuc.planlar.append(
                 _plani_kaydet(
-                    db, taslak, satir_haritasi, plan_tarihi,
+                    db, taslak, satir_haritasi, gun,
                     taslak.secili_profil, kullanici,
                 )
             )
+        for taslak in planlama.planlar[len(gunler):]:
+            for musteri in taslak.musteriler:
+                sonuc.bekleyenler.append(
+                    BekleyenMusteri(
+                        musteri=musteri,
+                        tip=tip,
+                        sebep=(
+                            f"Günlük {_gunluk_tavan(tip, kurallar)} araç sınırı "
+                            f"{kurallar.planlama_ufku_gun} iş günü boyunca dolu; "
+                            "bu hacim planlama ufkuna sığmadı"
+                        ),
+                    )
+                )
         sonuc.bekleyenler.extend(planlama.bekleyenler)
 
     # Kullanıcının seçmediği tiplerdeki müşteriler de gerekçesiyle raporlanır.

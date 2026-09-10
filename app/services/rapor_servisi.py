@@ -8,12 +8,14 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.db import parcali_scalars
 from app.domain.ic_piyasa import ARACSIZ_TIPLER
 from app.models import (
     PlanDurumu,
     SevkiyatPlani,
     SiparisDurumu,
     SiparisSatiri,
+    Urun,
 )
 
 
@@ -672,15 +674,50 @@ def planlanabilir_teslimatlar(
     for satir in satirlar:
         gruplar.setdefault(satir.teslimat_no, []).append(satir)
 
+    # Seçim yapıldıkça ekranda doluluk gösterilebilmesi için her teslimatın tır ve
+    # kamyon anahtar değeri de taşınır. Ölçü ürün master datasından gelir; bir SKU'nun
+    # yükleme adeti tanımsızsa o araç tipi için ölçü **yok** sayılır (yarım ölçüyle
+    # "%40 dolu" yazmak yanıltıcı olurdu).
+    urunler = {
+        urun.urun_kodu: urun
+        for urun in parcali_scalars(
+            db,
+            lambda parca: select(Urun).where(Urun.urun_kodu.in_(parca)),
+            {s.urun_kodu for s in satirlar},
+        )
+    }
+
+    def _anahtarlar(grup: list[SiparisSatiri]) -> tuple[Decimal | None, Decimal | None]:
+        tir = kamyon = Decimal(0)
+        tir_tam = kamyon_tam = True
+        for satir in grup:
+            urun = urunler.get(satir.urun_kodu)
+            tir_adet = urun.tir_yukleme_adeti if urun else None
+            kamyon_adet = urun.kamyon_yukleme_adeti if urun else None
+            if tir_adet:
+                tir += Decimal(satir.miktar) / Decimal(tir_adet)
+            else:
+                tir_tam = False
+            if kamyon_adet:
+                kamyon += Decimal(satir.miktar) / Decimal(kamyon_adet)
+            else:
+                kamyon_tam = False
+        return (
+            tir.quantize(Decimal("0.0001")) if tir_tam else None,
+            kamyon.quantize(Decimal("0.0001")) if kamyon_tam else None,
+        )
+
     teslimatlar: list[dict] = []
     for teslimat_no, grup in gruplar.items():
         ana = grup[0]
+        tir_anahtar, kamyon_anahtar = _anahtarlar(grup)
         teslimatlar.append(
             {
                 "teslimat_no": teslimat_no,
                 "siparis_no": ana.siparis_no,
                 "bayi": ana.bayi_gosterimi,
                 "alici": ana.alici_gosterimi,
+                "adres": (ana.sevk_adresi or "").strip(),
                 "il": ana.sehir or "",
                 "ilce": ana.ilce or "",
                 "depolar": ", ".join(sorted({s.depo_kodu for s in grup})),
@@ -688,6 +725,8 @@ def planlanabilir_teslimatlar(
                 "adet": sum(s.miktar for s in grup),
                 "urun_kodu": ana.urun_kodu,
                 "urun_adi": ana.gosterilecek_urun_adi,
+                "tir_anahtar": tir_anahtar,
+                "kamyon_anahtar": kamyon_anahtar,
                 "termin_tarihi": min(
                     (s.termin_tarihi for s in grup if s.termin_tarihi), default=None
                 ),
