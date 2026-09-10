@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
@@ -736,3 +736,111 @@ def planlanabilir_teslimatlar(
         )
     teslimatlar.sort(key=lambda t: (t["oncelik_tarihi"], t["teslimat_no"]))
     return teslimatlar[:limit]
+
+
+# ------------------------------------------------------------------------ takvim
+
+
+def _ay_araligi(ay: date) -> tuple[date, date]:
+    """Ayın ilk ve son günü."""
+    ilk = ay.replace(day=1)
+    son = (ilk + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    return ilk, son
+
+
+def takvim_ozeti(
+    db: Session, modul: str, ay: date, kurallar=None
+) -> dict:
+    """Bir ayın gün gün plan sayısı: hangi güne kaç araç düştüğü.
+
+    Günlük araç sınırı dolunca hacim ertesi güne kaydığı için tek bir planlama
+    çalıştırması onlarca güne plan üretebiliyor. Plan listesi bunu göstermiyordu:
+    500 satırlık listede hangi güne kaç araç düştüğü ancak sayarak anlaşılıyordu.
+
+    Her gün için tip kırılımı (FTL / rutin / kargo / EXW), araç tipi kırılımı
+    (tır / kamyon) ve **kalan kapasite** döner; pazar günleri çalışma günü değildir.
+    """
+    from app.domain.ic_piyasa import ARACSIZ_TIPLER, SevkiyatTipi
+    from app.domain.takvim import calisma_gunu_mu
+
+    ilk, son = _ay_araligi(ay)
+    sorgu = (
+        select(
+            SevkiyatPlani.plan_tarihi,
+            SevkiyatPlani.sevkiyat_tipi,
+            SevkiyatPlani.arac_tipi,
+            func.count(SevkiyatPlani.id),
+            func.sum(SevkiyatPlani.toplam_birim),
+        )
+        .where(
+            SevkiyatPlani.modul == modul,
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+            SevkiyatPlani.plan_tarihi >= ilk,
+            SevkiyatPlani.plan_tarihi <= son,
+        )
+        .group_by(
+            SevkiyatPlani.plan_tarihi,
+            SevkiyatPlani.sevkiyat_tipi,
+            SevkiyatPlani.arac_tipi,
+        )
+    )
+    gunler: dict[date, dict] = {}
+    for tarih, tip, arac, adet, birim in db.execute(sorgu).all():
+        if tarih is None:
+            continue
+        gun = gunler.setdefault(
+            tarih,
+            {"toplam": 0, "arac": 0, "tipler": {}, "araclar": {}, "birim": Decimal(0)},
+        )
+        gun["toplam"] += adet
+        gun["tipler"][tip or "—"] = gun["tipler"].get(tip or "—", 0) + adet
+        # Kargo ve EXW listeleri araç değildir; günlük araç sayısına girmezler.
+        if (tip or "") not in ARACSIZ_TIPLER:
+            gun["arac"] += adet
+            gun["araclar"][arac or "—"] = gun["araclar"].get(arac or "—", 0) + adet
+            gun["birim"] += Decimal(birim or 0)
+
+    tavanlar = {}
+    if kurallar is not None:
+        tavanlar = {
+            SevkiyatTipi.FTL.value: kurallar.gunluk_ftl_siniri,
+            SevkiyatTipi.RUTIN.value: kurallar.gunluk_rutin_siniri,
+        }
+
+    haftalar: list[list[dict | None]] = []
+    hafta: list[dict | None] = [None] * ilk.weekday()
+    gun = ilk
+    while gun <= son:
+        veri = gunler.get(gun, {"toplam": 0, "arac": 0, "tipler": {}, "araclar": {},
+                                "birim": Decimal(0)})
+        kalanlar = {
+            tip: max(0, tavan - veri["tipler"].get(tip, 0))
+            for tip, tavan in tavanlar.items()
+        }
+        hafta.append(
+            {
+                "tarih": gun,
+                "calisma_gunu": calisma_gunu_mu(gun),
+                "bugun": gun == date.today(),
+                **veri,
+                "kalanlar": kalanlar,
+            }
+        )
+        if len(hafta) == 7:
+            haftalar.append(hafta)
+            hafta = []
+        gun += timedelta(days=1)
+    if hafta:
+        haftalar.append(hafta + [None] * (7 - len(hafta)))
+
+    toplam_plan = sum(g["toplam"] for g in gunler.values())
+    return {
+        "ay": ilk,
+        "onceki_ay": (ilk - timedelta(days=1)).replace(day=1),
+        "sonraki_ay": (son + timedelta(days=1)),
+        "haftalar": haftalar,
+        "toplam_plan": toplam_plan,
+        "toplam_arac": sum(g["arac"] for g in gunler.values()),
+        "dolu_gun": sum(1 for g in gunler.values() if g["toplam"]),
+        "tavanlar": tavanlar,
+    }

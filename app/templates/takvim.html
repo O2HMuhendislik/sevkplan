@@ -1,0 +1,83 @@
+{% extends "temel.html" %}
+{% set aktif_modul = modul_kodu %}
+{% set aktif_menu = 'takvim' %}
+{% block icerik %}
+<h1>Plan Takvimi — {{ modul_adi }}</h1>
+
+<p class="soluk">
+  Günlük araç sınırı dolunca hacim ertesi çalışma gününe kayar; tek bir planlama
+  çalıştırması birden çok güne araç üretir. Bu takvim hangi güne kaç araç düştüğünü
+  gösterir. <b>Pazar günleri sevkiyat yapılmaz</b>, o günlere plan üretilmez.
+</p>
+
+<div class="izgara dort" style="margin-bottom:18px">
+  <div class="metrik"><div class="etiket">Ay toplamı</div>
+    <div class="deger">{{ takvim.toplam_plan }}</div>
+    <div class="soluk">plan</div></div>
+  <div class="metrik"><div class="etiket">Araç</div>
+    <div class="deger">{{ takvim.toplam_arac }}</div>
+    <div class="soluk">kargo ve EXW listeleri hariç</div></div>
+  <div class="metrik"><div class="etiket">Plan çıkan gün</div>
+    <div class="deger">{{ takvim.dolu_gun }}</div></div>
+  <div class="metrik"><div class="etiket">Günlük sınır</div>
+    <div class="deger" style="font-size:21px">
+      {% for tip, tavan in takvim.tavanlar.items() %}{{ tavan }} {{ tip }}{% if not loop.last %} · {% endif %}{% endfor %}
+    </div>
+    <div class="soluk"><a href="/masterdata/sistem">Sistem Tanımları</a></div></div>
+</div>
+
+<div class="kart">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap">
+    <a class="dugme ikincil" href="{{ taban }}/takvim?ay={{ takvim.onceki_ay.strftime('%Y-%m') }}">‹ Önceki ay</a>
+    <div style="font-weight:700; font-size:17px; min-width:150px; text-align:center">
+      {{ takvim.ay | ay_adi }}</div>
+    <a class="dugme ikincil" href="{{ taban }}/takvim?ay={{ takvim.sonraki_ay.strftime('%Y-%m') }}">Sonraki ay ›</a>
+    <div style="flex:1"></div>
+    <a class="dugme ikincil" href="{{ taban }}/planlar">Plan listesi</a>
+  </div>
+
+  <table class="takvim">
+    <thead><tr>
+      {% for gun in ('Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz') %}
+        <th{% if loop.index == 7 %} class="tatil"{% endif %}>{{ gun }}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for hafta in takvim.haftalar %}
+      <tr>
+      {% for gun in hafta %}
+        {% if gun is none %}
+          <td class="bos-gun"></td>
+        {% else %}
+        <td class="{{ 'tatil' if not gun.calisma_gunu }} {{ 'bugun' if gun.bugun }}">
+          <div class="gun-no">{{ gun.tarih.day }}</div>
+          {% if gun.toplam %}
+            <a class="gun-sayi" href="{{ taban }}/planlar?tarih={{ gun.tarih }}">
+              {{ gun.toplam }} plan</a>
+            <div class="gun-detay">
+              {% for tip, adet in gun.tipler | dictsort %}
+                <span class="etiketcik">{{ tip }} {{ adet }}</span>
+              {% endfor %}
+            </div>
+            {% if gun.araclar %}
+            <div class="gun-detay soluk">
+              {% for arac, adet in gun.araclar | dictsort %}{{ arac | lower }} {{ adet }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </div>
+            {% endif %}
+            {% if gun.kalanlar %}
+            <div class="gun-detay soluk">
+              kalan: {% for tip, kalan in gun.kalanlar | dictsort %}{{ tip }} {{ kalan }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </div>
+            {% endif %}
+          {% elif not gun.calisma_gunu %}
+            <div class="gun-detay soluk">sevkiyat yok</div>
+          {% endif %}
+        </td>
+        {% endif %}
+      {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

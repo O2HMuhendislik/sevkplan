@@ -270,10 +270,12 @@ def ic_piyasa_verisi_yukle(istemci):
     """Ürün + müşteri master datası ve iki müşterili bir sipariş dosyası yükler."""
     urunler = kitap(
         ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti",
-         "Ürün Desi"],
+         "Kamyon yükleme adeti", "Ürün Desi"],
         [
-            ["U1", "Kombi A", "KOMBİ", 10, 100, 12],
-            ["U2", "Panel B", "PANEL", 10, 100, 12],
+            # Kamyon yükleme adeti gerçek master datada da dolu; tır giremeyen bir
+            # bayiye (MANİSA TESİSAT) kamyon planlanabilmesi için gerekiyor.
+            ["U1", "Kombi A", "KOMBİ", 10, 100, 50, 12],
+            ["U2", "Panel B", "PANEL", 10, 100, 50, 12],
         ],
     )
     istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
@@ -282,7 +284,9 @@ def ic_piyasa_verisi_yukle(istemci):
         ["Bayi Adı", "İl", "İlçe", "Tır Girişi (E/H/?)"],
         [
             ["EGE ISITMA", "İZMİR", "BORNOVA", "E"],
-            ["MANİSA TESİSAT", "MANİSA", "MERKEZ", "H"],
+            # Tır girer: iki müşteri aynı araca binebilsin diye. Tır giremeyen
+            # müşterinin kuralı ayrı testte (tır giremeyene tır planlanmaz).
+            ["MANİSA TESİSAT", "MANİSA", "MERKEZ", "E"],
         ],
     )
     istemci.post("/masterdata/musteriler/yukle", files={"dosya": ("m.xlsx", musteriler)})
@@ -335,7 +339,6 @@ def test_ic_piyasa_plani_uretilir_ve_formu_indirilir(istemci, fabrika):
     detay = istemci.get(f"/rota/planlar/{plan_id}")
     assert "MANİSA TESİSAT" in detay.text
     assert "64 depoya gönderilmelidir" in detay.text
-    assert "Tır girişi olmayan müşteri var" in detay.text
 
     # Planda 64 ve 74 depoları birlikte; numara depoya bağlanmalı.
     istemci.post(
@@ -839,8 +842,8 @@ def test_manuel_planlama_ekraninda_adres_ve_doluluk_gorunur(istemci):
 
     # Doluluk ölçüsü satırın kendisinde taşınır: 60 adet / 100 tır adeti = 0,6 tır.
     assert 'data-tir="0.6000"' in ekran
-    # Kamyon yükleme adeti master datada tanımsız; ölçü **yok** sayılır.
-    assert 'data-kamyon=""' in ekran
+    # Kamyon ölçüsü de taşınır: 60 adet / 50 kamyon adeti = 1,2 kamyon.
+    assert 'data-kamyon="1.2000"' in ekran
     assert "Tır doluluğu" in ekran and "Kamyon doluluğu" in ekran
 
 
@@ -884,6 +887,53 @@ def test_manuel_planlamada_parsiyel_secilebilir(istemci, fabrika):
     with fabrika() as db:
         plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
         assert plan.sevkiyat_tipi == "RUTIN"
+
+
+def test_plan_takvimi_gun_gun_sayilari_gosterir(istemci):
+    """Takvim hangi güne kaç plan düştüğünü göstermeli; pazar sevkiyat günü değil."""
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post(
+        "/rota/planlar/uret", data={"tipler": ["FTL"], "plan_tarihi": "2026-09-01"}
+    )
+
+    takvim = istemci.get("/rota/takvim?ay=2026-09")
+    assert takvim.status_code == 200
+    assert "Eylül 2026" in takvim.text
+    # 1 Eylül 2026 salı; o güne üretilen planlar gün hücresinden listeye bağlanır.
+    assert "/rota/planlar?tarih=2026-09-01" in takvim.text
+    assert "sevkiyat yok" in takvim.text  # pazar hücreleri
+
+    gun = istemci.get("/rota/planlar?tarih=2026-09-01")
+    assert gun.status_code == 200
+    assert "gününün planları" in gun.text
+    # Başka bir günde plan yok.
+    bos = istemci.get("/rota/planlar?tarih=2026-09-02")
+    assert "2609S" not in bos.text
+
+
+def test_tir_giremeyen_musteriye_tir_planlanmaz(istemci, fabrika):
+    """Adrese tır giremiyorsa araç kamyon olur; aynı araca tır giren bayi konmaz."""
+    from app.models import Musteri, SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    with fabrika() as db:
+        kayit = db.query(Musteri).filter_by(anahtar="MANISA TESISAT").one()
+        kayit.tir_girisi = "H"
+        db.commit()
+
+    istemci.post(
+        "/rota/planlar/uret",
+        data={"tipler": ["FTL"], "plan_tarihi": "2026-09-01", "kalanlari_zorla": "1"},
+    )
+    with fabrika() as db:
+        planlar = db.query(SevkiyatPlani).filter_by(modul="ROTA").all()
+        # İki bayi hacim olarak tek araca sığıyor ama aynı araca konamazlar.
+        assert len(planlar) == 2
+        for plan in planlar:
+            bayiler = {s.bayi_adi for s in plan.satirlar}
+            if "MANİSA TESİSAT" in bayiler:
+                assert bayiler == {"MANİSA TESİSAT"}
+                assert plan.arac_tipi == "KAMYON"
 
 
 def test_manuel_planlama_aramayla_daraltilir(istemci):

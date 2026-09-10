@@ -1068,15 +1068,34 @@ def planla(
     # Tır giremeyen müşteriler ayrı planlanır: onların aracı baştan kamyondur,
     # ölçüleri de kamyon kapasitesine göre hesaplanır. Aynı araca tır girebilen bir
     # müşteriyle konmazlar; yoksa araç tıra çıkabilir ve mal kapıya inemez.
+    #
+    # **FTL'de bu kuralda esneme yoktur.** Tam araç bayinin kapısına gider; tır
+    # giremeyen bir adrese tır planlamak sahada boşaltılamayan bir sevkiyat demektir.
+    # Kamyon ölçüsü hesaplanamıyorsa (bir SKU'nun kamyon yükleme adeti tanımsız)
+    # müşteri tıra bindirilmez, gerekçesiyle beklemede kalır.
+    #
+    # Parsiyelde kural aranmaz: orada araç bayiye uğramaz, yük aktarma merkezine iner
+    # ve dağıtımı merkez yapar.
     zorunlu_kamyon: list[MusteriSiparisi] = []
     serbest: list[MusteriSiparisi] = []
     for musteri in musteriler:
-        if (
-            kamyon_profili is not None
-            and musteri.tir_girisi == "H"
-            and musteri.kamyon_uygun
-        ):
+        if kamyon_profili is None or musteri.tir_girisi != "H":
+            serbest.append(musteri)
+        elif musteri.kamyon_uygun:
             zorunlu_kamyon.append(musteri)
+        elif tip is SevkiyatTipi.FTL:
+            sonuc.bekleyenler.append(
+                BekleyenMusteri(
+                    musteri=musteri,
+                    tip=tip,
+                    sebep=(
+                        "Adrese tır giremiyor ve kamyon ölçüsü hesaplanamıyor: "
+                        "siparişteki bir ürünün kamyon yükleme adeti master datada "
+                        "tanımsız. Tam araç planlanmadı — eksik alan tamamlanmalı ya "
+                        "da sevkiyat parsiyel/kargo ile yapılmalı"
+                    ),
+                )
+            )
         else:
             serbest.append(musteri)
 

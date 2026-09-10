@@ -39,8 +39,16 @@
   </form>
 </div>
 
+{% if tarih %}
+<div class="kart" style="display:flex; align-items:center; gap:12px">
+  <b>{{ tarih | tarih }}</b> gününün planları
+  <a class="dugme ikincil" href="/rota/planlar">Gün filtresini kaldır</a>
+  <a class="dugme ikincil" href="/rota/takvim?ay={{ tarih.strftime('%Y-%m') }}">Takvime dön</a>
+</div>
+{% endif %}
+
 <div class="sekmeler">
-  <a href="/rota/planlar" class="{{ 'aktif' if durum == '' and tip == '' }}">Tümü</a>
+  <a href="/rota/planlar" class="{{ 'aktif' if durum == '' and tip == '' and not tarih }}">Tümü</a>
   <a href="/rota/planlar?tip=FTL" class="{{ 'aktif' if tip == 'FTL' }}">FTL</a>
   <a href="/rota/planlar?tip=RUTIN" class="{{ 'aktif' if tip == 'RUTIN' }}">Rutin</a>
   <a href="/rota/planlar?tip=KARGO" class="{{ 'aktif' if tip == 'KARGO' }}">Kargo</a>

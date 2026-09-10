@@ -208,7 +208,7 @@ def musterileri_topla(
     toplanırken kırık paletler **birleştirilmez**, çünkü her teslimat ayrı adrese iner.
     """
     teslimatlar, hatalilar, urun_haritasi = teslimatlari_hazirla(
-        db, satirlar, hedef_profil, "SKU"
+        db, satirlar, hedef_profil, "SKU", durak_anahtari=_durak_anahtari
     )
     satir_haritasi = {satir.id: satir for satir in satirlar}
     desi_haritasi = {

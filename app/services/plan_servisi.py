@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Collection
+from typing import Callable, Collection
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -222,11 +222,18 @@ def teslimatlari_hazirla(
     satirlar: list[SiparisSatiri],
     profil: KapasiteProfili,
     seviye: str | None = None,
+    durak_anahtari: Callable[[SiparisSatiri], str] | None = None,
 ) -> tuple[list[Teslimat], list[tuple[str, str]], dict[str, Urun]]:
     """Sipariş satırlarını planlanabilir teslimatlara dönüştürür.
 
     Master datası eksik olan ya da kapasite ölçüsü için gerekli alanı bulunmayan
     teslimatlar planlamaya alınmaz; ilgili satırlar HATALI statüsüne çekilir.
+
+    `durak_anahtari` verilirse satırlar teslimat numarasının **yanı sıra** durağa göre
+    de ayrılır. Kaynak dosyada aynı teslimat numarasının iki farklı bayiye ait satır
+    taşıdığı görüldü (2025 verisinde 82.258 teslimatın 49'unda). Yalnızca numaraya
+    göre gruplayınca ikinci bayinin malı birincinin adresine, aracına ve tır girişi
+    kuralına tabi oluyordu — tır giremeyen bir bayinin malı böyle bir tıra binmişti.
     """
     urun_haritasi = {
         urun.urun_kodu: urun
@@ -237,14 +244,15 @@ def teslimatlari_hazirla(
         )
     }
 
-    gruplar: dict[str, list[SiparisSatiri]] = {}
+    gruplar: dict[tuple[str, str], list[SiparisSatiri]] = {}
     for satir in satirlar:
-        gruplar.setdefault(satir.teslimat_no, []).append(satir)
+        durak = durak_anahtari(satir) if durak_anahtari else ""
+        gruplar.setdefault((satir.teslimat_no, durak), []).append(satir)
 
     teslimatlar: list[Teslimat] = []
     hatalilar: list[tuple[str, str]] = []
 
-    for teslimat_no, grup in sorted(gruplar.items()):
+    for (teslimat_no, _durak), grup in sorted(gruplar.items()):
         hata = None
         for satir in grup:
             urun = urun_haritasi.get(satir.urun_kodu)

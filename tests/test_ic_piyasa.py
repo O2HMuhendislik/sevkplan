@@ -31,6 +31,7 @@ from app.domain.kapasite import (
     IC_FTL_KAMYON,
     IC_KARGO,
     IC_RUTIN,
+    IC_RUTIN_KAMYON,
 )
 from app.domain.planlama import Teslimat
 from app.services import ic_piyasa_servisi
@@ -831,6 +832,93 @@ def test_kamyon_olcusu_olmayan_urun_kamyona_yuklenmez():
         [olcusuz], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON
     ).planlar[0]
     assert plan.arac_tipi is AracTipi.TIR
+
+
+def test_tir_giremeyen_musteri_tira_binmez():
+    """Adrese tır giremiyorsa FTL aracı kesinlikle tır olmaz — esneme yok.
+
+    Tam araç bayinin kapısına gider. Tır giremeyen bir adrese tır planlamak sahada
+    boşaltılamayan bir sevkiyattır; hacim yetse de tır kurulamaz.
+    """
+    giremez = replace(
+        _kamyonlu_musteri("TIR GİREMEZ", "IZMIR", "0.95", "0.90"), tir_girisi="H"
+    )
+    sonuc = planla(
+        [giremez], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON,
+        kamyon_yukleme_adeti=YUKLEME,
+    )
+    assert [p.arac_tipi for p in sonuc.planlar] == [AracTipi.KAMYON]
+
+
+def test_tir_giremeyen_musteri_tir_girenle_ayni_araca_binmez():
+    """İki müşteri hacim olarak sığsa bile aynı araca konmaz: araç tıra çıkardı."""
+    # İkisi birlikte tam bir tır (0,50 + 0,50); eskiden aynı araca binip tıra
+    # çıkıyorlardı. Her biri tek başına da dolu bir kamyondur.
+    giremez = replace(
+        _kamyonlu_musteri("GİREMEZ", "IZMIR", "0.50", "0.93"), tir_girisi="H"
+    )
+    girer = replace(_kamyonlu_musteri("GİRER", "IZMIR", "0.50", "0.93"), tir_girisi="E")
+    sonuc = planla(
+        [giremez, girer], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON,
+        kamyon_yukleme_adeti=YUKLEME,
+    )
+    assert len(sonuc.planlar) == 2
+    for plan in sonuc.planlar:
+        assert len(plan.musteriler) == 1
+        if plan.musteriler[0].tir_girisi == "H":
+            assert plan.arac_tipi is AracTipi.KAMYON
+
+
+def test_tir_giremeyen_musteri_kamyon_olcusu_yoksa_planlanmaz():
+    """Kamyon ölçüsü hesaplanamıyorsa tıra bindirmek yerine beklemede kalır.
+
+    Eskiden bu müşteri "kamyona verilemez" diye serbest havuza düşüyor ve tıra
+    biniyordu; sahada araç kapıya giremiyordu.
+    """
+    olcusuz = replace(
+        _kamyonlu_musteri("ÖLÇÜSÜZ", "IZMIR", "0.90", "0", kamyon_uygun=False),
+        tir_girisi="H",
+    )
+    sonuc = planla(
+        [olcusuz], SevkiyatTipi.FTL, IC_FTL, kamyon_profili=IC_FTL_KAMYON
+    )
+    assert sonuc.planlar == []
+    assert "tır giremiyor" in sonuc.bekleyenler[0].sebep.lower()
+
+
+def test_tir_giremeyen_musteri_parsiyele_binebilir():
+    """Parsiyelde araç bayiye uğramaz, yük aktarma merkezine iner; kural aranmaz."""
+    olcusuz = replace(
+        _kamyonlu_musteri("ÖLÇÜSÜZ", "IZMIR", "0.55", "0", kamyon_uygun=False),
+        tir_girisi="H",
+    )
+    sonuc = planla(
+        [olcusuz], SevkiyatTipi.RUTIN, IC_RUTIN, kamyon_profili=IC_RUTIN_KAMYON
+    )
+    assert len(sonuc.planlar) == 1
+
+
+def test_ayni_teslimat_numarasi_iki_bayiye_aitse_ayrilir(db):
+    """Kaynak dosyada aynı teslimat numarası iki farklı bayiye ait olabiliyor.
+
+    2025 verisinde 82.258 teslimatın 49'u böyle. Yalnızca numaraya göre gruplayınca
+    ikinci bayinin malı birincinin adresine ve aracına biniyordu; tır giremeyen bir
+    bayinin malı böyle bir tıra binmişti.
+    """
+    from app.models import SiparisSatiri
+
+    urun_ekle(db, "U1", palet_ici_adet=1, tir_yukleme_adeti=100)
+    _siparis(db, "ORTAK", 50, "BAYİ A", "IZMIR", ilce="BORNOVA")
+    _siparis(db, "ORTAK", 40, "BAYİ B", "ISTANBUL", ilce="KADIKOY")
+    db.flush()
+
+    musteriler, _ = ic_piyasa_servisi.musterileri_topla(
+        db, db.query(SiparisSatiri).all()
+    )
+    assert len(musteriler) == 2
+    assert {m.bayi_adi for m in musteriler} == {"BAYİ A", "BAYİ B"}
+    assert all(len(m.teslimatlar) == 1 for m in musteriler)
+    assert all(t.teslimat_no == "ORTAK" for m in musteriler for t in m.teslimatlar)
 
 
 def test_plan_kamyon_tir_ayrimini_kaydeder(db):

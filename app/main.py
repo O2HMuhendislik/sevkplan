@@ -155,6 +155,21 @@ def _sayi(deger) -> str:
 
 sablon_motoru.env.filters["sayi"] = _sayi
 
+AY_ADLARI = (
+    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+    "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+)
+
+
+def _ay_adi(gun) -> str:
+    """Takvim başlığı: 'Eylül 2026'. Python'un %B'si sistem diline bağlı."""
+    if not gun:
+        return ""
+    return f"{AY_ADLARI[gun.month - 1]} {gun.year}"
+
+
+sablon_motoru.env.filters["ay_adi"] = _ay_adi
+
 
 def _para(deger) -> str:
     """Türkçe para biçimi: 1.234.567,89. Boş değer '—' yazar.
@@ -1105,6 +1120,31 @@ def rota_planlari_uret(
     return yonlendir("/rota/planlar", mesaj=sonuc.ozet())
 
 
+@uygulama.get("/rota/takvim")
+def rota_takvim(
+    istek: Request,
+    ay: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Hangi güne kaç plan düştüğünü gösteren aylık takvim."""
+    try:
+        secilen = datetime.strptime(ay, "%Y-%m").date() if ay else date.today()
+    except ValueError:
+        secilen = date.today()
+    return sayfa(
+        istek,
+        "takvim.html",
+        kullanici,
+        modul_kodu="ROTA",
+        modul_adi="İç Piyasa",
+        taban="/rota",
+        takvim=rapor_servisi.takvim_ozeti(
+            db, "ROTA", secilen, masterdata_servisi.kurallari_kur(db)
+        ),
+    )
+
+
 @uygulama.get("/rota/planlar")
 def rota_planlar(
     istek: Request,
@@ -1113,9 +1153,15 @@ def rota_planlar(
     bolge: str = "",
     arac: str = "",
     arama: str = "",
+    tarih: str = "",
     kullanici: Kullanici = Depends(modul_yetkisi("ROTA")),
     db: Session = Depends(oturum_bagimliligi),
 ):
+    # Takvimden bir güne tıklanınca o günün planları listelenir.
+    try:
+        gun = datetime.strptime(tarih, "%Y-%m-%d").date() if tarih else None
+    except ValueError:
+        gun = None
     filtre = PlanFiltresi(
         durum=durum or None,
         arama=arama or None,
@@ -1123,6 +1169,8 @@ def rota_planlar(
         sevkiyat_tipi=tip or None,
         bolge_kodu=bolge or None,
         arac_tipi=arac or None,
+        baslangic=gun,
+        bitis=gun,
     )
     return sayfa(
         istek,
@@ -1134,6 +1182,7 @@ def rota_planlar(
         bolge=bolge,
         arac=arac,
         arama=arama,
+        tarih=gun,
         durumlar=[d.value for d in PlanDurumu],
     )
 

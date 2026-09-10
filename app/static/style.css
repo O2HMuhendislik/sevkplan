@@ -420,3 +420,28 @@ td.eksik { background: var(--vg-sari-20); color: var(--metin); font-weight: 600;
 .ay-satiri:hover td { background: var(--vurgu-cok-acik); }
 tr.ay-detay > td { background: var(--vg-gri-20); padding: 0; }
 tr.ay-detay .kart { margin: 0; border: 0; border-left: 4px solid var(--vg-acik-mavi); }
+
+/* ---------------------------------------------------------------- plan takvimi
+   Günlük araç sınırı dolunca hacim ertesi güne kaydığı için tek çalıştırma
+   onlarca güne plan üretebiliyor; takvim hangi güne kaç araç düştüğünü gösterir. */
+table.takvim { table-layout: fixed; }
+table.takvim th { text-align: center; font-size: 12px; }
+table.takvim th.tatil { color: var(--soluk); }
+table.takvim td {
+  vertical-align: top; height: 96px; padding: 8px; border: 1px solid var(--kenar);
+}
+table.takvim td.bos-gun { background: var(--zemin); border-color: transparent; }
+table.takvim td.tatil { background: var(--zemin); }
+table.takvim td.bugun { outline: 2px solid var(--vurgu); outline-offset: -2px; }
+table.takvim .gun-no { font-weight: 700; color: var(--soluk); font-size: 13px; }
+table.takvim .gun-sayi {
+  display: inline-block; margin: 4px 0 2px; font-size: 15px; font-weight: 700;
+  color: var(--vurgu); text-decoration: none;
+}
+table.takvim .gun-sayi:hover { text-decoration: underline; }
+table.takvim .gun-detay { font-size: 11px; color: var(--soluk); line-height: 1.5; }
+.etiketcik {
+  display: inline-block; padding: 1px 6px; margin: 1px 2px 1px 0; border-radius: 8px;
+  background: var(--vg-yesil-10); border: 1px solid var(--kenar);
+  color: var(--metin); font-size: 11px; white-space: nowrap;
+}
