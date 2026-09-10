@@ -1487,3 +1487,32 @@ def test_ihracat_musteri_indirmesi_geri_yuklenebilir(istemci, fabrika):
         kayit = db.query(IhracatMusterisi).one()
         assert kayit.arac_tipi == "TIR"
         assert kayit.ulke_kodu == "HR"
+
+
+def test_beklenmeyen_hata_okunur_sayfa_ve_gunluk_uretir(istemci, monkeypatch, tmp_path):
+    """Çıplak "Internal Server Error" yerine sebebi yazan bir sayfa çıkmalı.
+
+    Kullanıcı sunucu konsoluna bakamıyorsa hatanın ne olduğunu öğrenmesinin başka
+    yolu yoktu.
+    """
+    from app import main as ana
+
+    gunluk = tmp_path / "hata.log"
+    monkeypatch.setattr(ana, "HATA_GUNLUGU", gunluk)
+
+    def patlat(*_args, **_kwargs):
+        raise RuntimeError("bellek yetmedi diyelim")
+
+    monkeypatch.setattr(ana.rapor_servisi, "gosterge_paneli", patlat)
+    # TestClient varsayılan olarak sunucu hatasını yeniden fırlatır; gerçek
+    # tarayıcının gördüğünü görmek için bu kapatılır.
+    istemci._transport.raise_server_exceptions = False
+    cevap = istemci.get("/ring", follow_redirects=False)
+
+    assert cevap.status_code == 500
+    assert "Beklenmeyen bir hata oluştu" in cevap.text
+    assert "bellek yetmedi diyelim" in cevap.text
+    assert gunluk.exists()
+    dokum = gunluk.read_text(encoding="utf-8")
+    assert "RuntimeError" in dokum
+    assert "/ring" in dokum

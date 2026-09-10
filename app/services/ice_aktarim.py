@@ -233,6 +233,42 @@ def _tanitici_alanlari_tazele(satir: SiparisSatiri, kayit: dict) -> None:
         satir.incoterms = incoterms
 
 
+SORGU_PARCA_BOYU = 900
+"""Tek `IN (...)` sorgusuna konacak en fazla değer.
+
+SQLite'ın değişken sınırı (varsayılan 999) aşılırsa sorgu hata verir; parçalayarak
+sorulur.
+"""
+
+
+def _mevcut_siparis_satirlari(db: Session, kayitlar: list[dict]) -> dict:
+    """Dosyadaki anahtarlara karşılık gelen mevcut satırları **tek seferde** okur.
+
+    Önceden her satır için ayrı bir SELECT atılıyordu: 139 bin satırlık bir dosyada
+    139 bin sorgu demek. Hem dakikalar sürüyordu hem de her sorgunun döndürdüğü
+    nesne oturumun kimlik haritasında kalıcı olarak birikip belleği şişiriyordu —
+    büyük dosyalarda yükleme bu yüzden çöküyordu.
+
+    Yalnızca dosyada geçen sipariş numaraları okunur; bütün tablo belleğe alınmaz.
+    """
+    siparis_numaralari = {
+        excel.metin(kayit.get("siparis_no"))
+        for kayit in kayitlar
+        if excel.metin(kayit.get("siparis_no"))
+    }
+    mevcutlar: dict[tuple[str, str, str], SiparisSatiri] = {}
+    numaralar = sorted(siparis_numaralari)
+    for bas in range(0, len(numaralar), SORGU_PARCA_BOYU):
+        parca = numaralar[bas:bas + SORGU_PARCA_BOYU]
+        for satir in db.scalars(
+            select(SiparisSatiri).where(SiparisSatiri.siparis_no.in_(parca))
+        ).all():
+            mevcutlar[
+                (satir.siparis_no, satir.teslimat_no, satir.siparis_satir_no)
+            ] = satir
+    return mevcutlar
+
+
 def siparisleri_aktar(
     db: Session,
     dosya: Path | Any,
@@ -255,6 +291,8 @@ def siparisleri_aktar(
     etkilenen_teslimatlar: set[str] = set()
     parti: dict[tuple[str, str, str], SiparisSatiri] = {}
     """Aynı dosyada tekrar eden (sipariş, teslimat, ürün) satırları birleştirmek için."""
+
+    mevcutlar = _mevcut_siparis_satirlari(db, kayitlar)
 
     for kayit in kayitlar:
         satir_no = kayit["_satir_no"]
@@ -308,13 +346,7 @@ def siparisleri_aktar(
             sonuc.birlestirilen += 1
             continue
 
-        mevcut = db.scalar(
-            select(SiparisSatiri).where(
-                SiparisSatiri.siparis_no == siparis_no,
-                SiparisSatiri.teslimat_no == teslimat_no,
-                SiparisSatiri.siparis_satir_no == siparis_satir_no,
-            )
-        )
+        mevcut = mevcutlar.get(satir_anahtari)
         if mevcut is not None and mevcut.durum in {
             SiparisDurumu.PLANLANDI,
             SiparisDurumu.TAMAMLANDI,
@@ -335,6 +367,7 @@ def siparisleri_aktar(
                 siparis_satir_no=siparis_satir_no,
             )
             db.add(mevcut)
+            mevcutlar[satir_anahtari] = mevcut
             sonuc.eklenen += 1
         else:
             sonuc.guncellenen += 1
@@ -731,6 +764,7 @@ def ihracat_siparislerini_aktar(
     aktarim = _aktarim_kaydet(db, dosya_adi, "SIPARIS/IHRACAT", sonuc, kullanici)
     db.flush()
 
+    mevcutlar = _mevcut_siparis_satirlari(db, kayitlar)
     parti: dict[tuple[str, str, str], SiparisSatiri] = {}
     for kayit in kayitlar:
         satir_no = kayit["_satir_no"]
@@ -773,13 +807,7 @@ def ihracat_siparislerini_aktar(
             sonuc.birlestirilen += 1
             continue
 
-        mevcut = db.scalar(
-            select(SiparisSatiri).where(
-                SiparisSatiri.siparis_no == siparis_no,
-                SiparisSatiri.teslimat_no == teslimat_no,
-                SiparisSatiri.siparis_satir_no == siparis_satir_no,
-            )
-        )
+        mevcut = mevcutlar.get(satir_anahtari)
         if mevcut is not None and mevcut.durum in {
             SiparisDurumu.PLANLANDI,
             SiparisDurumu.TAMAMLANDI,
@@ -793,6 +821,7 @@ def ihracat_siparislerini_aktar(
                 siparis_satir_no=siparis_satir_no,
             )
             db.add(mevcut)
+            mevcutlar[satir_anahtari] = mevcut
             sonuc.eklenen += 1
         else:
             sonuc.guncellenen += 1

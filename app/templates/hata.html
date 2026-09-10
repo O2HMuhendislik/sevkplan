@@ -1,9 +1,33 @@
 {% extends "temel.html" %}
 {% block icerik %}
+{% if kod == 500 %}
+{# Beklenmeyen hata: kullanıcı sunucu konsoluna bakamayabilir, sebebi ekranda yaz. #}
+<div class="giris-kutusu" style="max-width:760px; text-align:left">
+  <h1>Beklenmeyen bir hata oluştu</h1>
+  <p class="soluk">
+    İşlem tamamlanamadı. Aşağıdaki satır hatanın ne olduğunu söyler; tam dökümü
+    günlük dosyasında.
+  </p>
+  <pre style="background:var(--vg-gri-20); padding:12px 14px; border-radius:8px;
+              overflow-x:auto; font-size:12.5px; margin:14px 0">{{ mesaj }}</pre>
+  {% if gunluk_yolu %}
+  <p class="soluk">
+    Ayrıntılı döküm: <code>{{ gunluk_yolu }}</code><br>
+    Bu dosyanın son bölümünü paylaşırsanız sebep kesin olarak bulunur.
+  </p>
+  {% endif %}
+  <p class="soluk">
+    Büyük bir dosya yüklüyorsanız (on binlerce satır) dosyayı bölerek denemek çoğu
+    zaman işe yarar.
+  </p>
+  <a class="dugme" href="/" style="margin-top:8px">Modüllere dön</a>
+</div>
+{% else %}
 <div class="giris-kutusu" style="text-align:center">
   <div style="font-size:44px; line-height:1">{{ '🔒' if kod == 403 else '🔍' }}</div>
   <h1>{{ 'Yetkiniz yok' if kod == 403 else 'Sayfa bulunamadı' }}</h1>
   <p class="soluk">{{ mesaj }}</p>
   <a class="dugme" href="/" style="margin-top:12px">Modüllere dön</a>
 </div>
+{% endif %}
 {% endblock %}

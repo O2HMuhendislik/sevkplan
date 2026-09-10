@@ -35,6 +35,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import (
     CIKTI_DIZIN,
+    VERI_DIZIN,
     DEPO_PROFILLERI,
     GRUP_ICI_MIX,
     OTURUM_SURESI_DAKIKA,
@@ -222,6 +223,54 @@ async def _http_hatasi_isle(istek: Request, hata: StarletteHTTPException):
             status_code=hata.status_code,
         )
     return await http_exception_handler(istek, hata)
+
+
+HATA_GUNLUGU = VERI_DIZIN / "hata.log"
+"""Beklenmeyen hataların tam dökümü. Ekranda özet, dosyada ayrıntı."""
+
+
+@uygulama.exception_handler(Exception)
+async def _beklenmeyen_hata(istek: Request, hata: Exception):
+    """Beklenmeyen hatayı okunur bir sayfaya çevirir ve günlüğe yazar.
+
+    Önceden tarayıcıda yalnızca çıplak "Internal Server Error" görünüyordu; hatanın
+    ne olduğu, hangi ekranda çıktığı ve nasıl düzeltileceği hiçbir yerde
+    yazmıyordu. Kullanıcı sunucu konsoluna bakamıyorsa elinde hiçbir şey kalmıyordu.
+
+    Ayrıntı **dosyaya** yazılır, ekrana yalnızca hatanın türü ve mesajı çıkar.
+    """
+    import traceback
+
+    dokum = "".join(traceback.format_exception(type(hata), hata, hata.__traceback__))
+    zaman = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    try:
+        HATA_GUNLUGU.parent.mkdir(parents=True, exist_ok=True)
+        with HATA_GUNLUGU.open("a", encoding="utf-8") as gunluk:
+            gunluk.write(f"\n{'=' * 70}\n{zaman} · {istek.method} {istek.url.path}\n{dokum}")
+    except OSError:
+        pass  # Günlük yazılamıyorsa da sayfayı gösterebilmeliyiz.
+
+    kullanici = None
+    kullanici_id = istek.session.get("kullanici_id") if "session" in istek.scope else None
+    if kullanici_id:
+        try:
+            with OturumFabrikasi() as db:
+                kullanici = db.get(Kullanici, kullanici_id)
+        except SQLAlchemyError:
+            pass
+
+    return sablon_motoru.TemplateResponse(
+        istek,
+        "hata.html",
+        {
+            "kod": 500,
+            "mesaj": f"{type(hata).__name__}: {hata}",
+            "gunluk_yolu": str(HATA_GUNLUGU),
+            "kullanici": kullanici,
+            "moduller": MODULLER,
+        },
+        status_code=500,
+    )
 
 
 # --------------------------------------------------------------------- yardımcılar
