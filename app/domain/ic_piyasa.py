@@ -10,8 +10,10 @@ bir motor; ortak olan tek şey `Teslimat` ve kapasite profilidir.
   aracın en az %15'ini kaplamalı, günde en fazla 35 araç.
 * **Rutin / parsiyel (`R`)** — müşterinin *toplam* siparişi 3 paleti aşmıyorsa. Araç
   %50-60 dolulukta bırakılır, günde en fazla 3-4 araç.
-* **Kargo (`K`)** — Incoterms EXW olanlar (müşteri ödemeli) ve müşteri toplamı 10
-  desinin altında kalanlar. Araç kapasitesi aranmaz.
+* **Kargo (`K`)** — müşteri toplamı 10 desinin altında kalanlar. Araç kapasitesi
+  aranmaz; günün tek kargo listesinde toplanır.
+* **EXW (`X`)** — nakliyeyi müşteri üstlenir, malı kendi aracıyla alır. Araç
+  planlanmaz, navlun ödenmez; kargo listesinden ayrı kendi günlük listesindedir.
 
 **Kırık palet neden burada toplanmıyor:** Ring'de aynı SKU farklı teslimatlardan
 birleşip tek palet olabilir, çünkü hepsi aynı yere gider. İç piyasada her müşterinin
@@ -44,16 +46,34 @@ class SevkiyatTipi(str, enum.Enum):
     FTL = "FTL"
     RUTIN = "RUTIN"
     KARGO = "KARGO"
+    EXW = "EXW"
+    """Nakliyeyi müşteri üstlenir; malı kendi aracıyla alır.
+
+    Eskiden EXW siparişleri kargo listesine yazılıyordu. 2025 verisinde bu, günlük
+    kargo listesine **9,73 tırlık** yük koyuyordu: listenin 3.795 satırının 2.582'si
+    EXW'den geliyor ve liste %980 dolulukla görünüyordu. EXW bir kargo sevkiyatı
+    değildir — ne bizim aracımız çıkar ne de navlun öderiz — bu yüzden kendi listesine
+    ayrıldı. Kargo listesinde artık yalnızca gerçekten kargoya giden küçük siparişler
+    kalıyor.
+    """
 
     @property
     def belge_kodu(self) -> str:
-        return {"FTL": "S", "RUTIN": "R", "KARGO": "K"}[self.value]
+        return {"FTL": "S", "RUTIN": "R", "KARGO": "K", "EXW": "X"}[self.value]
 
     @property
     def ad(self) -> str:
-        return {"FTL": "FTL (tam araç)", "RUTIN": "Rutin / parsiyel", "KARGO": "Kargo"}[
-            self.value
-        ]
+        return {
+            "FTL": "FTL (tam araç)",
+            "RUTIN": "Rutin / parsiyel",
+            "KARGO": "Kargo",
+            "EXW": "EXW — nakliye müşteride",
+        }[self.value]
+
+    @property
+    def aracsiz_mi(self) -> bool:
+        """Bu tipte araç planlanmaz: kapasite, durak ve doluluk kuralları aranmaz."""
+        return self in (SevkiyatTipi.KARGO, SevkiyatTipi.EXW)
 
 
 @dataclass(frozen=True)
@@ -101,6 +121,17 @@ PARSIYEL_DEPOLARI = frozenset().union(*PARSIYEL_DEPO_GRUPLARI.values())
 
 GUNLUK_KARGO_KODU = "KARGO"
 """Günlük kargo listesinin bölge kodu; kargoda rota ve bölge yoktur."""
+
+EXW_KODU = "EXW"
+"""Nakliyeyi müşterinin üstlendiği siparişlerin günlük listesi.
+
+Kargo listesinden ayrıdır: kargoya verilen mal bizim navlunumuzdur, EXW malı
+müşterinin aracına yüklenir. İkisi tek listede toplanınca kargo listesi hem
+okunamaz hâle geliyor hem de doluluğu anlamsız çıkıyordu.
+"""
+
+ARACSIZ_TIPLER = frozenset({SevkiyatTipi.KARGO.value, SevkiyatTipi.EXW.value})
+"""Araç planlanmayan sevkiyat tipleri; doluluk yüzdesi bunlarda ölçülmez."""
 
 
 @dataclass(frozen=True)
@@ -236,7 +267,19 @@ def teslimati_bol(
     yukleme_adeti: Mapping[str, int] | None = None,
     kamyon: bool = False,
 ) -> list[Teslimat]:
-    """Araç kapasitesini aşan **bölünebilir** teslimatı araç boyutunda parçalara ayırır.
+    """Bir aracı aşan teslimatı araç boyutunda parçalara ayırır.
+
+    **Aracı aşan teslimat her zaman bölünür.** Eskiden yalnızca bayi ortak deposu (-1)
+    bölünebiliyordu; 64 ve 74 deposunun teslimatları "teslimat bölünmez" kuralıyla
+    olduğu gibi tek araca konuyordu. Bunun sonucu 2025 verisinde 118 planın 88'inin
+    %100'ün üzerinde doluluk göstermesiydi — örneğin TÜZÜNLER ENERJİ'nin 0060774085
+    numaralı teslimatı tek başına 1,56 tır ve tek araca yüklenmiş görünüyordu (%155,87).
+    Böyle bir araç sahada yüklenemez: bir araç bir araçtan fazlasını taşıyamaz, o yük
+    zaten iki araçla gidiyordu. Artık motor da iki araç planlıyor.
+
+    `bolunebilir_mi` bu kararı **artık kapatmıyor**; alan, aracı doldurmak için
+    miktarın kesilebildiği depoları (Ring tarafı) işaretlemeye devam ediyor. Aracı
+    aşmayan teslimat hiçbir koşulda bölünmez.
 
     Bölme **oransaldır:** her araca teslimattaki bütün ürünlerden aynı oranda konur.
     Böylece şofben bir araca, bacası başka bir araca düşmez — aksesuar her zaman ana
@@ -252,7 +295,7 @@ def teslimati_bol(
     `kamyon` verilirse ölçüler ve `yukleme_adeti` haritası kamyona aittir.
     Bölünemeyen ya da zaten sığan teslimat olduğu gibi döner.
     """
-    if not teslimat.bolunebilir_mi or not teslimat.satir_miktarlari:
+    if not teslimat.satir_miktarlari:
         return [teslimat]
     toplam_olcu = _teslimat_olcusu(teslimat, tip, kamyon)
     if toplam_olcu <= kapasite or toplam_olcu <= 0:
@@ -279,6 +322,14 @@ def teslimati_bol(
             return Decimal((int(ham) // ici) * ici)
         return Decimal(int(ham))
 
+    def sigacak_miktar(sku: str, kalan_kapasite: Decimal) -> Decimal:
+        """Kalan kapasiteye sığan en büyük **tam palet** miktarı."""
+        adet = yukleme_adeti.get(sku)
+        if not adet:
+            # Ölçüsü olmayan kalem kapasite tüketmez; olduğu gibi konur.
+            return Decimal("Infinity")
+        return palete_indir(sku, kalan_kapasite * Decimal(adet))
+
     def kume_olcusu(satirlar: Mapping[int, tuple[str, Decimal]]) -> Decimal:
         return sum(
             (satir_olcusu(sku, miktar) for sku, miktar in satirlar.values()),
@@ -300,12 +351,27 @@ def teslimati_bol(
         oran = kapasite / kalan_olcu
         kutu: dict[int, tuple[str, Decimal]] = {}
         yeni_kalanlar: dict[int, tuple[str, Decimal]] = {}
+        kutu_olcusu = Decimal(0)
         for sid, (sku, miktar) in sorted(kalanlar.items()):
             alinan = palete_indir(sku, miktar * oran)
             if alinan <= 0:
                 # Payı bir paletin altında: bölmek yerine bütün hâlde bu araca konur,
                 # aksesuar ana ürününden kopmasın.
                 alinan = miktar
+            alinan = min(alinan, miktar)
+
+            # Araç hiçbir koşulda taşmasın. Palete yuvarlanan paylar tek tek kendi
+            # payından küçüktür ama bir paletin altında kalıp bütün konan kalemler
+            # payından **büyük** olabiliyor; birikince parça kapasiteyi aşıyor ve
+            # plan %101,80 gibi bir dolulukla görünüyordu. Sığmayan kalem tam palete
+            # kırpılır, hiç sığmıyorsa sonraki araca kalır.
+            if satir_olcusu(sku, alinan) > kapasite - kutu_olcusu:
+                alinan = min(alinan, sigacak_miktar(sku, kapasite - kutu_olcusu))
+            if alinan <= 0:
+                yeni_kalanlar[sid] = (sku, miktar)
+                continue
+
+            kutu_olcusu += satir_olcusu(sku, alinan)
             if alinan >= miktar:
                 kutu[sid] = (sku, miktar)
                 continue
@@ -318,9 +384,14 @@ def teslimati_bol(
         parcalar.append(kutu)
         kalanlar = yeni_kalanlar
 
+    if len(parcalar) == 1:
+        return [_teslimat_parcasi(teslimat, parcalar[0], palet_ici, yukleme_adeti, kamyon)]
     return [
-        _teslimat_parcasi(teslimat, kutu, palet_ici, yukleme_adeti, kamyon)
-        for kutu in parcalar
+        _teslimat_parcasi(
+            teslimat, kutu, palet_ici, yukleme_adeti, kamyon,
+            parca_no=sira, parca_adedi=len(parcalar),
+        )
+        for sira, kutu in enumerate(parcalar, start=1)
     ]
 
 
@@ -330,6 +401,8 @@ def _teslimat_parcasi(
     palet_ici: Mapping[str, int],
     yukleme_adeti: Mapping[str, int],
     kamyon: bool = False,
+    parca_no: int = 0,
+    parca_adedi: int = 0,
 ) -> Teslimat:
     """Teslimatın bir parçası: ölçüler alınan miktarlara göre yeniden hesaplanır.
 
@@ -374,6 +447,8 @@ def _teslimat_parcasi(
         satir_idleri=tuple(sorted(satirlar)),
         satir_miktarlari=dict(satirlar),
         depo_katkilari={teslimat.depo_kodu: yeni_anahtar},
+        parca_no=parca_no,
+        parca_adedi=parca_adedi,
     )
 
 
@@ -435,7 +510,10 @@ def tip_belirle(
     hacim araç planlamayı hak etmiyor), sonra 3 palet kuralıyla rutin, kalan FTL.
     """
     if kurallar.exw_kargoya and musteri.incoterms.upper() == "EXW":
-        return SevkiyatTipi.KARGO, "Incoterms EXW — taşımayı müşteri üstleniyor"
+        return (
+            SevkiyatTipi.EXW,
+            "Incoterms EXW — taşımayı müşteri üstleniyor, araç planlanmaz",
+        )
     if 0 < musteri.desi < kurallar.kargo_desi_siniri:
         return (
             SevkiyatTipi.KARGO,
@@ -557,7 +635,14 @@ class RotaPlani:
 
     @property
     def doluluk_yuzdesi(self) -> Decimal:
-        """Seçilen araca göre doluluk: kamyona inen yük kamyon kapasitesiyle ölçülür."""
+        """Seçilen araca göre doluluk: kamyona inen yük kamyon kapasitesiyle ölçülür.
+
+        Kargo ve EXW listelerinde araç yoktur; oran ölçülecek bir kapasite olmadığı
+        için sıfır döner. (Eskiden günlük kargo listesi 9,8 tırlık yükü tek "araç"
+        sayıp %980 doluluk gösteriyordu.)
+        """
+        if self.tip.aracsiz_mi:
+            return Decimal(0)
         return self.secili_profil.doluluk_yuzdesi(self.secili_birim)
 
     @property
@@ -600,7 +685,12 @@ class RotaPlani:
 
         Parsiyelde bu her zaman aktarma merkezidir (Ankara / İstanbul / Bursa); yük
         oraya indirilir, dağıtımı merkez yapar. Diğer tiplerde en uzak ildir.
+
+        Kargo ve EXW listelerinde rota yoktur — liste bütün ülkeye dağılır — bu yüzden
+        son uğrak da yoktur; "en uzak il" yazmak yanıltıcı olurdu.
         """
+        if self.tip.aracsiz_mi:
+            return None
         if self.aktarma_merkezi:
             return self.aktarma_merkezi
         iller = self.iller
@@ -944,13 +1034,16 @@ def planla(
     if not musteriler:
         return sonuc
 
-    if tip is SevkiyatTipi.KARGO:
+    if tip.aracsiz_mi:
         # Kargo bir araç planlaması değildir: 10 desinin altındaki bütün siparişler
         # günün **tek** kargo listesinde toplanır. Her müşteriye ayrı plan açmak
-        # onlarca anlamsız sefer numarası üretiyordu.
+        # onlarca anlamsız sefer numarası üretiyordu. EXW aynı şekilde tek listede
+        # toplanır ama kargodan **ayrı** listedir: o mal bizim aracımıza binmiyor.
         sonuc.planlar.append(
             RotaPlani(
-                bolge_kodu=GUNLUK_KARGO_KODU,
+                bolge_kodu=(
+                    EXW_KODU if tip is SevkiyatTipi.EXW else GUNLUK_KARGO_KODU
+                ),
                 tip=tip,
                 profil=profil,
                 musteriler=list(musteriler),

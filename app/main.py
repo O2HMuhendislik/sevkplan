@@ -962,7 +962,7 @@ def _ic_plan_getir(db: Session, plan_id: int) -> SevkiyatPlani:
 
 
 def _tipleri_coz(secilenler: list[str]) -> list[SevkiyatTipi]:
-    """Formdan gelen tip seçimini çözer; seçim yoksa üç tip de çalışır."""
+    """Formdan gelen tip seçimini çözer; seçim yoksa bütün tipler çalışır."""
     tipler = []
     for deger in secilenler:
         try:

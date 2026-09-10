@@ -10,6 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from app.domain.bolgeler import bolge_adi, il_bolgesi
 from app.domain.ic_piyasa import (
@@ -25,6 +26,7 @@ from app.domain.ic_piyasa import (
 )
 from app.domain.kapasite import (
     AracTipi,
+    IC_EXW,
     IC_FTL,
     IC_FTL_KAMYON,
     IC_KARGO,
@@ -77,11 +79,45 @@ def musteri(
 # ------------------------------------------------------------------ sevkiyat tipi
 
 
-def test_exw_musterisi_kargoya_gider():
-    """Taşımayı müşteri üstleniyorsa hacmi ne olursa olsun araç planlanmaz."""
+def test_exw_musterisi_kendi_tipine_gider():
+    """Taşımayı müşteri üstleniyorsa hacmi ne olursa olsun araç planlanmaz.
+
+    EXW kargo **değildir**: kargoya verdiğimiz malın navlununu biz öderiz, EXW malı
+    müşterinin aracına yüklenir. İkisi tek listede toplanınca günlük kargo listesi
+    2025 verisinde 9,7 tırlık EXW yüküyle şişiyordu.
+    """
     tip, gerekce = tip_belirle(musteri("BÜYÜK BAYİ", "IZMIR", 0.9, incoterms="EXW"))
-    assert tip is SevkiyatTipi.KARGO
+    assert tip is SevkiyatTipi.EXW
+    assert tip.aracsiz_mi
     assert "EXW" in gerekce
+
+
+def test_exw_kargo_listesine_karismaz():
+    """EXW ve kargo ayrı listelerde toplanır; sefer numaraları da ayrıdır."""
+    from app.domain.ic_piyasa import EXW_KODU, GUNLUK_KARGO_KODU
+
+    exw = planla(
+        [musteri("EXW BAYİ", "IZMIR", 0.9, incoterms="EXW")],
+        SevkiyatTipi.EXW, IC_EXW,
+    )
+    kargo = planla(
+        [musteri("KÜÇÜK", "IZMIR", Decimal("0.001"), desi=7)],
+        SevkiyatTipi.KARGO, IC_KARGO,
+    )
+    assert [p.bolge_kodu for p in exw.planlar] == [EXW_KODU]
+    assert [p.bolge_kodu for p in kargo.planlar] == [GUNLUK_KARGO_KODU]
+    assert SevkiyatTipi.EXW.belge_kodu == "X"
+
+
+def test_aracsiz_listede_doluluk_olculmez():
+    """Kargo/EXW listesinde araç yoktur; 9,8 tırlık liste %980 doluluk göstermemeli."""
+    sonuc = planla(
+        [musteri("TOPTANCI", "IZMIR", 9, incoterms="EXW")],
+        SevkiyatTipi.EXW, IC_EXW,
+    )
+    plan = sonuc.planlar[0]
+    assert plan.toplam_birim == Decimal(9)
+    assert plan.doluluk_yuzdesi == Decimal(0)
 
 
 def test_on_desinin_altindaki_musteri_kargoya_gider():
@@ -514,12 +550,30 @@ def test_kesim_tam_palet_sinirinda_yapilir():
     assert [p.miktar for p in parcalar] == [Decimal(80), Decimal(80), Decimal(40)]
 
 
-def test_bolunemeyen_depoda_teslimat_kesilmez():
-    """64 ve 74 depolarında teslimat bölünmez; olduğu gibi kalır."""
+def test_araca_sigan_teslimat_hicbir_depoda_kesilmez():
+    """Aracı aşmayan teslimat bölünmez — bölünebilir depoda bile."""
     from app.domain.ic_piyasa import teslimati_bol
 
-    t = replace(bolunebilir_teslimat("T-1", 1000, [1]), depo_kodu="64", bolunebilir_mi=False)
+    t = replace(bolunebilir_teslimat("T-1", 100, [1]), depo_kodu="64", bolunebilir_mi=False)
     assert teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, PALET_ICI, YUKLEME) == [t]
+
+
+def test_araci_asan_teslimat_bolunemeyen_depoda_da_bolunur():
+    """Bir araç bir araçtan fazlasını taşıyamaz: 64 deposunda da bölünür.
+
+    Sahadan gelen örnek: TÜZÜNLER ENERJİ'nin 0060774085 teslimatı tek başına 1,56
+    tır. Eskiden "teslimat bölünmez" kuralı yüzünden tek araca konuyor ve plan
+    %155,87 dolulukla görünüyordu; o araç sahada yüklenemez.
+    """
+    from app.domain.ic_piyasa import teslimati_bol
+
+    t = replace(bolunebilir_teslimat("T-1", 156, [1]), depo_kodu="64", bolunebilir_mi=False)
+    parcalar = teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, PALET_ICI, YUKLEME)
+
+    assert len(parcalar) == 2
+    assert sum(p.miktar for p in parcalar) == Decimal(156)
+    assert all(p.birim <= 1 for p in parcalar)
+    assert [(p.parca_no, p.parca_adedi) for p in parcalar] == [(1, 2), (2, 2)]
 
 
 def test_bayi_depo_musterisi_istisna_plani_uretmez():
@@ -535,6 +589,99 @@ def test_bayi_depo_musterisi_istisna_plani_uretmez():
     assert len(sonuc.planlar) == 10
     assert not any(plan.istisna_asim for plan in sonuc.planlar)
     assert all(plan.doluluk_yuzdesi <= 100 for plan in sonuc.planlar)
+
+
+def test_hicbir_plan_araci_asmaz():
+    """Aracı aşan teslimat 64/74 deposunda da bölünür; hiçbir plan %100'ü aşmaz.
+
+    Sahadan gelen defekt: 2025 havuzunda üretilen 118 planın 88'i %100'ün üzerinde
+    doluluk gösteriyordu — en büyüğü %980 (kargo listesi), araçlılar arasında en
+    büyüğü %214. Sebep, tek başına aracı aşan teslimatların bölünmeden tek araca
+    konmasıydı.
+    """
+    dev = musteri(
+        "BÖLÜNEMEYEN DEPO", "IZMIR", Decimal("2.56"),
+        teslimatlar=(
+            replace(
+                bolunebilir_teslimat("T-256", 256, [1, 2, 3]),
+                depo_kodu="64", bolunebilir_mi=False,
+                depo_katkilari={"64": Decimal("2.56")},
+            ),
+        ),
+    )
+    sonuc = planla(
+        [dev], SevkiyatTipi.FTL, IC_FTL,
+        palet_ici=PALET_ICI, yukleme_adeti=YUKLEME, kalanlari_zorla=True,
+    )
+    assert sum(p.toplam_birim for p in sonuc.planlar) == Decimal("2.56")
+    assert all(plan.doluluk_yuzdesi <= 100 for plan in sonuc.planlar)
+    assert not any(plan.istisna_asim for plan in sonuc.planlar)
+
+
+def test_palet_alti_kalem_araci_tasirmaz():
+    """Bir paletin altında kalan kalem bölünmez ama aracı da aşırmaz.
+
+    Küçük kalemler "aksesuar ana ürününden kopmasın" diye bütün hâlde ilk araca
+    konuyordu; birikince parça kapasiteyi aşıyor ve plan %101,80 çıkıyordu.
+    """
+    from app.domain.ic_piyasa import teslimati_bol
+
+    t = replace(
+        bolunebilir_teslimat("T-KUCUK", 105, [1, 2, 3, 4, 5, 6, 7]),
+        depo_kodu="74", bolunebilir_mi=False,
+    )
+    parcalar = teslimati_bol(t, Decimal(1), SevkiyatTipi.FTL, PALET_ICI, YUKLEME)
+
+    assert sum(p.miktar for p in parcalar) == Decimal(105)
+    assert all(p.birim <= 1 for p in parcalar)
+
+
+def test_bekleme_sebebi_siparis_satirina_yazilir(ic_veri):
+    """Plana giremeyen satır, gerekçesini ekranda gösterebilmeli.
+
+    Gerekçe eskiden yalnızca çalıştırma özetinde duruyordu; Bekleyenler ekranı bütün
+    satırlara ayrımsız "Hacim bekliyor" yazıyordu. Oysa satır günlük araç sınırına
+    da takılmış olabilir, son uğrak kuralına da.
+    """
+    from app.models import SiparisSatiri
+
+    db = ic_veri
+    # 5 palet: rutin sınırının üstünde ama tırın alt limitini dolduramıyor.
+    _siparis(db, "KUCUK-1", 50, "KÜÇÜK BAYİ", "IZMIR")
+    db.flush()
+
+    ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    satir = db.scalars(
+        select(SiparisSatiri).where(SiparisSatiri.teslimat_no == "KUCUK-1")
+    ).first()
+    assert satir.plan_id is None
+    assert "Yeterli hacim yok" in satir.bekleme_sebebi
+    assert satir.bekleme_gerekcesi == satir.bekleme_sebebi
+
+
+def test_plana_giren_satirin_bekleme_sebebi_silinir(ic_veri):
+    """Satır plana girince eski gerekçesi ekranda kalmamalı."""
+    from app.models import SiparisSatiri
+
+    db = ic_veri
+    _siparis(db, "BUYUR-1", 50, "BÜYÜYEN BAYİ", "IZMIR")
+    db.flush()
+    ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    _siparis(db, "BUYUR-2", 50, "BÜYÜYEN BAYİ", "IZMIR")
+    db.flush()
+    ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+
+    satirlar = db.scalars(
+        select(SiparisSatiri).where(SiparisSatiri.teslimat_no.in_(["BUYUR-1", "BUYUR-2"]))
+    ).all()
+    assert all(s.plan_id is not None for s in satirlar)
+    assert all(s.bekleme_sebebi is None for s in satirlar)
 
 
 def test_kesilen_satirin_kalani_ayni_teslimatla_beklemede_kalir(ic_veri):

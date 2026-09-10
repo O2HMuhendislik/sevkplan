@@ -754,6 +754,7 @@ def plan_iptal(
     for satir in list(plan.satirlar):
         satir.plan_id = None
         satir.durum = SiparisDurumu.BEKLEMEDE
+        satir.bekleme_sebebi = None
     db.flush()
 
 

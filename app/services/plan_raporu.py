@@ -248,7 +248,7 @@ def bekleyen_raporu(satirlar, hedef: Path, modul: str | None = None) -> Path:
                 _sayi(satir.miktar),
                 _tarih(satir.termin_tarihi),
                 satir.bekleme_gunu,
-                satir.hata_aciklamasi or "Hacim bekliyor",
+                satir.bekleme_gerekcesi,
             ]
             for sira, satir in enumerate(satirlar, start=1)
         ],

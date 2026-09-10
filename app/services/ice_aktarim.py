@@ -388,6 +388,7 @@ def siparisleri_aktar(
         mevcut.termin_tarihi = termin_tarihi
         mevcut.durum = SiparisDurumu.BEKLEMEDE
         mevcut.hata_aciklamasi = None
+        mevcut.bekleme_sebebi = None
         mevcut.modul = modul
         mevcut.ice_aktarim_id = aktarim.id
         parti[satir_anahtari] = mevcut
@@ -838,6 +839,7 @@ def ihracat_siparislerini_aktar(
         mevcut.termin_tarihi = excel.tarih(kayit.get("termin_tarihi"))
         mevcut.durum = SiparisDurumu.BEKLEMEDE
         mevcut.hata_aciklamasi = None
+        mevcut.bekleme_sebebi = None
         mevcut.modul = "IHRACAT"
         mevcut.ice_aktarim_id = aktarim.id
         parti[satir_anahtari] = mevcut

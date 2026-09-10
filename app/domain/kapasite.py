@@ -164,6 +164,21 @@ IC_KARGO = KapasiteProfili(
 )
 """Kargoda araç kapasitesi yoktur; profil yalnızca belge kodu ve raporlama içindir."""
 
+IC_EXW = KapasiteProfili(
+    kod="IC_EXW",
+    ad="İç piyasa — EXW (nakliye müşteride)",
+    belge_kodu="X",
+    olcu=Olcu.ANAHTAR,
+    arac_tipi=AracTipi.TIR,
+    ust_limit=Decimal(1),
+    alt_limit=Decimal(0),
+)
+"""EXW'de de araç yoktur: mal müşterinin aracına yüklenir, navlun ödenmez.
+
+Kargodan ayrı bir profil olmasının tek sebebi belge kodudur (X): iki liste ayrı
+sefer numarası alsın ve raporda birbirine karışmasın diye.
+"""
+
 # ------------------------------------------------------------------- ihracat
 #
 # İhracatta araç tek noktaya gider ve hacim **desi** ile ölçülür; ağırlık ayrı bir
@@ -198,7 +213,7 @@ IHRACAT_KONTEYNER = KapasiteProfili(
 PROFILLER = {
     profil.kod: profil
     for profil in (
-        RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO,
+        RING_PALET, RING_ANAHTAR, TIR, IC_FTL, IC_RUTIN, IC_KARGO, IC_EXW,
         IC_FTL_KAMYON, IC_RUTIN_KAMYON,
         IHRACAT_TIR, IHRACAT_KONTEYNER,
     )

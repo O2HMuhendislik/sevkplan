@@ -624,9 +624,20 @@ class SevkiyatPlani(Temel):
     """İç piyasa planında aracın adı; kamyon ile tır ayrı kapasitedir."""
 
     @property
+    def aracli_mi(self) -> bool:
+        """Bu plan bir araç mı? Kargo ve EXW listelerinde araç yoktur.
+
+        Doluluk oranı yalnızca araçlı planlarda anlamlıdır: günlük kargo listesi tek
+        bir "araç" sayılınca 9,8 tırlık yük %980 doluluk olarak görünüyordu.
+        """
+        from app.domain.ic_piyasa import ARACSIZ_TIPLER
+
+        return (self.sevkiyat_tipi or "") not in ARACSIZ_TIPLER
+
+    @property
     def ic_arac_adi(self) -> str:
-        """İç piyasa planının aracı: Kamyon ya da Tır. Kargoda araç yoktur."""
-        if self.modul != "ROTA" or self.sevkiyat_tipi == "KARGO":
+        """İç piyasa planının aracı: Kamyon ya da Tır. Kargo ve EXW'de araç yoktur."""
+        if self.modul != "ROTA" or not self.aracli_mi:
             return ""
         return self.IC_ARAC_ADLARI.get((self.arac_tipi or "").upper(), "")
 
@@ -903,6 +914,16 @@ class SiparisSatiri(Temel):
         Enum(SiparisDurumu, native_enum=False, length=20), default=SiparisDurumu.BEKLEMEDE, index=True
     )
     hata_aciklamasi: Mapped[str | None] = mapped_column(Text, default=None)
+    bekleme_sebebi: Mapped[str | None] = mapped_column(Text, default=None)
+    """Satır neden plana giremedi? Son planlama çalıştırmasının gerekçesi.
+
+    `hata_aciklamasi` master datası eksik olduğu için **hiç** planlanamayan satırları
+    anlatır; bu alan planlanabilir ama o gün araca binemeyen satırları. İkisi ayrı
+    durur çünkü çözümleri farklı: biri master data düzeltmesi, diğeri hacim ya da
+    günlük araç sınırı. Bu gerekçe eskiden yalnızca planlama sonucunun özetinde
+    görünüp kayboluyordu; ekranda her satır ayrımsız "Hacim bekliyor" yazıyordu —
+    oysa satırların çoğu günlük araç sınırına takılmıştı.
+    """
     plan_id: Mapped[int | None] = mapped_column(
         ForeignKey("sevkiyat_planlari.id"), index=True, default=None
     )
@@ -925,6 +946,20 @@ class SiparisSatiri(Temel):
         lazy="selectin",
     )
     """Master datadaki ürün kaydı. Sipariş dosyasında ürün adı gelmediğinde kullanılır."""
+
+    @property
+    def bekleme_gerekcesi(self) -> str:
+        """Satırın neden plana giremediği — ekranda ve raporda görünen metin.
+
+        Sıra önemlidir: master data hatası satırı planlamaya hiç sokmaz, o yüzden
+        önce gelir. Sonra son planlama çalıştırmasının gerekçesi. İkisi de yoksa
+        satır henüz hiç planlanmaya çalışılmamıştır.
+        """
+        return (
+            self.hata_aciklamasi
+            or self.bekleme_sebebi
+            or "Planlama çalıştırılmadı"
+        )
 
     @property
     def gosterilecek_urun_adi(self) -> str:

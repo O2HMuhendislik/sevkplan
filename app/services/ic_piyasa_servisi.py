@@ -29,6 +29,7 @@ from app.domain.ic_piyasa import (
 )
 from app.domain.iller import yer_adi
 from app.domain.kapasite import (
+    IC_EXW,
     IC_FTL,
     IC_FTL_KAMYON,
     IC_KARGO,
@@ -61,13 +62,14 @@ TIP_PROFILLERI: dict[SevkiyatTipi, KapasiteProfili] = {
     SevkiyatTipi.FTL: IC_FTL,
     SevkiyatTipi.RUTIN: IC_RUTIN,
     SevkiyatTipi.KARGO: IC_KARGO,
+    SevkiyatTipi.EXW: IC_EXW,
 }
 
 KAMYON_PROFILLERI: dict[SevkiyatTipi, KapasiteProfili] = {
     SevkiyatTipi.FTL: IC_FTL_KAMYON,
     SevkiyatTipi.RUTIN: IC_RUTIN_KAMYON,
 }
-"""Aynı tipin kamyon karşılığı. Kargoda araç yoktur, o yüzden listede değildir."""
+"""Aynı tipin kamyon karşılığı. Kargo ve EXW'de araç yoktur, o yüzden listede yok."""
 
 
 def profil(tip: SevkiyatTipi) -> KapasiteProfili:
@@ -107,7 +109,27 @@ class IcPlanSonucu:
             f"{len(self.bekleyenler)} müşteri beklemede · "
             f"{len(self.hatali_teslimatlar)} teslimat hatalı"
         )
-        return f"{metin} · {dagilim}" if dagilim else metin
+        if dagilim:
+            metin = f"{metin} · {dagilim}"
+        baskin = self.en_cok_bekleme_sebebi()
+        return f"{metin} · Bekleyenlerin çoğu: {baskin}" if baskin else metin
+
+    def en_cok_bekleme_sebebi(self) -> str:
+        """Beklemede kalan müşterilerin en sık gerekçesi.
+
+        Sonuç mesajı yalnızca "7.067 müşteri beklemede" deyince kullanıcı programın
+        planlama yapmadığını sanıyordu; oysa 2025 havuzunda bekleyenlerin neredeyse
+        tamamı **günlük araç sınırına** takılmıştı. Sınır Master Data > Sistem
+        Tanımları ekranından değiştirilebiliyor, ama bunun için önce sebebin
+        görünmesi gerekiyor.
+        """
+        if not self.bekleyenler:
+            return ""
+        sayaclar: dict[str, int] = {}
+        for bekleyen in self.bekleyenler:
+            sayaclar[bekleyen.sebep] = sayaclar.get(bekleyen.sebep, 0) + 1
+        sebep, adet = max(sayaclar.items(), key=lambda i: (i[1], i[0]))
+        return f"{sebep} ({adet} müşteri)"
 
 
 # ---------------------------------------------------------------- müşteri toplama
@@ -241,7 +263,7 @@ def _gunluk_sinir(
     db: Session, plan_tarihi: date, tip: SevkiyatTipi, kurallar: Kurallar
 ) -> int | None:
     """O gün için kalan araç hakkı. Kargoda sınır yoktur."""
-    if tip is SevkiyatTipi.KARGO:
+    if tip.aracsiz_mi:
         return None
     tavan = (
         kurallar.gunluk_ftl_siniri
@@ -361,8 +383,31 @@ def plan_uret(
                 )
             )
 
+    _bekleme_sebeplerini_yaz(sonuc, satir_haritasi)
     db.flush()
     return sonuc
+
+
+def _bekleme_sebeplerini_yaz(
+    sonuc: IcPlanSonucu, satir_haritasi: dict[int, SiparisSatiri]
+) -> None:
+    """Bekleme gerekçesini sipariş satırına işler; ekranda satırın yanında görünsün.
+
+    Gerekçe eskiden yalnızca çalıştırma özetinde görünüyordu. Bekleyenler ekranı da
+    plan raporu da gerekçesiz satıra ayrımsız "Hacim bekliyor" yazıyordu; oysa 2025
+    havuzunda bekleyen 122.986 satırın büyük bölümü hacim değil **günlük araç
+    sınırına** takılmıştı. Kullanıcı bunu göremediği için program planlama yapmıyor
+    gibi duruyordu.
+    """
+    for satir in satir_haritasi.values():
+        if satir.plan_id is None and satir.durum is SiparisDurumu.BEKLEMEDE:
+            satir.bekleme_sebebi = None
+    for bekleyen in sonuc.bekleyenler:
+        sebep = f"{bekleyen.tip.ad}: {bekleyen.sebep}"
+        for satir_id in bekleyen.musteri.satir_idleri:
+            satir = satir_haritasi.get(satir_id)
+            if satir is not None and satir.plan_id is None:
+                satir.bekleme_sebebi = sebep
 
 
 def _plani_kaydet(
@@ -429,6 +474,7 @@ def _plani_kaydet(
                 bolunen_satir += 1
             satir.plan_id = plan.id
             satir.durum = SiparisDurumu.PLANLANDI
+            satir.bekleme_sebebi = None
 
     notlar = [
         f"{kapasite.bicimle(taslak.toplam_birim)} · "
@@ -447,6 +493,14 @@ def _plani_kaydet(
         notlar.append(
             f"{bolunen_satir} satır araç kapasitesine göre bölündü; kalan miktar "
             "aynı teslimat numarasıyla beklemede"
+        )
+    parcalar = [t for t in taslak.teslimatlar if t.parca_adedi]
+    if parcalar:
+        notlar.append(
+            "Tek araca sığmayan teslimat: "
+            + ", ".join(
+                f"{t.teslimat_no} ({t.parca_no}/{t.parca_adedi})" for t in parcalar
+            )
         )
     if taslak.alt_limit_esnetildi:
         notlar.append("alt limit esnetildi")

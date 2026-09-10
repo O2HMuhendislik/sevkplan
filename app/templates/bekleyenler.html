@@ -12,10 +12,17 @@
   <div class="kart">
     <h2>Beklemede</h2>
     <p class="soluk">
-      Hacim yetmediği için bekliyor. Sipariş biriktikçe bir sonraki planlamada
-      kendiliğinden plana girer; beklemeden almak için planlama ekranındaki
-      <b>“Kalanları da planla”</b> seçeneğini kullanın.
+      Planlanabilir ama o gün araca binemedi. Gerçek gerekçe her satırın
+      <b>Sebep</b> sütununda yazar; iki sık sebep şunlardır:
     </p>
+    <ul class="soluk" style="margin:0; padding-left:18px">
+      <li><b>Hacim yetmedi</b> — sipariş biriktikçe bir sonraki planlamada
+        kendiliğinden plana girer; beklemeden almak için planlama ekranındaki
+        <b>“Kalanları da planla”</b> seçeneğini kullanın.</li>
+      <li><b>Günlük araç sınırına ulaşıldı</b> — hacim yeterli, gün dolu. Sınır
+        <a href="/masterdata/sistem">Master Data › Sistem Tanımları</a> ekranından
+        değiştirilir; ya da ertesi güne plan üretin.</li>
+    </ul>
   </div>
   <div class="kart">
     <h2>Hatalı</h2>
@@ -65,7 +72,7 @@
         <td class="sag">{{ satir.miktar | sayi }}</td>
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td class="sag">{{ satir.bekleme_gunu }} gün</td>
-        <td class="soluk">{{ satir.hata_aciklamasi or 'Hacim bekliyor' }}</td>
+        <td class="soluk">{{ satir.bekleme_gerekcesi }}</td>
       </tr>
     {% endfor %}
     </tbody>

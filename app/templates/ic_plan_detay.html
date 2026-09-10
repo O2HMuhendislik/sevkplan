@@ -43,7 +43,9 @@
     <div class="soluk">hedef {{ plan.profil.alt_limit }}–{{ plan.profil.ust_limit }}
       {{ plan.profil.olcu_adi }}</div></div>
   <div class="metrik"><div class="etiket">Doluluk</div>
-    <div class="deger">%{{ plan.doluluk_yuzdesi }}</div></div>
+    {% if plan.aracli_mi %}<div class="deger">%{{ plan.doluluk_yuzdesi }}</div>
+    {% else %}<div class="deger" style="font-size:21px">—</div>
+    <div class="soluk">bu listede araç planlanmaz</div>{% endif %}</div>
   <div class="metrik"><div class="etiket">Durak (Yer Miktarı)</div>
     <div class="deger">{{ plan.durak_sayisi }}</div>
     <div class="soluk">{{ plan.teslimat_sayisi }} teslimat</div></div>

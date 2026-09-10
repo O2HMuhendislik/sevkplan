@@ -46,12 +46,14 @@ SAYFA_ADLARI = {
     SevkiyatTipi.FTL: "S-FTL Sevk",
     SevkiyatTipi.RUTIN: "R-Rutin",
     SevkiyatTipi.KARGO: "K-KARGO",
+    SevkiyatTipi.EXW: "X-EXW",
 }
 
 ARAC_ETIKETLERI = {
     SevkiyatTipi.FTL: "TIR",
     SevkiyatTipi.RUTIN: "FTL RUTİN",
     SevkiyatTipi.KARGO: "KARGO",
+    SevkiyatTipi.EXW: "MÜŞTERİ ARACI",
 }
 """Satır tablosunun sol sütununa basılan araç etiketi (planda araç tipi yoksa)."""
 

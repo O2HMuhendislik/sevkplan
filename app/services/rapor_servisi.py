@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.domain.ic_piyasa import ARACSIZ_TIPLER
 from app.models import (
     PlanDurumu,
     SevkiyatPlani,
@@ -145,8 +146,11 @@ def gosterge_paneli(db: Session, modul: str | None = None) -> dict:
     plan_durumlari = dict(db.execute(plan_sorgusu).all())
     aktif = [PlanDurumu.TASLAK, PlanDurumu.AXATA_BEKLIYOR, PlanDurumu.MAIL_GONDERILDI,
              PlanDurumu.TAMAMLANDI]
+    # Kargo ve EXW listelerinde araç yoktur; ortalama doluluğa girerlerse metrik
+    # anlamsızlaşır (tek kargo listesi 9,8 tırlık yükle %980 gösteriyordu).
     doluluk_sorgusu = select(func.avg(SevkiyatPlani.doluluk_yuzdesi)).where(
-        SevkiyatPlani.durum.in_(aktif)
+        SevkiyatPlani.durum.in_(aktif),
+        func.coalesce(SevkiyatPlani.sevkiyat_tipi, "").notin_(sorted(ARACSIZ_TIPLER)),
     )
     if modul:
         doluluk_sorgusu = doluluk_sorgusu.where(SevkiyatPlani.modul == modul)

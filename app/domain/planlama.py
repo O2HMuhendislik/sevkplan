@@ -27,9 +27,14 @@ from app.domain.kapasite import KapasiteProfili
 class Teslimat:
     """Planlamanın atomik birimi.
 
-    Kural olarak bölünmez. Tek istisna bayi ortak deposudur (-1): orası ayrı bir ERP
-    ve araç planı oraya kaydedildiğinde siparişi kendisi bölüyor, bu yüzden planlama
-    da bölebilir (`bolunebilir_mi`).
+    Aracı aşmadığı sürece bölünmez. İki istisna vardır:
+
+    * Bayi ortak deposu (-1): orası ayrı bir ERP ve araç planı oraya kaydedildiğinde
+      siparişi kendisi bölüyor, bu yüzden planlama da aracı **doldurmak** için
+      miktarını kesebilir (`bolunebilir_mi`).
+    * Tek başına bir aracı aşan teslimat: hangi depodan olursa olsun araç boyutunda
+      parçalara ayrılır, çünkü bir araç bir araçtan fazlasını taşıyamaz
+      (bkz. `ic_piyasa.teslimati_bol`).
     """
 
     teslimat_no: str
@@ -69,6 +74,14 @@ class Teslimat:
     """Raporlama için; ihracat formunda ve navlun dosyalarında desi de istenir."""
     bolunebilir_mi: bool = False
     """Araç kapasitesine göre miktarı kesilebilir mi? (bayi ortak deposu -1)"""
+    parca_no: int = 0
+    """Teslimat birden çok araca bölündüyse bu parçanın sırası (1'den başlar)."""
+    parca_adedi: int = 0
+    """Teslimatın kaç araca bölündüğü. 0 ise teslimat bölünmemiştir.
+
+    Tek başına bir aracı aşan teslimat sahada da tek araçla gitmez; yükleme formunda
+    "1/2" gibi görünsün diye parça bilgisi taşınır.
+    """
     satir_miktarlari: dict[int, tuple[str, Decimal]] = field(default_factory=dict)
     """Sipariş satırı id -> (ürün kodu, miktar).
 

@@ -96,6 +96,7 @@ def _planlari_sil(db: Session, planlar: list[SevkiyatPlani]) -> int:
     ):
         satir.plan_id = None
         satir.durum = SiparisDurumu.BEKLEMEDE
+        satir.bekleme_sebebi = None
     db.flush()
     # Plana bağlı bütün kayıtlar plandan önce silinmeli: toplu `delete()` ORM
     # ilişkilerini çalıştırmaz, kalan satır yabancı anahtar hatası verir.

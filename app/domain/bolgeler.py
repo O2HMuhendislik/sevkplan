@@ -107,6 +107,8 @@ def bolge_adi(kod: str) -> str:
         return f"{ad} · {depolar.get(depo_grubu, depo_grubu)}" if depo_grubu else ad
     if kod == "KARGO":
         return "Günlük kargo listesi"
+    if kod == "EXW":
+        return "EXW — nakliyeyi müşteri üstlenir"
     if kod.startswith("IL:"):
         return kod[3:].title()
     return "Bölgesiz"

@@ -25,6 +25,9 @@
       <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
         <input type="checkbox" name="tipler" value="KARGO" checked> Kargo (K)
       </label>
+      <label style="display:flex; gap:6px; align-items:center; margin:4px 0 0; font-weight:500">
+        <input type="checkbox" name="tipler" value="EXW" checked> EXW — nakliye müşteride (X)
+      </label>
     </div>
     <div style="padding-bottom:6px">
       <label style="display:flex; gap:6px; align-items:center; margin:0; font-weight:500">
@@ -41,6 +44,7 @@
   <a href="/rota/planlar?tip=FTL" class="{{ 'aktif' if tip == 'FTL' }}">FTL</a>
   <a href="/rota/planlar?tip=RUTIN" class="{{ 'aktif' if tip == 'RUTIN' }}">Rutin</a>
   <a href="/rota/planlar?tip=KARGO" class="{{ 'aktif' if tip == 'KARGO' }}">Kargo</a>
+  <a href="/rota/planlar?tip=EXW" class="{{ 'aktif' if tip == 'EXW' }}">EXW</a>
   <a href="/rota/planlar?arac=KAMYON" class="{{ 'aktif' if arac == 'KAMYON' }}">Kamyon</a>
   <a href="/rota/planlar?arac=TIR" class="{{ 'aktif' if arac == 'TIR' }}">Tır</a>
   {% for d in durumlar %}
@@ -83,9 +87,10 @@
           <div class="soluk">{{ plan.iller_metni }}</div></td>
         <td class="sag">{{ plan.durak_sayisi }}</td>
         <td class="sag">{{ plan.birim_metni }}</td>
-        <td><div class="doluluk">
+        <td>{% if plan.aracli_mi %}<div class="doluluk">
           <span style="width: {{ [plan.doluluk_yuzdesi|float, 100]|min }}%"></span>
-          <b>%{{ plan.doluluk_yuzdesi }}</b></div></td>
+          <b>%{{ plan.doluluk_yuzdesi }}</b></div>
+        {% else %}<span class="soluk">araç yok</span>{% endif %}</td>
         <td>{{ plan.son_ugrak or '—' }}
           {% if plan.ortak_yukleme_mi %}
             <div><span class="rozet AXATA_BEKLIYOR">ORTAK YÜKLEME</span></div>
