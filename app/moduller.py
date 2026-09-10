@@ -75,6 +75,17 @@ MODULLER: tuple[Modul, ...] = (
         hazir=False,
     ),
     Modul(
+        kod="DEPO",
+        ad="Depo Operasyon",
+        aciklama=(
+            "Deponun kendi yükleme takvimi: hangi gün kaç araç yüklenecek, hangi "
+            "modülden. Planlama ekranlarına girmeden, yalnızca yükleme görünür."
+        ),
+        yol="/depo",
+        simge="depo",
+        renk="petrol",
+    ),
+    Modul(
         kod="RAPORLAMA",
         ad="Raporlama",
         aciklama=(

@@ -56,7 +56,12 @@ class Teslimat:
     karma_mi: bool = False
     """Teslimat birden fazla ürün içeriyor; tek ürünlü plana giremez."""
     depo_katkilari: dict[str, Decimal] = field(default_factory=dict)
-    """Depo kodu -> anahtar değer. Marka payı (navlun dağıtımı) buradan hesaplanır."""
+    """Depo kodu -> anahtar değer. Yükleme deposu ve aktarma notu buradan çıkar."""
+    marka_katkilari: dict[str, Decimal] = field(default_factory=dict)
+    """Marka -> anahtar değer. Marka payı (navlun dağıtımı) buradan hesaplanır.
+
+    Marka yalnızca depo kodundan okunmuyor: normal depolarda teslimat numarası,
+    bayi ortak deposunda bayi adı belirliyor (bkz. app/domain/marka.py)."""
     palet: Decimal = Decimal(0)
     anahtar: Decimal = Decimal(0)
     """Tır anahtar değeri: Σ miktar / tır yükleme adeti (palete yuvarlanmaz)."""
@@ -269,6 +274,14 @@ class TaslakPlan:
         for teslimat in self.teslimatlar:
             for depo_kodu, deger in teslimat.depo_katkilari.items():
                 toplamlar[depo_kodu] += deger
+        return dict(toplamlar)
+
+    @property
+    def marka_katkilari(self) -> dict[str, Decimal]:
+        toplamlar: dict[str, Decimal] = defaultdict(Decimal)
+        for teslimat in self.teslimatlar:
+            for ad, deger in teslimat.marka_katkilari.items():
+                toplamlar[ad] += deger
         return dict(toplamlar)
 
     @property

@@ -1120,6 +1120,87 @@ def rota_planlari_uret(
     return yonlendir("/rota/planlar", mesaj=sonuc.ozet())
 
 
+# ------------------------------------------------------------- depo operasyon
+#
+# Depo ekibi sevkiyat planlama ekranlarına girmez; yalnızca kendi yükleme yükünü
+# görür. Ayrı modül olmasının sebebi budur: yetki modül bazında veriliyor.
+
+DEPO_MODUL_SECENEKLERI = (
+    ("ROTA", "İç Piyasa"),
+    ("IHRACAT", "İhracat"),
+    ("RING", "Ring"),
+)
+
+
+def _depo_ay(ay: str) -> date:
+    try:
+        return datetime.strptime(ay, "%Y-%m").date() if ay else date.today()
+    except ValueError:
+        return date.today()
+
+
+def _depo_sorgusu(depo: str, modul: str) -> str:
+    """Takvim bağlantılarında filtreyi taşıyan sorgu dizesi."""
+    return urlencode({k: v for k, v in (("depo", depo), ("modul", modul)) if v})
+
+
+@uygulama.get("/depo")
+def depo_takvimi(
+    istek: Request,
+    ay: str = "",
+    depo: str = "",
+    modul: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("DEPO")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    secilen_modul = modul if modul in dict(DEPO_MODUL_SECENEKLERI) else ""
+    return sayfa(
+        istek,
+        "depo_takvim.html",
+        kullanici,
+        takvim=rapor_servisi.takvim_ozeti(
+            db, _depo_ay(ay), modul=secilen_modul or None, depo_kodu=depo or None,
+            kurallar=masterdata_servisi.kurallari_kur(db),
+        ),
+        depo=depo,
+        modul=secilen_modul,
+        modul_adi=dict(DEPO_MODUL_SECENEKLERI).get(secilen_modul, "Bütün modüller"),
+        modul_secenekleri=DEPO_MODUL_SECENEKLERI,
+        depolar=rapor_servisi.yukleme_depolari(db),
+        sorgu=_depo_sorgusu(depo, secilen_modul),
+    )
+
+
+@uygulama.get("/depo/gun")
+def depo_gunu(
+    istek: Request,
+    tarih: str = "",
+    depo: str = "",
+    modul: str = "",
+    kullanici: Kullanici = Depends(modul_yetkisi("DEPO")),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    try:
+        gun = datetime.strptime(tarih, "%Y-%m-%d").date() if tarih else date.today()
+    except ValueError:
+        gun = date.today()
+    secilen_modul = modul if modul in dict(DEPO_MODUL_SECENEKLERI) else ""
+    return sayfa(
+        istek,
+        "depo_gun.html",
+        kullanici,
+        gun=gun,
+        planlar=rapor_servisi.gun_planlari(
+            db, gun, modul=secilen_modul or None, depo_kodu=depo or None
+        ),
+        depo=depo,
+        modul=secilen_modul,
+        modul_adi=dict(DEPO_MODUL_SECENEKLERI).get(secilen_modul, "Bütün modüller"),
+        modul_adlari=rapor_servisi.MODUL_ADLARI,
+        sorgu=_depo_sorgusu(depo, secilen_modul),
+    )
+
+
 @uygulama.get("/rota/takvim")
 def rota_takvim(
     istek: Request,
@@ -1140,7 +1221,8 @@ def rota_takvim(
         modul_adi="İç Piyasa",
         taban="/rota",
         takvim=rapor_servisi.takvim_ozeti(
-            db, "ROTA", secilen, masterdata_servisi.kurallari_kur(db)
+            db, secilen, modul="ROTA",
+            kurallar=masterdata_servisi.kurallari_kur(db),
         ),
     )
 

@@ -152,18 +152,41 @@ def _depo_satirlari(depo_kodu: str, plan=None) -> tuple[list[str], str]:
     return [*satirlar, ek], ek
 
 
+def _baglanmamis_axata_satiri(
+    plan, depo_satirlari: list[str], hedef_etiket: str
+) -> str | None:
+    """Deposu belirtilmemiş Axata numaralarının yazılacağı form satırı.
+
+    Planın yükleme deposu **bayi ortak deposu (-1)** olabiliyor: hacmin çoğu oradan
+    çıktığında yükleme deposu -1 seçiliyor. Orası ayrı bir ERP'dedir ve Axata iş
+    emri açılmaz; numara oraya yazılınca 64 için girilen iş emri formda -1 satırında
+    görünüyordu. Numara bu durumda planın gerçek Axata deposuna yazılır.
+    """
+    axata_depolari = list(plan.axata_depolari)
+    hedef_depo = hedef_etiket.replace(" DEPO", "").replace("-DEPO", "")
+    if hedef_depo not in ("-1",) and hedef_etiket in depo_satirlari:
+        return hedef_etiket
+    for depo in axata_depolari:
+        etiket = depo_etiketi(depo, depo_satirlari)
+        if etiket in depo_satirlari:
+            return etiket
+    # Axata deposu yoksa (yalnızca -1'den çıkan plan) numara hiçbir satıra yazılmaz;
+    # zaten form üstündeki "AXATA NO" alanında görünüyor.
+    return None
+
+
 def axata_kutusu(plan, depo_satirlari: list[str], hedef_etiket: str) -> dict[str, str]:
     """Depo/AXATA kutusuna basılacak değerler: form satırı -> Axata numaraları.
 
     Bir planda birden çok depo olabiliyor (ör. 64 + 74) ve her depo kendi Axata iş
     emrini açıyor. Numara bir depoya bağlıysa **yalnızca o deponun satırına** yazılır;
     depo yanlış iş emriyle toplama yapmasın diye. Deposu belirtilmemiş numaralar
-    (tek depolu planlar ve eski kayıtlar) planın kendi depo satırına yazılır.
+    (tek depolu planlar ve eski kayıtlar) planın Axata deposunun satırına yazılır.
     """
     kutu: dict[str, str] = {}
     baglanmamis = [a.numara for a in plan.axata_numaralari if not a.depo_kodu]
     for depo in plan.axata_depolari:
-        etiket = depo_etiketi(depo)
+        etiket = depo_etiketi(depo, depo_satirlari)
         if etiket is None or etiket not in depo_satirlari:
             continue
         numaralar = [
@@ -172,10 +195,13 @@ def axata_kutusu(plan, depo_satirlari: list[str], hedef_etiket: str) -> dict[str
         if numaralar:
             kutu[etiket] = ", ".join(numaralar)
     if baglanmamis:
-        mevcut = kutu.get(hedef_etiket)
-        kutu[hedef_etiket] = (
-            f"{mevcut}, {', '.join(baglanmamis)}" if mevcut else ", ".join(baglanmamis)
-        )
+        hedef = _baglanmamis_axata_satiri(plan, depo_satirlari, hedef_etiket)
+        if hedef is not None:
+            mevcut = kutu.get(hedef)
+            kutu[hedef] = (
+                f"{mevcut}, {', '.join(baglanmamis)}" if mevcut
+                else ", ".join(baglanmamis)
+            )
     return kutu
 
 

@@ -217,6 +217,44 @@ def test_motor_hacmin_gerektirdigi_butun_araclari_uretir():
     assert birimler == sorted(birimler, reverse=True)
 
 
+def test_her_durak_icin_yuzde_bir_pay_birakilir():
+    """Beş duraklı tır %95'te kapatılır: her durak için elleçleme boşluğu gerekir.
+
+    Kâğıt üzerinde %100 dolu görünen çok duraklı araca mal fiziken sığmıyor; yük
+    kapıda boşaltılacak sırayla istifleniyor ve her durak için pay bırakılıyor.
+    """
+    musteriler = [
+        musteri(f"BAYİ{sira}", "ISTANBUL", 0.20, ilce=f"ILCE{sira}")
+        for sira in range(5)
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+    # 5 x 0,20 = 1,00; beş duraklı araca 0,95 sığar, biri dışarıda kalır.
+    dolu = max(sonuc.planlar, key=lambda p: p.toplam_birim)
+    assert dolu.durak_sayisi == 4
+    assert dolu.toplam_birim == Decimal("0.80")
+    assert dolu.kapasite() == Decimal("0.96")
+
+
+def test_tek_durakli_arac_yuzde_99da_kapatilir():
+    musteriler = [musteri("TEK", "ISTANBUL", 0.99)]
+    plan = planla(musteriler, SevkiyatTipi.FTL, IC_FTL).planlar[0]
+    assert plan.kapasite() == Decimal("0.99")
+    assert plan.bos_alan == Decimal(0)
+    assert not plan.sigar_mi(musteri("EK", "ISTANBUL", 0.001, ilce="X"), Kurallar())
+
+
+def test_durak_payi_kapatilabilir():
+    """Pay ayardan gelir; sıfırlanınca eski davranış (tam kapasite) geri döner."""
+    kurallar = Kurallar(durak_payi=Decimal(0))
+    musteriler = [
+        musteri(f"BAYİ{sira}", "ISTANBUL", 0.20, ilce=f"ILCE{sira}")
+        for sira in range(5)
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kurallar)
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].toplam_birim == Decimal("1.00")
+
+
 def test_farkli_bolgeler_ayni_araca_binmez():
     sonuc = planla(
         [musteri("EGE", "IZMIR", 0.5), musteri("MARMARA", "ISTANBUL", 0.5)],
@@ -410,9 +448,10 @@ def test_plan_uretimi_tipleri_ayirir(ic_veri):
 def test_ortak_yukleme_notu_plana_islenir(ic_veri):
     """64 + 74 aynı araca yüklenince az olan depodaki mal diğerine getirilir."""
     db = ic_veri
-    # İkisi de 3 paletten büyük olmalı ki FTL kovasına düşsünler.
+    # İkisi de 3 paletten büyük olmalı ki FTL kovasına düşsünler. Toplam 0,98:
+    # iki duraklı araçta durak payı (%1 x 2) düşülünce kalan kapasite tam budur.
     _siparis(db, "T1", 60, "BAYİ A", "IZMIR", depo="64")
-    _siparis(db, "T2", 40, "BAYİ B", "IZMIR", depo="74", ilce="BORNOVA")
+    _siparis(db, "T2", 38, "BAYİ B", "IZMIR", depo="74", ilce="BORNOVA")
     db.flush()
 
     sonuc = ic_piyasa_servisi.plan_uret(
@@ -660,9 +699,10 @@ def test_bayi_depo_musterisi_istisna_plani_uretmez():
         [dev], SevkiyatTipi.FTL, IC_FTL,
         palet_ici=PALET_ICI, yukleme_adeti=YUKLEME,
     )
-    assert len(sonuc.planlar) == 10
+    # Tek duraklı araç 0,99'da kapatıldığı için 10 tırlık yük 11 araca çıkar.
+    assert len(sonuc.planlar) == 11
     assert not any(plan.istisna_asim for plan in sonuc.planlar)
-    assert all(plan.doluluk_yuzdesi <= 100 for plan in sonuc.planlar)
+    assert all(plan.doluluk_yuzdesi <= 99 for plan in sonuc.planlar)
 
 
 def test_hicbir_plan_araci_asmaz():
@@ -745,7 +785,7 @@ def test_plana_giren_satirin_bekleme_sebebi_silinir(ic_veri):
     ic_piyasa_servisi.plan_uret(
         db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
     )
-    _siparis(db, "BUYUR-2", 50, "BÜYÜYEN BAYİ", "IZMIR")
+    _siparis(db, "BUYUR-2", 45, "BÜYÜYEN BAYİ", "IZMIR")
     db.flush()
     ic_piyasa_servisi.plan_uret(
         db, plan_tarihi=date(2026, 9, 2), tipler=[SevkiyatTipi.FTL], kullanici="test"
@@ -763,7 +803,8 @@ def test_kesilen_satirin_kalani_ayni_teslimatla_beklemede_kalir(ic_veri):
     from app.models import SiparisDurumu, SiparisSatiri
 
     db = ic_veri
-    # 100 adet = tam tır; 250 adetlik tek satırlık bir bayi depo siparişi.
+    # 100 adet = tam tır ama tek duraklı araç 0,99'da kapatılır: araca 99 adet
+    # girer, palete indirilince 90. 250 adetlik tek satırlık bayi depo siparişi.
     _siparis(db, "BD-100", 250, "BAYİ DEPO", "IZMIR", depo="-1")
     db.flush()
 
@@ -776,7 +817,7 @@ def test_kesilen_satirin_kalani_ayni_teslimatla_beklemede_kalir(ic_veri):
     satirlar = db.query(SiparisSatiri).filter_by(teslimat_no="BD-100").all()
     assert sum(Decimal(s.miktar) for s in satirlar) == 250
     bekleyen = [s for s in satirlar if s.durum is SiparisDurumu.BEKLEMEDE]
-    assert [Decimal(s.miktar) for s in bekleyen] == [Decimal(50)]
+    assert [Decimal(s.miktar) for s in bekleyen] == [Decimal(70)]
     # Bölünen parçalar aynı teslimat ve sipariş numarasını taşır.
     assert len({s.siparis_no for s in satirlar}) == 1
 
@@ -919,6 +960,55 @@ def test_ayni_teslimat_numarasi_iki_bayiye_aitse_ayrilir(db):
     assert {m.bayi_adi for m in musteriler} == {"BAYİ A", "BAYİ B"}
     assert all(len(m.teslimatlar) == 1 for m in musteriler)
     assert all(t.teslimat_no == "ORTAK" for m in musteriler for t in m.teslimatlar)
+
+
+# ------------------------------------------------------------------------ marka
+
+
+def test_teslimat_numarasi_markayi_belirler():
+    """Normal depolarda 006/6 ile başlayan teslimat Vaillant, 2013 DemirDöküm."""
+    from app.domain.marka import marka
+
+    assert marka("64", "0060774085", "TÜZÜNLER ENERJİ") == "VAİLLANT"
+    assert marka("64", "60774085", "TÜZÜNLER ENERJİ") == "VAİLLANT"
+    assert marka("64", "2013552918", "DİMAŞ-DOĞU") == "DEMİRDÖKÜM"
+    assert marka("74", "2720818162", "MÜMİN KORKMAZ") == "DEMİRDÖKÜM"
+
+
+def test_bayi_ortak_deposunda_marka_bayi_adindan_okunur():
+    """-1 deposunda teslimat numarası marka taşımaz; P- ile başlayan bayi Vaillant'tır."""
+    from app.domain.marka import marka
+
+    assert marka("-1", "278484", "P- Hüner Teknik - Nazik Doğan") == "VAİLLANT"
+    assert marka("-1", "278114", "ANKA CORP İNŞAAT") == "DEMİRDÖKÜM"
+    # Teslimat numarası orada yanıltıcı olabilir; bayi adı kazanır.
+    assert marka("-1", "0060000001", "ANKA CORP İNŞAAT") == "DEMİRDÖKÜM"
+
+
+def test_depo_soneki_teslimat_numarasini_ezer():
+    """Mal zaten o markanın deposundan çıkıyorsa sonek en kesin bilgidir."""
+    from app.domain.marka import marka
+
+    assert marka("64-V", "2013552918", "X") == "VAİLLANT"
+    assert marka("64-P", "0060774085", "X") == "PROTHERM"
+
+
+def test_marka_payi_teslimat_numarasindan_hesaplanir(db):
+    """Aynı depodan çıkan iki markanın payı plana ayrı ayrı yazılır."""
+    urun_ekle(db, "U1", palet_ici_adet=1, tir_yukleme_adeti=100)
+    # 64 deposundan yarı yarıya Vaillant (006…) ve DemirDöküm (2013…) yükü.
+    _siparis(db, "0060000001", 45, "BAYİ A", "IZMIR")
+    _siparis(db, "2013000001", 45, "BAYİ A", "IZMIR")
+    db.flush()
+
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    plan = sonuc.planlar[0]
+    from app.domain.marka import paylari_coz
+
+    paylar = paylari_coz(plan.marka_paylari_metni)
+    assert paylar == {"DEMİRDÖKÜM": Decimal("0.5000"), "VAİLLANT": Decimal("0.5000")}
 
 
 def test_plan_kamyon_tir_ayrimini_kaydeder(db):

@@ -47,6 +47,8 @@
       <a href="/ihracat/manuel-plan" class="{{ 'aktif' if aktif_menu == 'manuel' }}">Manuel Planlama</a>
       <a href="/ihracat/bekleyenler" class="{{ 'aktif' if aktif_menu == 'bekleyenler' }}">Bekleyenler</a>
       <a href="/ihracat/raporlar" class="{{ 'aktif' if aktif_menu == 'raporlar' }}">Raporlar</a>
+    {% elif aktif_modul == 'DEPO' %}
+      <a href="/depo" class="{{ 'aktif' if aktif_menu == 'takvim' }}">Yükleme Takvimi</a>
     {% elif aktif_modul == 'RAPORLAMA' %}
       <a href="/raporlama" class="{{ 'aktif' if aktif_menu == 'ozet' }}">Özet ve KPI</a>
       <a href="/raporlama/siparisler" class="{{ 'aktif' if aktif_menu == 'siparisler' }}">Tüm Siparişler</a>

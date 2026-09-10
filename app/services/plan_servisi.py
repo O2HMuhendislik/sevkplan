@@ -31,7 +31,7 @@ from app.domain.planlama import (
     toplam_birim as planlama_toplam_birim,
 )
 from app.domain.iller import BOLUNEBILIR_DEPOLAR
-from app.domain.marka import paylari_hesapla, paylari_metne_cevir
+from app.domain.marka import marka, marka_paylari, paylari_metne_cevir
 from app.services.planlama_anahtari import teslimat_anahtari, urun_grubu
 from app.db import parcali_scalars
 from app.models import (
@@ -127,7 +127,13 @@ class TeslimatOlculeri:
     agirlik: Decimal
     sku_miktarlari: dict[str, Decimal]
     depo_katkilari: dict[str, Decimal]
-    """Depo kodu -> anahtar değer. Marka payının hesaplandığı yer."""
+    """Depo kodu -> anahtar değer. Yükleme deposu ve aktarma notu buradan çıkar."""
+    marka_katkilari: dict[str, Decimal] = field(default_factory=dict)
+    """Marka -> anahtar değer. Navlun payı buradan dağıtılır.
+
+    Depodan ayrı tutulur: marka yalnızca depo kodundan okunmuyor; normal depolarda
+    teslimat numarasından, bayi ortak deposunda bayi adından geliyor (bkz.
+    app/domain/marka.py)."""
     ikinci_anahtar: Decimal = Decimal(0)
     """Diğer araç tipinin anahtar değeri (tır sorulduysa kamyon, kamyon sorulduysa tır).
 
@@ -150,6 +156,7 @@ def teslimat_olculeri(
     """
     sku_miktarlari: dict[str, Decimal] = {}
     sku_depolari: dict[str, dict[str, Decimal]] = {}
+    sku_markalari: dict[str, dict[str, Decimal]] = {}
     for satir in satirlar:
         sku_miktarlari[satir.urun_kodu] = (
             sku_miktarlari.get(satir.urun_kodu, Decimal(0)) + Decimal(satir.miktar)
@@ -158,6 +165,10 @@ def teslimat_olculeri(
         depolar[satir.depo_kodu] = depolar.get(satir.depo_kodu, Decimal(0)) + Decimal(
             satir.miktar
         )
+        # Marka satır bazında okunur: depo soneki, teslimat numarası ve bayi adı.
+        ad = marka(satir.depo_kodu, satir.teslimat_no, satir.bayi_adi or "")
+        markalar = sku_markalari.setdefault(satir.urun_kodu, {})
+        markalar[ad] = markalar.get(ad, Decimal(0)) + Decimal(satir.miktar)
 
     diger_tip = (
         AracTipi.KAMYON if arac_tipi is AracTipi.TIR else AracTipi.TIR
@@ -166,6 +177,7 @@ def teslimat_olculeri(
     ikinci = Decimal(0)
     ikinci_olculebilir = True
     depo_katkilari: dict[str, Decimal] = {}
+    marka_katkilari: dict[str, Decimal] = {}
     for urun_kodu, miktar in sku_miktarlari.items():
         urun = urun_haritasi[urun_kodu]
         if urun.palet_ici_adet:
@@ -187,6 +199,12 @@ def teslimat_olculeri(
                 depo_katkilari[depo_kodu] = depo_katkilari.get(
                     depo_kodu, Decimal(0)
                 ) + sku_anahtar * depo_miktari / sku_toplam
+            markalar = sku_markalari.get(urun_kodu) or {}
+            marka_toplam = sum(markalar.values(), Decimal(0)) or Decimal(1)
+            for ad, marka_miktari in markalar.items():
+                marka_katkilari[ad] = marka_katkilari.get(
+                    ad, Decimal(0)
+                ) + sku_anahtar * marka_miktari / marka_toplam
         if urun.agirlik:
             agirlik += miktar * Decimal(urun.agirlik)
     return TeslimatOlculeri(
@@ -196,6 +214,7 @@ def teslimat_olculeri(
         agirlik=agirlik.quantize(Decimal("0.001")),
         sku_miktarlari=sku_miktarlari,
         depo_katkilari=depo_katkilari,
+        marka_katkilari=marka_katkilari,
         ikinci_anahtar=ikinci.quantize(Decimal("0.000001")),
         ikinci_olculebilir=ikinci_olculebilir and bool(sku_miktarlari),
     )
@@ -313,6 +332,7 @@ def teslimatlari_hazirla(
                 },
                 bolunebilir_mi=ana_satir.depo_kodu.strip() in BOLUNEBILIR_DEPOLAR,
                 depo_katkilari=dict(olculer.depo_katkilari),
+                marka_katkilari=dict(olculer.marka_katkilari),
                 urun_grubu=grup_adi,
                 karma_mi=karma_mi,
                 palet=olculer.palet,
@@ -488,7 +508,7 @@ def _plani_kaydet(
         ),
         kirik_palet_israfi=taslak.israf.quantize(Decimal("0.001"), ROUND_HALF_UP),
         marka_paylari_metni=paylari_metne_cevir(
-            paylari_hesapla(taslak.depo_katkilari)
+            marka_paylari(taslak.marka_katkilari)
         )
         or None,
         toplam_anahtar=(

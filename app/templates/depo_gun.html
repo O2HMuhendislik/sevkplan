@@ -1,0 +1,50 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'DEPO' %}
+{% set aktif_menu = 'takvim' %}
+{% block icerik %}
+<h1>{{ gun | tarih }} — Yükleme Listesi</h1>
+
+<div class="kart" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap">
+  <b>{{ planlar | length }}</b> yükleme
+  {% if depo %}<span class="etiketcik">{{ depo }} deposu</span>{% endif %}
+  <span class="etiketcik">{{ modul_adi }}</span>
+  <div style="flex:1"></div>
+  <a class="dugme ikincil" href="/depo?{{ sorgu }}&ay={{ gun.strftime('%Y-%m') }}">Takvime dön</a>
+</div>
+
+{% if planlar %}
+<div class="kart">
+  <table>
+    <thead><tr>
+      <th class="sag">#</th><th>Sefer No</th><th>Modül</th><th>Tip</th><th>Araç</th>
+      <th>Yükleme deposu</th><th>Depolar</th><th>Güzergâh</th>
+      <th class="sag">Durak</th><th class="sag">Adet</th><th>Axata</th><th>Durum</th>
+    </tr></thead>
+    <tbody>
+    {% for plan in planlar %}
+      <tr>
+        <td class="sag soluk">{{ loop.index }}</td>
+        <td><b>{{ plan.sefer_no }}</b></td>
+        <td>{{ modul_adlari.get(plan.modul, plan.modul) }}</td>
+        <td>{{ plan.sevkiyat_tipi_adi }}</td>
+        <td>{{ plan.arac_tipi or '—' }}</td>
+        <td>{{ plan.yukleme_deposu or plan.depo_kodu }}</td>
+        <td>{{ plan.depolar_metni }}</td>
+        <td>{{ plan.iller_metni or '—' }}</td>
+        <td class="sag">{{ plan.durak_sayisi or 1 }}</td>
+        <td class="sag">{{ plan.toplam_adet | sayi }}</td>
+        <td class="soluk">{{ plan.axata_ozeti or '—' }}</td>
+        <td><span class="rozet {{ plan.durum.value }}">{{ plan.durum.value }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="soluk" style="margin-top:12px">
+    Toplam <b>{{ planlar | sum(attribute='toplam_adet') | sayi }}</b> adet ürün
+    yüklenecek. Ayrıntılı ürün listesi için depo yükleme formu kullanılır.
+  </p>
+</div>
+{% else %}
+<div class="kart"><div class="bos">Bu güne yükleme planlanmamış.</div></div>
+{% endif %}
+{% endblock %}

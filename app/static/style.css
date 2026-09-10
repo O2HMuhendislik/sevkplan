@@ -20,6 +20,10 @@
   --vg-yesil-20:   #d5e4e2;
   --vg-yesil-10:   #ebf2f1;
   /* 02 Grey — RGB 155/155/155 */
+  --vg-petrol:     #00625a;   /* Vaillant yeşilinin koyu tonu; depo operasyon modülü */
+  --vg-petrol-40:  #99c0bd;
+  --vg-petrol-20:  #cce0de;
+
   --vg-gri:        #9b9b9b;
   --vg-gri-70:     #bbbbbb;
   --vg-gri-40:     #d9d9d9;
@@ -81,6 +85,7 @@ header.ust[data-renk="mor"]      { --modul-renk: var(--vg-mor); }
 header.ust[data-renk="bej"]      { --modul-renk: var(--vg-bej); }
 header.ust[data-renk="sari"]     { --modul-renk: var(--vg-sari); }
 header.ust[data-renk="gri"]      { --modul-renk: var(--vg-gri); }
+header.ust[data-renk="petrol"]   { --modul-renk: var(--vg-petrol); }
 /* Logo beyaz bir yonga üzerinde durur: kurumsal logo dosyası yeşil zeminli
    olduğunda da doğru görünsün diye. */
 header.ust .marka {
@@ -246,6 +251,7 @@ header.ust .modul-cikis {
 .giris-moduller li[data-renk="bej"]      { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-bej-20); }
 .giris-moduller li[data-renk="sari"]     { --modul-renk: var(--vg-bej);       --modul-zemin: var(--vg-sari-20); }
 .giris-moduller li[data-renk="gri"]      { --modul-renk: var(--soluk);        --modul-zemin: var(--vg-gri-20); }
+.giris-moduller li[data-renk="petrol"]   { --modul-renk: var(--vg-petrol);   --modul-zemin: var(--vg-petrol-20); }
 
 @media (max-width: 900px) {
   .giris-panosu { grid-template-columns: 1fr; gap: 28px; margin: 28px auto; }
@@ -317,6 +323,7 @@ a.modul-kart:hover .modul-simge { background: var(--modul-renk); color: #fff; }
 /* Yönetim modülü bilerek nötr; ama markanın açık grisi simgeyi okunmaz
    yapıyordu, bu yüzden çizgi rengi gövde metninin nötr tonudur. */
 .modul-kart[data-renk="gri"]      { --modul-renk: var(--soluk);        --modul-zemin: var(--vg-gri-20); }
+.modul-kart[data-renk="petrol"]   { --modul-renk: var(--vg-petrol);   --modul-zemin: var(--vg-petrol-20); }
 
 /* Manuel planlama: seçim çubuğu tablo kaydırılırken de görünür kalmalı,
    çünkü kullanıcı listenin altında seçim yapıp yukarıdaki tuşa basıyor. */

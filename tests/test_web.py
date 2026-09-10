@@ -1,6 +1,7 @@
 """Web katmanı duman testi: ekranlar açılıyor ve uçtan uca akış çalışıyor mu?"""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from io import BytesIO
 
@@ -297,7 +298,9 @@ def ic_piyasa_verisi_yukle(istemci):
         [
             ["S1", "T1", "U1", 60, "64", "İZMİR", "EGE ISITMA", "EGE ISITMA A.Ş.",
              "1234 SOK. NO:5", "CIF - BORNOVA"],
-            ["S2", "T2", "U2", 40, "74", "MANİSA", "MANİSA TESİSAT",
+            # 60 + 38 = 0,98 anahtar: iki duraklı araçta durak payı (%1 x 2) düşülünce
+            # kalan kapasite tam budur (bkz. Kurallar.durak_payi).
+            ["S2", "T2", "U2", 38, "74", "MANİSA", "MANİSA TESİSAT",
              "MANİSA TESİSAT LTD.", "SANAYİ CAD. NO:8", "CIF - MERKEZ"],
         ],
     )
@@ -885,8 +888,10 @@ def test_manuel_planlamada_parsiyel_secilebilir(istemci, fabrika):
         },
     )
     with fabrika() as db:
-        plan = db.query(SevkiyatPlani).filter_by(modul="ROTA").one()
-        assert plan.sevkiyat_tipi == "RUTIN"
+        # 0,60 anahtarlık yük rutin aracın (üst limit 0,60) durak payı düşülmüş
+        # kapasitesini aştığı için iki araca bölünür; ikisi de rutindir.
+        planlar = db.query(SevkiyatPlani).filter_by(modul="ROTA").all()
+        assert planlar and all(p.sevkiyat_tipi == "RUTIN" for p in planlar)
 
 
 def test_plan_takvimi_gun_gun_sayilari_gosterir(istemci):
@@ -909,6 +914,63 @@ def test_plan_takvimi_gun_gun_sayilari_gosterir(istemci):
     # Başka bir günde plan yok.
     bos = istemci.get("/rota/planlar?tarih=2026-09-02")
     assert "2609S" not in bos.text
+
+
+def test_depo_takvimi_depo_ve_modul_kirilimi_gosterir(istemci):
+    """Depo ekibi kendi yükleme yükünü modül kırılımıyla görebilmeli."""
+    ic_piyasa_verisi_yukle(istemci)
+    istemci.post(
+        "/rota/planlar/uret", data={"tipler": ["FTL"], "plan_tarihi": "2026-09-01"}
+    )
+
+    takvim = istemci.get("/depo?ay=2026-09")
+    assert takvim.status_code == 200
+    assert "Yükleme Takvimi" in takvim.text
+    # Gün hücresinde modül kırılımı görünür.
+    assert "İç Piyasa" in takvim.text
+    assert "1 yükleme" in takvim.text
+
+    # 74 deposundan da mal çıkıyor: o depo seçilince yükleme sayılır.
+    yetmis_dort = istemci.get("/depo?ay=2026-09&depo=74")
+    assert "74 deposu" in yetmis_dort.text
+    assert "1 yükleme" in yetmis_dort.text
+    # 34 deposundan mal çıkmıyor: takvim boş kalır.
+    otuz_dort = istemci.get("/depo?ay=2026-09&depo=34")
+    assert "1 yükleme" not in otuz_dort.text
+
+    # Ring modülüne süzülünce iç piyasa planı sayılmaz.
+    ring = istemci.get("/depo?ay=2026-09&modul=RING")
+    assert "Ring" in ring.text
+
+    gun = istemci.get("/depo/gun?tarih=2026-09-01")
+    assert gun.status_code == 200
+    assert "Yükleme Listesi" in gun.text
+    # Plan detayına değil, deponun göreceği yükleme künyesine bakılır.
+    assert "2609S" in gun.text and "İç Piyasa" in gun.text
+
+
+def test_depo_modulu_planlama_ekranlarina_erisemez(ham_istemci, fabrika):
+    """Depo operasyon kullanıcısı sevkiyat planlama ekranlarına girememeli.
+
+    Modülün ayrı olmasının sebebi budur: yetki modül bazında veriliyor, depo ekibine
+    yalnızca yükleme takvimi açılıyor.
+    """
+    from app.models import Rol
+    from app.services import kullanici_servisi
+
+    with fabrika() as db:
+        kullanici, _ = kullanici_servisi.kullanici_olustur(
+            db, "depocu", "Depo Şefi", Rol.DEPO, parola="DepoSefi2026!"
+        )
+        kullanici.parola_degistirmeli = False
+        kullanici_servisi.yetkileri_ayarla(db, kullanici, {"DEPO": "GORUNTULE"})
+        db.commit()
+
+    ham_istemci.post("/giris", data={"kullanici_adi": "depocu", "parola": "DepoSefi2026!"})
+    assert ham_istemci.get("/depo").status_code == 200
+    assert ham_istemci.get("/depo/gun?tarih=2026-09-01").status_code == 200
+    for yasak in ("/rota", "/rota/planlar", "/rota/manuel-plan", "/ihracat", "/ring"):
+        assert ham_istemci.get(yasak).status_code == 403, yasak
 
 
 def test_tir_giremeyen_musteriye_tir_planlanmaz(istemci, fabrika):
@@ -1010,6 +1072,57 @@ def test_yukleme_formunda_her_axata_kendi_depo_satirina_yazilir(istemci, fabrika
     assert kutu["64-D DEPO"] == "3299"
     assert kutu["74-DEPO"] == "3400"
     assert not kutu["34-DEPO"]
+
+
+def test_bayi_ortak_deposu_axata_satirina_yazilmaz(istemci, fabrika, tmp_path):
+    """Yükleme deposu -1 olsa bile Axata numarası -1 satırına yazılmaz.
+
+    Bayi ortak deposu ayrı bir ERP'dedir, orada Axata iş emri açılmaz. Hacmin çoğu
+    -1'den çıktığında yükleme deposu -1 seçiliyor ve 64 için girilen numara formda
+    -1 satırında görünüyordu.
+    """
+    from openpyxl import load_workbook
+
+    from app.models import SevkiyatPlani
+
+    ic_piyasa_verisi_yukle(istemci)
+    # -1 ağırlıklı, 64'ten de mal alan bir sipariş: yükleme deposu -1 olur.
+    siparisler = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi", "AliciFirma", "SevkAdresi", "Not"],
+        [
+            ["S9", "T9", "U1", 70, "-1", "İZMİR", "ORTAK BAYİ", "ORTAK BAYİ A.Ş.",
+             "9 SOK. NO:1", "CIF - BORNOVA"],
+            ["S10", "T10", "U2", 20, "64", "İZMİR", "ORTAK BAYİ", "ORTAK BAYİ A.Ş.",
+             "9 SOK. NO:1", "CIF - BORNOVA"],
+        ],
+    )
+    istemci.post("/rota/siparisler/yukle", files={"dosya": ("s9.xlsx", siparisler)})
+    istemci.post(
+        "/rota/planlar/uret",
+        data={"tipler": ["FTL"], "plan_tarihi": "2026-09-02", "kalanlari_zorla": "1"},
+    )
+    with fabrika() as db:
+        plan = next(
+            p
+            for p in db.query(SevkiyatPlani).filter_by(modul="ROTA").all()
+            if any(s.teslimat_no == "T9" for s in p.satirlar)
+        )
+        assert plan.yukleme_deposu == "-1"
+        plan_id = plan.id
+
+    # Depo seçmeden numara giriliyor (plan tek Axata deposu taşıdığı için serbest).
+    istemci.post(f"/rota/planlar/{plan_id}/axata", data={"axata_no": "7788"})
+
+    dosya = tmp_path / "form_ortak.xlsx"
+    dosya.write_bytes(istemci.get(f"/rota/planlar/{plan_id}/form").content)
+    sayfa = load_workbook(dosya).active
+    kutu = {}
+    for satir in sayfa.iter_rows(min_col=5, max_col=6, values_only=True):
+        if satir[0] and str(satir[0]).endswith("DEPO"):
+            kutu[str(satir[0])] = satir[1]
+    assert not kutu.get("-1-DEPO")
+    assert kutu["64-D DEPO"] == "7788"
 
 
 def test_tek_depolu_planda_axata_deposu_zorunlu_degil(istemci, fabrika):

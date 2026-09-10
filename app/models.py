@@ -624,6 +624,11 @@ class SevkiyatPlani(Temel):
     """İç piyasa planında aracın adı; kamyon ile tır ayrı kapasitedir."""
 
     @property
+    def depolar_metni(self) -> str:
+        """Plandaki bütün depo kodları; depo operasyon listesinde görünür."""
+        return ", ".join(sorted({s.depo_kodu for s in self.satirlar if s.depo_kodu}))
+
+    @property
     def aracli_mi(self) -> bool:
         """Bu plan bir araç mı? Kargo ve EXW listelerinde araç yoktur.
 

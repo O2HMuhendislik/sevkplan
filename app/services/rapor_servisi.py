@@ -749,13 +749,22 @@ def _ay_araligi(ay: date) -> tuple[date, date]:
 
 
 def takvim_ozeti(
-    db: Session, modul: str, ay: date, kurallar=None
+    db: Session,
+    ay: date,
+    modul: str | None = None,
+    depo_kodu: str | None = None,
+    kurallar=None,
 ) -> dict:
     """Bir ayın gün gün plan sayısı: hangi güne kaç araç düştüğü.
 
     Günlük araç sınırı dolunca hacim ertesi güne kaydığı için tek bir planlama
     çalıştırması onlarca güne plan üretebiliyor. Plan listesi bunu göstermiyordu:
     500 satırlık listede hangi güne kaç araç düştüğü ancak sayarak anlaşılıyordu.
+
+    `modul` verilmezse bütün modüller sayılır ve gün hücresinde modül kırılımı
+    (İç Piyasa / İhracat / Ring) görünür — depo operasyon ekranının ihtiyacı budur.
+    `depo_kodu` verilirse yalnızca **o depodan mal çıkan** planlar sayılır; depo
+    kendi yükleme yükünü görmek istiyor, planın ana deposunu değil.
 
     Her gün için tip kırılımı (FTL / rutin / kargo / EXW), araç tipi kırılımı
     (tır / kamyon) ve **kalan kapasite** döner; pazar günleri çalışma günü değildir.
@@ -767,32 +776,47 @@ def takvim_ozeti(
     sorgu = (
         select(
             SevkiyatPlani.plan_tarihi,
+            SevkiyatPlani.modul,
             SevkiyatPlani.sevkiyat_tipi,
             SevkiyatPlani.arac_tipi,
             func.count(SevkiyatPlani.id),
             func.sum(SevkiyatPlani.toplam_birim),
         )
         .where(
-            SevkiyatPlani.modul == modul,
             SevkiyatPlani.durum != PlanDurumu.IPTAL,
             SevkiyatPlani.plan_tarihi >= ilk,
             SevkiyatPlani.plan_tarihi <= son,
         )
         .group_by(
             SevkiyatPlani.plan_tarihi,
+            SevkiyatPlani.modul,
             SevkiyatPlani.sevkiyat_tipi,
             SevkiyatPlani.arac_tipi,
         )
     )
+    if modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == modul)
+    if depo_kodu:
+        sorgu = sorgu.where(
+            SevkiyatPlani.id.in_(
+                select(SiparisSatiri.plan_id).where(
+                    SiparisSatiri.depo_kodu == depo_kodu
+                )
+            )
+        )
+
     gunler: dict[date, dict] = {}
-    for tarih, tip, arac, adet, birim in db.execute(sorgu).all():
+    for tarih, plan_modulu, tip, arac, adet, birim in db.execute(sorgu).all():
         if tarih is None:
             continue
         gun = gunler.setdefault(
             tarih,
-            {"toplam": 0, "arac": 0, "tipler": {}, "araclar": {}, "birim": Decimal(0)},
+            {"toplam": 0, "arac": 0, "moduller": {}, "tipler": {}, "araclar": {},
+             "birim": Decimal(0)},
         )
+        ad = MODUL_ADLARI.get(plan_modulu or "", plan_modulu or "—")
         gun["toplam"] += adet
+        gun["moduller"][ad] = gun["moduller"].get(ad, 0) + adet
         gun["tipler"][tip or "—"] = gun["tipler"].get(tip or "—", 0) + adet
         # Kargo ve EXW listeleri araç değildir; günlük araç sayısına girmezler.
         if (tip or "") not in ARACSIZ_TIPLER:
@@ -800,19 +824,21 @@ def takvim_ozeti(
             gun["araclar"][arac or "—"] = gun["araclar"].get(arac or "—", 0) + adet
             gun["birim"] += Decimal(birim or 0)
 
+    # Kalan kapasite yalnızca günlük sınırı olan iç piyasa planlamasında anlamlı.
     tavanlar = {}
-    if kurallar is not None:
+    if kurallar is not None and modul == "ROTA":
         tavanlar = {
             SevkiyatTipi.FTL.value: kurallar.gunluk_ftl_siniri,
             SevkiyatTipi.RUTIN.value: kurallar.gunluk_rutin_siniri,
         }
 
+    bos_gun = {"toplam": 0, "arac": 0, "moduller": {}, "tipler": {}, "araclar": {},
+               "birim": Decimal(0)}
     haftalar: list[list[dict | None]] = []
     hafta: list[dict | None] = [None] * ilk.weekday()
     gun = ilk
     while gun <= son:
-        veri = gunler.get(gun, {"toplam": 0, "arac": 0, "tipler": {}, "araclar": {},
-                                "birim": Decimal(0)})
+        veri = gunler.get(gun, dict(bos_gun))
         kalanlar = {
             tip: max(0, tavan - veri["tipler"].get(tip, 0))
             for tip, tavan in tavanlar.items()
@@ -833,14 +859,48 @@ def takvim_ozeti(
     if hafta:
         haftalar.append(hafta + [None] * (7 - len(hafta)))
 
-    toplam_plan = sum(g["toplam"] for g in gunler.values())
     return {
         "ay": ilk,
         "onceki_ay": (ilk - timedelta(days=1)).replace(day=1),
         "sonraki_ay": (son + timedelta(days=1)),
         "haftalar": haftalar,
-        "toplam_plan": toplam_plan,
+        "toplam_plan": sum(g["toplam"] for g in gunler.values()),
         "toplam_arac": sum(g["arac"] for g in gunler.values()),
         "dolu_gun": sum(1 for g in gunler.values() if g["toplam"]),
         "tavanlar": tavanlar,
     }
+
+
+def gun_planlari(
+    db: Session, gun: date, modul: str | None = None, depo_kodu: str | None = None
+) -> list[SevkiyatPlani]:
+    """Bir günün planları; takvimden gün hücresine tıklanınca açılan liste."""
+    sorgu = (
+        select(SevkiyatPlani)
+        .options(selectinload(SevkiyatPlani.satirlar))
+        .where(
+            SevkiyatPlani.plan_tarihi == gun,
+            SevkiyatPlani.durum != PlanDurumu.IPTAL,
+        )
+    )
+    if modul:
+        sorgu = sorgu.where(SevkiyatPlani.modul == modul)
+    if depo_kodu:
+        sorgu = sorgu.where(
+            SevkiyatPlani.id.in_(
+                select(SiparisSatiri.plan_id).where(
+                    SiparisSatiri.depo_kodu == depo_kodu
+                )
+            )
+        )
+    return list(db.scalars(sorgu.order_by(SevkiyatPlani.sefer_no)).all())
+
+
+def yukleme_depolari(db: Session) -> list[str]:
+    """Planlarda geçen depo kodları; depo operasyon ekranının seçim listesi."""
+    kodlar = db.scalars(
+        select(SiparisSatiri.depo_kodu)
+        .where(SiparisSatiri.plan_id.is_not(None))
+        .distinct()
+    ).all()
+    return sorted({(kod or "").strip() for kod in kodlar if (kod or "").strip()})

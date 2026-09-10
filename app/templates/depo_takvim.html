@@ -1,0 +1,96 @@
+{% extends "temel.html" %}
+{% set aktif_modul = 'DEPO' %}
+{% set aktif_menu = 'takvim' %}
+{% block icerik %}
+<h1>Yükleme Takvimi{% if depo %} — {{ depo }} deposu{% endif %}</h1>
+
+<p class="soluk">
+  Deponun kendi yükleme yükü: hangi gün kaç araç yüklenecek ve hangi modülden.
+  Bir güne tıklayınca o günün yükleme listesi açılır. <b>Pazar günleri sevkiyat
+  yapılmaz.</b> Bu ekran yalnızca gösterir; plan üretilmez, değiştirilmez.
+</p>
+
+<div class="kart">
+  <form class="satir" method="get" action="/depo" style="margin-bottom:0">
+    <div><label for="depo">Depo</label>
+      <select id="depo" name="depo">
+        <option value="">Bütün depolar</option>
+        {% for d in depolar %}
+          <option value="{{ d }}" {{ 'selected' if depo == d }}>{{ d }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="modul">Modül</label>
+      <select id="modul" name="modul">
+        <option value="">Tümü (iç piyasa · ihracat · ring)</option>
+        {% for kod, ad in modul_secenekleri %}
+          <option value="{{ kod }}" {{ 'selected' if modul == kod }}>{{ ad }}</option>
+        {% endfor %}
+      </select></div>
+    <input type="hidden" name="ay" value="{{ takvim.ay.strftime('%Y-%m') }}">
+    <button type="submit">Göster</button>
+    {% if depo or modul %}<a class="dugme ikincil" href="/depo?ay={{ takvim.ay.strftime('%Y-%m') }}">Temizle</a>{% endif %}
+  </form>
+</div>
+
+<div class="izgara dort" style="margin:18px 0">
+  <div class="metrik"><div class="etiket">Ay toplamı</div>
+    <div class="deger">{{ takvim.toplam_plan }}</div>
+    <div class="soluk">yükleme</div></div>
+  <div class="metrik"><div class="etiket">Araç</div>
+    <div class="deger">{{ takvim.toplam_arac }}</div>
+    <div class="soluk">kargo ve EXW listeleri hariç</div></div>
+  <div class="metrik"><div class="etiket">Yükleme yapılan gün</div>
+    <div class="deger">{{ takvim.dolu_gun }}</div></div>
+  <div class="metrik"><div class="etiket">Depo</div>
+    <div class="deger" style="font-size:21px">{{ depo or 'Tümü' }}</div>
+    <div class="soluk">{{ modul_adi }}</div></div>
+</div>
+
+<div class="kart">
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap">
+    <a class="dugme ikincil" href="/depo?{{ sorgu }}&ay={{ takvim.onceki_ay.strftime('%Y-%m') }}">‹ Önceki ay</a>
+    <div style="font-weight:700; font-size:17px; min-width:150px; text-align:center">
+      {{ takvim.ay | ay_adi }}</div>
+    <a class="dugme ikincil" href="/depo?{{ sorgu }}&ay={{ takvim.sonraki_ay.strftime('%Y-%m') }}">Sonraki ay ›</a>
+  </div>
+
+  <table class="takvim">
+    <thead><tr>
+      {% for gun in ('Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz') %}
+        <th{% if loop.index == 7 %} class="tatil"{% endif %}>{{ gun }}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for hafta in takvim.haftalar %}
+      <tr>
+      {% for gun in hafta %}
+        {% if gun is none %}
+          <td class="bos-gun"></td>
+        {% else %}
+        <td class="{{ 'tatil' if not gun.calisma_gunu }} {{ 'bugun' if gun.bugun }}">
+          <div class="gun-no">{{ gun.tarih.day }}</div>
+          {% if gun.toplam %}
+            <a class="gun-sayi" href="/depo/gun?tarih={{ gun.tarih }}&{{ sorgu }}">
+              {{ gun.toplam }} yükleme</a>
+            <div class="gun-detay">
+              {% for ad, adet in gun.moduller | dictsort %}
+                <span class="etiketcik">{{ ad }} {{ adet }}</span>
+              {% endfor %}
+            </div>
+            {% if gun.araclar %}
+            <div class="gun-detay soluk">
+              {% for arac, adet in gun.araclar | dictsort %}{{ arac | lower }} {{ adet }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </div>
+            {% endif %}
+          {% elif not gun.calisma_gunu %}
+            <div class="gun-detay soluk">sevkiyat yok</div>
+          {% endif %}
+        </td>
+        {% endif %}
+      {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

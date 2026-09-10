@@ -37,6 +37,11 @@
   <path d="M12 3.2 20.8 7.6 12 12 3.2 7.6z"/>
   <path d="m3.2 12 8.8 4.4 8.8-4.4"/>
   <path d="m3.2 16.4 8.8 4.4 8.8-4.4"/>
+{%- elif ad == 'depo' %}
+  {# Depo binası ve yükleme kapısı: takvim değil, yükleme noktası anlatılıyor. #}
+  <path d="M3.5 9.8 12 4.5l8.5 5.3v10H3.5z"/>
+  <path d="M8.2 20.5v-6.3h7.6v6.3"/>
+  <path d="M8.2 17.2h7.6"/>
 {%- elif ad == 'ayar' %}
   <path d="M3.5 7.4h9.1M17.4 7.4h3.1M3.5 16.6h3.1M11.4 16.6h9.1"/>
   <circle cx="15" cy="7.4" r="2.4"/><circle cx="9" cy="16.6" r="2.4"/>

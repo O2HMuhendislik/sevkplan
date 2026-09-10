@@ -102,7 +102,12 @@ def _depo_dokumu(plan: SevkiyatPlani) -> list[tuple[str, int, Decimal]]:
     kalemler: dict[str, set[str]] = defaultdict(set)
     adetler: dict[str, Decimal] = defaultdict(Decimal)
     for satir in plan.satirlar:
-        etiket = f"{satir.depo_kodu} {marka(satir.depo_kodu)}"
+        # Marka satırın kendisinden okunur: aynı depodan iki markanın malı çıkabiliyor
+        # (64'ten 006… teslimatı Vaillant, 2013… DemirDöküm).
+        etiket = (
+            f"{satir.depo_kodu} "
+            f"{marka(satir.depo_kodu, satir.teslimat_no, satir.bayi_adi or '')}"
+        )
         kalemler[etiket].add(satir.urun_kodu)
         adetler[etiket] += Decimal(satir.miktar)
     return [

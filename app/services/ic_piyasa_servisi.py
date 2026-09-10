@@ -38,7 +38,7 @@ from app.domain.kapasite import (
     IC_RUTIN_KAMYON,
     KapasiteProfili,
 )
-from app.domain.marka import paylari_hesapla, paylari_metne_cevir
+from app.domain.marka import marka_paylari, paylari_metne_cevir
 from app.db import parcali_scalars
 from app.models import (
     Musteri,
@@ -537,7 +537,7 @@ def _plani_kaydet(
         son_ugrak_orani=taslak.son_ugrak_orani.quantize(
             Decimal("0.0001"), ROUND_HALF_UP
         ),
-        marka_paylari_metni=paylari_metne_cevir(paylari_hesapla(taslak.depo_katkilari))
+        marka_paylari_metni=paylari_metne_cevir(marka_paylari(taslak.marka_katkilari))
         or None,
         istisna_asim=taslak.istisna_asim,
         alt_limit_esnetildi=taslak.alt_limit_esnetildi,
