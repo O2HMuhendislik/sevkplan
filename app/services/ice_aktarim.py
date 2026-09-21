@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.iller import yer_adi
 from app.domain.metin import buyuk_harf
+from app.domain.urun_header import header_olculerini_tamamla
 from app.models import (
     IceAktarim,
     Musteri,
@@ -90,6 +91,11 @@ class IceAktarimSonucu:
     """Kayıt alındı ama eksik veri var; kullanıcının görmesi gereken durumlar."""
     reddedilen: int = 0
     """Modülün kapsamı dışında olduğu için hiç alınmayan satır sayısı."""
+    header_tamamlanan: int = 0
+    """Ölçüsü, eşleştiği gerçek üründen otomatik tamamlanan SAP header kodu sayısı.
+
+    Bkz. app/domain/urun_header.py — yalnızca ürün master data aktarımında dolar.
+    """
 
     @property
     def basarili(self) -> int:
@@ -111,6 +117,11 @@ class IceAktarimSonucu:
             metin += f" · {self.birlestirilen} satır birleştirildi"
         if self.uyarilar:
             metin += f" · {len(self.uyarilar)} eksik veri uyarısı"
+        if self.header_tamamlanan:
+            metin += (
+                f" · {self.header_tamamlanan} header ürünün ölçüsü gerçek "
+                "üründen tamamlandı"
+            )
         return metin
 
 
@@ -195,15 +206,25 @@ def urunleri_aktar(
         if not excel.bos_mu(kayit.get("aktif")):
             urun.aktif = excel.evet_hayir(kayit.get("aktif"), True)
 
-        if not urun.planlanabilir_mi:
-            # Kayıt yine de alınır; planlamaya girdiğinde gerekçesiyle uyarılır.
-            sonuc.uyarilar.append(
-                SatirHatasi(
-                    satir_no, urun_kodu,
-                    "Palet içi adet / kamyon / tır yükleme adeti alanlarının üçü de boş; "
-                    "bu ürün planlamaya giremez",
-                )
+    # SAP header kodları (sipariş girişinde kullanılan, kendi ölçüsü olmayan ikinci
+    # kod) eşleştiği gerçek üründen ölçüsünü otomatik alır — bkz. app/domain/urun_header.py.
+    # Ölçü tamamlandıktan sonra "planlamaya giremez" uyarısı bu ürünler için yazılmaz.
+    tamamlananlar = dict(header_olculerini_tamamla(mevcutlar))
+
+    for kayit in kayitlar:
+        urun_kodu = excel.metin(kayit.get("urun_kodu"))
+        urun = mevcutlar.get(urun_kodu) if urun_kodu else None
+        if urun is None or urun_kodu in tamamlananlar or urun.planlanabilir_mi:
+            continue
+        # Kayıt yine de alınır; planlamaya girdiğinde gerekçesiyle uyarılır.
+        sonuc.uyarilar.append(
+            SatirHatasi(
+                kayit["_satir_no"], urun_kodu,
+                "Palet içi adet / kamyon / tır yükleme adeti alanlarının üçü de boş; "
+                "bu ürün planlamaya giremez",
             )
+        )
+    sonuc.header_tamamlanan = len(tamamlananlar)
 
     _aktarim_kaydet(db, dosya_adi, "URUN", sonuc, kullanici)
     db.flush()

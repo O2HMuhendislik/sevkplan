@@ -62,6 +62,47 @@ def test_lojistik_verisi_olmayan_urun_uyari_ile_kaydedilir(db):
     assert db.query(Urun).one().planlanabilir_mi is False
 
 
+def test_header_kodun_olcusu_aktarimda_otomatik_tamamlanir(db, monkeypatch):
+    """SAP header kodu (ikinci stok kodu) eşleştiği gerçek üründen ölçü alır.
+
+    Header koduyla gelen bir sipariş satırı, kendi ölçüsü olmadığı için eskiden
+    HATALI'ya düşüyordu; sebep ekranda görünmediği sürece bu bir veri hatası değil,
+    sistemin çalışmadığı gibi görünüyordu.
+    """
+    monkeypatch.setattr(
+        "app.domain.urun_header.HEADER_ESLESTIRME", {"HDR-1": "KMB-24"}
+    )
+    dosya = kitap(URUN_BASLIK, [
+        ["KMB-24", "Kombi 24 kW", "KOMBİ", 30, None, 468],
+        ["HDR-1", "Kombi 24 kW (Header)", None, None, None, None],
+    ])
+    sonuc = ice_aktarim.urunleri_aktar(db, dosya, "urunler.xlsx")
+
+    assert sonuc.header_tamamlanan == 1
+    assert "header ürünün ölçüsü" in sonuc.ozet()
+    assert sonuc.uyarilar == []  # "planlamaya giremez" uyarısı artık yazılmaz
+    header = db.query(Urun).filter_by(urun_kodu="HDR-1").one()
+    assert header.planlanabilir_mi is True
+    assert header.tir_yukleme_adeti == 468
+    assert header.urun_adi == "Kombi 24 kW (Header)"  # kendi adı korunur
+
+
+def test_header_kodun_gercek_urunu_daha_once_yuklenmisse_de_calisir(db, monkeypatch):
+    """Gerçek ürün ayrı bir dosyada, önceden yüklenmiş olsa bile eşleştirme çalışır."""
+    monkeypatch.setattr(
+        "app.domain.urun_header.HEADER_ESLESTIRME", {"HDR-1": "KMB-24"}
+    )
+    ice_aktarim.urunleri_aktar(
+        db, kitap(URUN_BASLIK, [["KMB-24", "Kombi", "KOMBİ", 30, None, 468]]), "a.xlsx"
+    )
+    sonuc = ice_aktarim.urunleri_aktar(
+        db, kitap(URUN_BASLIK, [["HDR-1", "Kombi (Header)", None, None, None, None]]),
+        "b.xlsx",
+    )
+    assert sonuc.header_tamamlanan == 1
+    assert db.query(Urun).filter_by(urun_kodu="HDR-1").one().tir_yukleme_adeti == 468
+
+
 def test_zorunlu_kolon_eksikse_dosya_reddedilir(db):
     with pytest.raises(ExcelHatasi, match="Palet içi adet"):
         ice_aktarim.urunleri_aktar(
