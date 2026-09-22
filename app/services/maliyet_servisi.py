@@ -288,7 +288,8 @@ class SatirMaliyeti:
     musteri: str
     il: str
     marka: str
-    """Malın yüklendiği depo kodundan okunur; navlun faturası marka bazında kesiliyor."""
+    """Depo soneği / teslimat numarası / bayi adından okunur (app.domain.marka);
+    navlun faturası marka bazında kesiliyor."""
     urun_kodu: str
     urun_adi: str
     miktar: Decimal
@@ -579,7 +580,7 @@ def _satir_maliyeti(
         siparis_no=satir.siparis_no,
         musteri=_musteri_anahtari(satir),
         il=il,
-        marka=depo_markasi(satir.depo_kodu),
+        marka=depo_markasi(satir.depo_kodu, satir.teslimat_no, satir.bayi_adi or ""),
         urun_kodu=satir.urun_kodu,
         urun_adi=satir.urun_adi or "",
         miktar=Decimal(satir.miktar),
@@ -1178,13 +1179,31 @@ def fiili_maliyet_kaydet(
 
 # --------------------------------------------------------------------- marka
 def markalari_getir(db: Session) -> list[str]:
-    """Veride geçen markalar. Depo kodlarından türetilir, elle tanımlanmaz."""
+    """Veride geçen markalar.
+
+    Depo soneği (`64-V`, `64-P`) her zaman kesin bilgidir; sonek yoksa `depo_markasi`
+    varsayılan olarak DemirDöküm döner (aşağıdaki tek argümanlı çağrı budur). Ama
+    sonek taşımayan normal depolarda marka aslında teslimat numarasından ya da -1
+    deposunda bayi adından geliyor (bkz. app.domain.marka); bütün satırları çekip tek
+    tek marka() çağırmak yerine Vaillant'ın varlığı ucuz bir sorguyla soruluyor —
+    burada yalnızca ekrandaki filtre seçeneklerine karar veriliyor.
+    """
+    from app.domain.marka import VAILLANT_BAYI_ONEKI, VAILLANT_TESLIMAT_ONEKI
+
     kodlar = db.execute(
         select(SiparisSatiri.depo_kodu)
         .where(SiparisSatiri.modul == MALIYET_MODULU)
         .distinct()
     ).all()
     markalar = {depo_markasi(kod) for (kod,) in kodlar if kod}
+    if db.scalar(
+        select(SiparisSatiri.id).where(
+            SiparisSatiri.modul == MALIYET_MODULU,
+            (SiparisSatiri.teslimat_no.like(f"{VAILLANT_TESLIMAT_ONEKI}%"))
+            | (SiparisSatiri.bayi_adi.like(f"{VAILLANT_BAYI_ONEKI}%")),
+        ).limit(1)
+    ):
+        markalar.add("VAİLLANT")
     butcedekiler = {
         m for (m,) in db.execute(select(ButceKalemi.marka).distinct()).all() if m
     }
@@ -1207,7 +1226,18 @@ def _marka_paylari(maliyet: PlanMaliyeti) -> dict[str, Decimal]:
     if desiler:  # desi yok ama satır var: eşit böl
         pay = Decimal(1) / Decimal(len(desiler))
         return {ad: pay for ad in desiler}
-    return maliyet.plan.marka_paylari or {depo_markasi(maliyet.plan.depo_kodu): Decimal(1)}
+    if maliyet.plan.marka_paylari:
+        return maliyet.plan.marka_paylari
+    # Maliyet satırı hiç üretilmedi (plan modül dışı ya da boş) — planın kendi
+    # sipariş satırlarından, tam kuralla (depo + teslimat + bayi) hesapla.
+    adetler: dict[str, Decimal] = defaultdict(Decimal)
+    for satir in maliyet.plan.satirlar:
+        ad = depo_markasi(satir.depo_kodu, satir.teslimat_no, satir.bayi_adi or "")
+        adetler[ad] += Decimal(satir.miktar or 0)
+    if adetler:
+        toplam_adet = sum(adetler.values(), Decimal(0))
+        return {ad: deger / toplam_adet for ad, deger in adetler.items()}
+    return {depo_markasi(maliyet.plan.depo_kodu): Decimal(1)}
 
 
 def markaya_indirge(maliyetler: list[PlanMaliyeti], marka: str) -> list[PlanMaliyeti]:

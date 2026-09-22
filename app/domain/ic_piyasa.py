@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import enum
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -43,6 +43,7 @@ from app.domain.iller import (
     yukleme_tesisi,
 )
 from app.domain.kapasite import AracTipi, KapasiteProfili
+from app.domain.panel import bonus_uygun_mu
 from app.domain.planlama import Teslimat, palet_hesapla
 
 
@@ -105,13 +106,34 @@ class Kurallar:
     üretirdi. Ufka sığmayan hacim gerekçesiyle beklemede kalır ve bir sonraki
     çalıştırmada planlanır.
     """
-    durak_payi: Decimal = Decimal("0.01")
-    """Her durak için araçta bırakılacak pay (anahtar değer).
+    durak_payi_tir: Decimal = Decimal("0.01")
+    durak_payi_kamyon: Decimal = Decimal("0.02")
+    """Her durak için araçta bırakılacak pay (anahtar değer), araç tipine göre.
 
     Çok duraklı araçta yük kapıda boşaltılacak sırayla istiflenir; her durak için
     elleçleme boşluğu gerekir ve hesapta %100 dolu görünen araca mal fiziken
-    sığmaz. Sahanın kuralı: durak başına %1. Beş duraklı bir tır %95-96 dolulukta
-    bırakılır, tek duraklı araç %99'da.
+    sığmaz. Kamyon küçük olduğu için aynı elleçleme boşluğu kapasitenin daha büyük
+    bir parçasını yer: durak başına kamyonda %2, tırda %1. Beş duraklı bir tır
+    %95-96 dolulukta bırakılır, tek duraklı araç %99'da; kamyonda aynı hesap
+    %90-91 ve %98'e karşılık gelir.
+    """
+    depo_payi_tir: Decimal = Decimal("0.01")
+    depo_payi_kamyon: Decimal = Decimal("0.02")
+    """Yüklenen her depo için araçta bırakılacak ayrı pay (anahtar değer).
+
+    Birden fazla depodan yükleme (ör. 64 + 74 ortak yükleme, ya da bayi ortak
+    deposu -1 ile 64 birlikte) her depo için ayrı toplama/istifleme demektir; bu
+    da durakla aynı türde bir elleçleme kaybı yaratır. Durak payından **ayrı**
+    ve **ek** olarak uygulanır — beş duraklı, iki depolu bir tırda ikisi toplanır.
+    """
+    panel_bonusu: Decimal = Decimal("0.05")
+    """Aynı ailenin 100 ve 120 cm panelleri **saf** yüklendiğinde eklenen kapasite.
+
+    Farklı boylar aynı yükseklikte birbirinin içine geçirilerek istiflenince palet
+    bazlı yükleme adedinin öngördüğünden daha fazlası sığıyor — bkz.
+    `app.domain.panel`. Gerçekleşen 7 saf sefer %103,2-%113,2 arasında çıktı;
+    bu değer gözlenen en düşüğün (1,032) altında kalacak şekilde temkinli seçildi.
+    Araçta panel dışı ya da başka boyda tek bir SKU bile varsa uygulanmaz.
     """
     azami_sapma_km: int = 100
     """Rotanın doğrudan gidişten ne kadar uzun olabileceği.
@@ -253,6 +275,10 @@ class MusteriSiparisi:
     def ana_depolar(self) -> set[str]:
         """Marka soneki atılmış depo kodları: 64-V ve 64-P hepsi 64'tür."""
         return {ana_depo(depo) for depo in self.depolar}
+
+    @property
+    def sku_kodlari(self) -> set[str]:
+        return {kod for t in self.teslimatlar for kod in t.sku_kodlari}
 
     @property
     def aktarma_merkezi(self) -> str:
@@ -605,23 +631,62 @@ class RotaPlani:
     Bu durumda `profil` zaten kamyon profilidir ve ölçüler baştan kamyona göre
     hesaplanır — sonradan indirme değil, baştan kamyon planlaması.
     """
-    durak_payi: Decimal = Decimal("0.01")
-    """Durak başına araçta bırakılan pay; bkz. `Kurallar.durak_payi`."""
+    kurallar: Kurallar = field(default_factory=Kurallar)
+    """Durak/depo payı buradan okunur; bkz. `Kurallar.durak_payi_tir` ve `depo_payi_tir`."""
+    panel_bonus_haritasi: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """SKU -> (panel ailesi, uzunluk); bkz. `app.domain.panel.bonus_haritasi`."""
+
+    @property
+    def ana_depolar(self) -> set[str]:
+        """Marka soneki atılmış depo kodları: 64-V ve 64-P hepsi 64'tür.
+
+        Kapasite payı depo *işlemi* başınadır — aynı depodaki marka ayrımı ayrı bir
+        yükleme noktası değildir, tek pick listesinde toplanır.
+        """
+        return {ana_depo(depo) for depo in self.depolar}
+
+    @property
+    def sku_kodlari(self) -> set[str]:
+        return {kod for t in self.teslimatlar for kod in t.sku_kodlari}
 
     def kapasite(
-        self, profil: KapasiteProfili | None = None, durak: int | None = None
+        self,
+        profil: KapasiteProfili | None = None,
+        durak: int | None = None,
+        depo_sayisi: int | None = None,
+        sku_kodlari: Iterable[str] | None = None,
     ) -> Decimal:
-        """Aracın **kullanılabilir** kapasitesi: üst limit eksi durak payı.
+        """Aracın **kullanılabilir** kapasitesi: üst limit eksi durak ve depo payı.
 
-        Kâğıt üzerinde %100 dolu bir araca sahada mal sığmıyor: her durak için
-        elleçleme boşluğu gerekiyor. Beş duraklı tır 0,95'te, tek duraklı 0,99'da
-        kapatılır. Kargo ve EXW listelerinde araç olmadığı için pay düşülmez.
+        Kâğıt üzerinde %100 dolu bir araca sahada mal sığmıyor: her durak ve her
+        yüklenen depo için elleçleme boşluğu gerekiyor, ikisi ayrı ayrı ve toplanarak
+        düşülür. Pay araç tipine göre değişir (`profil.arac_tipi`): kamyon küçük
+        olduğu için aynı boşluk kapasitenin daha büyük bir parçasını yer, kamyonda
+        pay tırın iki katıdır. Kargo ve EXW listelerinde araç olmadığı için pay
+        düşülmez.
+
+        Araçtaki bütün SKU'lar aynı 100/120 cm panel ailesinin parçasıysa üst limite
+        `Kurallar.panel_bonusu` eklenir (bkz. `app.domain.panel`).
         """
         hedef = profil or self.profil
         if self.tip.aracsiz_mi:
             return hedef.ust_limit
-        sayi = self.durak_sayisi if durak is None else durak
-        return max(Decimal(0), hedef.ust_limit - self.durak_payi * Decimal(sayi))
+        kodlar = self.sku_kodlari if sku_kodlari is None else set(sku_kodlari)
+        ust_limit = hedef.ust_limit
+        if bonus_uygun_mu(kodlar, self.panel_bonus_haritasi):
+            ust_limit += self.kurallar.panel_bonusu
+        sayi_durak = self.durak_sayisi if durak is None else durak
+        sayi_depo = len(self.ana_depolar) if depo_sayisi is None else depo_sayisi
+        if hedef.arac_tipi is AracTipi.KAMYON:
+            durak_payi, depo_payi = (
+                self.kurallar.durak_payi_kamyon, self.kurallar.depo_payi_kamyon,
+            )
+        else:
+            durak_payi, depo_payi = (
+                self.kurallar.durak_payi_tir, self.kurallar.depo_payi_tir,
+            )
+        pay = durak_payi * Decimal(sayi_durak) + depo_payi * Decimal(sayi_depo)
+        return max(Decimal(0), ust_limit - pay)
 
     def musteri_olcusu(self, musteri: MusteriSiparisi) -> Decimal:
         if self.kamyon_zorunlu:
@@ -677,6 +742,18 @@ class RotaPlani:
             self.kamyon_birimi if self.arac_tipi is AracTipi.KAMYON
             else self.toplam_birim
         )
+
+    @property
+    def secili_gecerli_dolu_mu(self) -> bool:
+        """Araç geçerli dolulukta mı?
+
+        Üst sınır profilin sabit `ust_limit`i değil, aracın kendi `kapasite()`sidir —
+        panel bonusu üst limiti araç bazında büyütebildiği için sabit `gecerli_dolu`
+        burada yanlış sonuç verir.
+        """
+        secili = self.secili_profil
+        birim = self.secili_birim
+        return secili.alt_limit <= birim <= self.kapasite(secili)
 
     @property
     def toplam_palet(self) -> Decimal:
@@ -906,8 +983,13 @@ class RotaPlani:
             return False
         if self.tip is SevkiyatTipi.FTL and self.durak_sayisi >= kurallar.azami_durak:
             return False
-        # Müşteri eklenince durak sayısı bir artar; kapasite payı da ona göre düşer.
-        limit = self.kapasite(durak=self.durak_sayisi + 1)
+        # Müşteri eklenince durak sayısı bir artar; yeni depoları da getirebilir.
+        # Kapasite payı ikisine göre de düşer.
+        limit = self.kapasite(
+            durak=self.durak_sayisi + 1,
+            depo_sayisi=len(self.ana_depolar | musteri.ana_depolar),
+            sku_kodlari=self.sku_kodlari | musteri.sku_kodlari,
+        )
         if self.toplam_birim + self.musteri_olcusu(musteri) > limit:
             return False
         if not self.yaka_uygun_mu(musteri):
@@ -953,6 +1035,7 @@ def _paketle(
     kamyon_profili: KapasiteProfili | None = None,
     kamyon_zorunlu: bool = False,
     aktarma: str = "",
+    panel_bonus_haritasi: Mapping[str, tuple[str, str]] | None = None,
 ) -> list[RotaPlani]:
     """Bir bölgedeki müşterileri araçlara yerleştirir.
 
@@ -974,10 +1057,25 @@ def _paketle(
     def olcu(musteri: MusteriSiparisi) -> Decimal:
         return musteri.kamyon_olcusu(tip) if kamyon_zorunlu else musteri.olcu(tip)
 
-    # Tek müşteriye kurulan araç tek duraklıdır; bölme sınırı da o kapasitedir.
-    tek_durak_limiti = max(
-        Decimal(0), profil.ust_limit - kurallar.durak_payi
-    ) if not tip.aracsiz_mi else profil.ust_limit
+    # Tek müşteriye kurulan araç tek duraklı, tek depoludur; bölme sınırı bu asgari
+    # payla hesaplanır. Bir müşterinin kendi malı birden fazla depoya yayılmışsa
+    # gerçek pay araç kurulurken (sigar_mi/kapasite) ayrıca düşer. Sınır müşterinin
+    # kendi SKU'larına göre hesaplanır: saf 100+120 cm panel siparişi panel bonusuyla
+    # tek araca sığabilir (bkz. `app.domain.panel`).
+    harita = panel_bonus_haritasi or {}
+    tek_arac = None
+    if not tip.aracsiz_mi:
+        tek_arac = RotaPlani(
+            bolge_kodu=bolge_kodu, tip=tip, profil=profil, kurallar=kurallar,
+            panel_bonus_haritasi=dict(harita),
+        )
+
+    def tek_durak_limiti(musteri: MusteriSiparisi) -> Decimal:
+        if tek_arac is None:
+            return profil.ust_limit
+        return tek_arac.kapasite(
+            profil, durak=1, depo_sayisi=1, sku_kodlari=musteri.sku_kodlari,
+        )
 
     def yeni_arac() -> RotaPlani:
         return RotaPlani(
@@ -987,7 +1085,8 @@ def _paketle(
             kamyon_profili=kamyon_profili,
             kamyon_zorunlu=kamyon_zorunlu,
             aktarma_merkezi=aktarma,
-            durak_payi=kurallar.durak_payi,
+            kurallar=kurallar,
+            panel_bonus_haritasi=dict(harita),
         )
 
     def yerlestir(musteriler: list[MusteriSiparisi]) -> list[RotaPlani]:
@@ -1017,10 +1116,12 @@ def _paketle(
     for ham_musteri in grup:
         # Bir aracı aşan müşteri önce araç boyutunda parçalara ayrılır.
         for musteri in musteriyi_bol(
-            ham_musteri, tip, tek_durak_limiti, palet_ici, yukleme_adeti,
-            kamyon_zorunlu,
+            ham_musteri, tip, tek_durak_limiti(ham_musteri), palet_ici,
+            yukleme_adeti, kamyon_zorunlu,
         ):
-            if olcu(musteri) > tek_durak_limiti:
+            # Bölünmüş parça artık panel bonusuna uymayabilir (ör. tek boyda kalmış
+            # olabilir); sınır parçanın kendi SKU'larıyla yeniden hesaplanır.
+            if olcu(musteri) > tek_durak_limiti(musteri):
                 # Tek teslimat bile aracı aşıyor: bölünemez, istisna aracıyla gider.
                 arac = yeni_arac()
                 arac.istisna_asim = True
@@ -1042,7 +1143,7 @@ def _paketle(
 
     for _, tesis_grubu in sorted(tesis_gruplari.items()):
         for arac in yerlestir(tesis_grubu):
-            if arac.secili_profil.gecerli_dolu(arac.secili_birim):
+            if arac.secili_gecerli_dolu_mu:
                 planlar.append(arac)
             else:
                 # Kendi tesisinden dolmadı; ortak yükleme şansı için havuza döner.
@@ -1127,6 +1228,7 @@ def planla(
     yukleme_adeti: Mapping[str, int] | None = None,
     kamyon_profili: KapasiteProfili | None = None,
     kamyon_yukleme_adeti: Mapping[str, int] | None = None,
+    panel_bonus_haritasi: Mapping[str, tuple[str, str]] | None = None,
 ) -> IcPiyasaSonucu:
     """Verilen tipteki müşterileri araçlara böler.
 
@@ -1230,6 +1332,7 @@ def planla(
             _paketle(
                 grup, bolge_kodu, tip, profil, kurallar, palet_ici, yukleme_adeti,
                 kamyon_profili, aktarma=merkez,
+                panel_bonus_haritasi=panel_bonus_haritasi,
             )
         )
     for bolge_kodu, merkez, grup in gruplandir(zorunlu_kamyon):
@@ -1238,6 +1341,7 @@ def planla(
                 grup, bolge_kodu, tip, kamyon_profili, kurallar, palet_ici,
                 kamyon_yukleme_adeti or yukleme_adeti, kamyon_profili,
                 kamyon_zorunlu=True, aktarma=merkez,
+                panel_bonus_haritasi=panel_bonus_haritasi,
             )
         )
 
@@ -1260,8 +1364,7 @@ def planla(
     for plan in ham_planlar:
         # Alt limit, aracın gerçekte hangi tiple gittiğine göre aranır: tırın yarısını
         # dolduran yük kamyona sığıyorsa dolu bir araçtır.
-        secili = plan.secili_profil
-        if plan.istisna_asim or secili.gecerli_dolu(plan.secili_birim):
+        if plan.istisna_asim or plan.secili_gecerli_dolu_mu:
             uygunlar.append(plan)
         elif kalanlari_zorla:
             plan.alt_limit_esnetildi = True

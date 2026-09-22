@@ -298,9 +298,10 @@ def ic_piyasa_verisi_yukle(istemci):
         [
             ["S1", "T1", "U1", 60, "64", "İZMİR", "EGE ISITMA", "EGE ISITMA A.Ş.",
              "1234 SOK. NO:5", "CIF - BORNOVA"],
-            # 60 + 38 = 0,98 anahtar: iki duraklı araçta durak payı (%1 x 2) düşülünce
-            # kalan kapasite tam budur (bkz. Kurallar.durak_payi).
-            ["S2", "T2", "U2", 38, "74", "MANİSA", "MANİSA TESİSAT",
+            # 60 + 36 = 0,96 anahtar: iki duraklı, iki depolu araçta durak payı
+            # (%1 x 2) + depo payı (%1 x 2) düşülünce kalan kapasite tam budur
+            # (bkz. Kurallar.durak_payi_tir, depo_payi_tir).
+            ["S2", "T2", "U2", 36, "74", "MANİSA", "MANİSA TESİSAT",
              "MANİSA TESİSAT LTD.", "SANAYİ CAD. NO:8", "CIF - MERKEZ"],
         ],
     )

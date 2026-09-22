@@ -443,11 +443,31 @@ AYAR_TANIMLARI: tuple[AyarTanimi, ...] = (
                "Bir günde açılabilecek en fazla tam araç sayısı.", "sayi", "35", "araç"),
     AyarTanimi("gunluk_rutin_siniri", "Günlük rutin sınırı",
                "Bir günde açılabilecek en fazla rutin/parsiyel aracı.", "sayi", "4", "araç"),
-    AyarTanimi("durak_payi", "Durak payı",
-               "Her durak için araçta bırakılan pay. 0,01 = %1; beş duraklı tır "
+    AyarTanimi("durak_payi_tir", "Durak payı (tır)",
+               "Her durak için tırda bırakılan pay. 0,01 = %1; beş duraklı tır "
                "%95'te kapatılır. Hesapta dolu görünen çok duraklı araca mal "
                "fiziken sığmadığı için gerekiyor.",
                "ondalik", "0.01", "anahtar"),
+    AyarTanimi("durak_payi_kamyon", "Durak payı (kamyon)",
+               "Her durak için kamyonda bırakılan pay. Kamyon küçük olduğu için "
+               "aynı elleçleme boşluğu kapasitenin daha büyük bir parçasını yer; "
+               "sahanın kuralı tırın iki katı.",
+               "ondalik", "0.02", "anahtar"),
+    AyarTanimi("depo_payi_tir", "Depo payı (tır)",
+               "Yüklenen her depo için tırda bırakılan ayrı pay. Birden fazla "
+               "depodan yükleme (ör. 64 + 74 ortak yükleme) durak payından ayrı "
+               "bir elleçleme kaybı yaratır.",
+               "ondalik", "0.01", "anahtar"),
+    AyarTanimi("depo_payi_kamyon", "Depo payı (kamyon)",
+               "Yüklenen her depo için kamyonda bırakılan ayrı pay.",
+               "ondalik", "0.02", "anahtar"),
+    AyarTanimi("panel_bonusu", "Panel bonusu (100+120 cm)",
+               "Araçtaki bütün SKU'lar aynı ailenin 100 ve 120 cm panellerinden "
+               "oluşuyorsa üst limite eklenen kapasite. Farklı boylar birbirinin "
+               "içine geçirilerek istiflenince gerçekte %100'ün üzerinde "
+               "yükleme yapılabiliyor; gerçekleşen saf seferler %103,2-%113,2 "
+               "arasında çıktı, bu değer gözlenenin altında temkinli seçildi.",
+               "ondalik", "0.05", "anahtar"),
     AyarTanimi("planlama_ufku_gun", "Planlama ufku",
                "Günlük araç sınırı dolunca hacim ertesi çalışma gününe kayar "
                "(pazar hariç). Bir çalıştırmada en fazla kaç iş günü ileriye plan "
@@ -544,7 +564,11 @@ def kurallari_kur(db: Session):
         gunluk_rutin_siniri=int(d["gunluk_rutin_siniri"]),
         azami_sapma_km=int(d["azami_sapma_km"]),
         planlama_ufku_gun=int(d["planlama_ufku_gun"]),
-        durak_payi=Decimal(d["durak_payi"]),
+        durak_payi_tir=Decimal(d["durak_payi_tir"]),
+        durak_payi_kamyon=Decimal(d["durak_payi_kamyon"]),
+        depo_payi_tir=Decimal(d["depo_payi_tir"]),
+        depo_payi_kamyon=Decimal(d["depo_payi_kamyon"]),
+        panel_bonusu=Decimal(d["panel_bonusu"]),
     )
 
 

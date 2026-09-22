@@ -39,6 +39,7 @@ from app.domain.kapasite import (
     KapasiteProfili,
 )
 from app.domain.marka import marka_paylari, paylari_metne_cevir
+from app.domain.panel import bonus_haritasi as panel_bonus_haritasi
 from app.db import parcali_scalars
 from app.models import (
     Musteri,
@@ -411,6 +412,7 @@ def plan_uret(
     yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL.arac_tipi)
     # Tır giremeyen müşterinin yükü kamyon kapasitesine göre bölünür.
     kamyon_yukleme_haritasi_ = yukleme_haritasi(urunler, IC_FTL_KAMYON.arac_tipi)
+    panel_bonus_haritasi_ = panel_bonus_haritasi(urunler)
 
     satir_haritasi = {satir.id: satir for satir in satirlar}
     for tip in tipler:
@@ -428,6 +430,7 @@ def plan_uret(
             yukleme_adeti=yukleme_haritasi_,
             kamyon_profili=kamyon_profili(tip),
             kamyon_yukleme_adeti=kamyon_yukleme_haritasi_,
+            panel_bonus_haritasi=panel_bonus_haritasi_,
         )
         # Motor hacmin gerektirdiği bütün araçları üretti; günlük sınır dolunca
         # sonrakiler ertesi çalışma gününe kayar. En dolu araç en erken güne.

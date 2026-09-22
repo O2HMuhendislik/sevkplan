@@ -228,24 +228,29 @@ def test_her_durak_icin_yuzde_bir_pay_birakilir():
         for sira in range(5)
     ]
     sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
-    # 5 x 0,20 = 1,00; beş duraklı araca 0,95 sığar, biri dışarıda kalır.
+    # 5 x 0,20 = 1,00; hepsi tek depodan (64). Dört duraklı araca kalan kapasite:
+    # 1,00 - 4x0,01 (durak) - 1x0,01 (tek depo payı) = 0,95; biri dışarıda kalır.
     dolu = max(sonuc.planlar, key=lambda p: p.toplam_birim)
     assert dolu.durak_sayisi == 4
     assert dolu.toplam_birim == Decimal("0.80")
-    assert dolu.kapasite() == Decimal("0.96")
+    assert dolu.kapasite() == Decimal("0.95")
 
 
-def test_tek_durakli_arac_yuzde_99da_kapatilir():
-    musteriler = [musteri("TEK", "ISTANBUL", 0.99)]
+def test_tek_durakli_arac_yuzde_98de_kapatilir():
+    """Tek durak da tek depodur: durak payı + depo payı birlikte düşer (%1+%1)."""
+    musteriler = [musteri("TEK", "ISTANBUL", 0.98)]
     plan = planla(musteriler, SevkiyatTipi.FTL, IC_FTL).planlar[0]
-    assert plan.kapasite() == Decimal("0.99")
+    assert plan.kapasite() == Decimal("0.98")
     assert plan.bos_alan == Decimal(0)
     assert not plan.sigar_mi(musteri("EK", "ISTANBUL", 0.001, ilce="X"), Kurallar())
 
 
-def test_durak_payi_kapatilabilir():
+def test_durak_ve_depo_payi_ayardan_gelir_kapatilabilir():
     """Pay ayardan gelir; sıfırlanınca eski davranış (tam kapasite) geri döner."""
-    kurallar = Kurallar(durak_payi=Decimal(0))
+    kurallar = Kurallar(
+        durak_payi_tir=Decimal(0), durak_payi_kamyon=Decimal(0),
+        depo_payi_tir=Decimal(0), depo_payi_kamyon=Decimal(0),
+    )
     musteriler = [
         musteri(f"BAYİ{sira}", "ISTANBUL", 0.20, ilce=f"ILCE{sira}")
         for sira in range(5)
@@ -253,6 +258,134 @@ def test_durak_payi_kapatilabilir():
     sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kurallar)
     assert len(sonuc.planlar) == 1
     assert sonuc.planlar[0].toplam_birim == Decimal("1.00")
+
+
+def test_depo_payi_birden_fazla_depoda_devreye_girer():
+    """64 + 74'ten ortak yükleme, durak payından ayrı bir depo payı öder.
+
+    İki müşteri, iki ayrı depo, tek duraklı iki araç yerine tek araca binerse
+    (ortak yükleme) o araç hem 2 durak hem 2 depo payı öder.
+    """
+    kurallar = Kurallar(durak_payi_tir=Decimal(0))  # yalnız depo payını izole et
+    musteriler = [
+        musteri("A", "IZMIR", 0.40, depo="64"),
+        musteri("B", "IZMIR", 0.40, ilce="BORNOVA", depo="74"),
+    ]
+    plan = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kurallar, kalanlari_zorla=True).planlar[0]
+    assert plan.ana_depolar == {"64", "74"}
+    # 1,00 - 0 (durak payı kapalı) - 2x0,01 (iki depo) = 0,98.
+    assert plan.kapasite() == Decimal("0.98")
+
+
+def panel_teslimat(no, birim, uzunluk, depo="64"):
+    """100/120 cm panel SKU'suyla tek kalemlik teslimat; aile hep aynıdır."""
+    kod = f"P{uzunluk}"
+    miktar = Decimal(str(birim)) * 100
+    return Teslimat(
+        teslimat_no=no,
+        depo_kodu=depo,
+        planlama_anahtari=kod,
+        urun_kodu=kod,
+        urun_adi=f"22-600 {uzunluk}CMV010_B1A1G1 _13",
+        miktar=miktar,
+        birim=Decimal(str(birim)),
+        oncelik_tarihi=date(2026, 9, 1),
+        sku_miktarlari={kod: miktar},
+        depo_katkilari={depo: Decimal(str(birim))},
+        palet=Decimal(str(birim)) * 10,
+        anahtar=Decimal(str(birim)),
+        sku_kodlari=(kod,),
+    )
+
+
+PANEL_HARITASI = {"P100": ("AILE", "100"), "P120": ("AILE", "120")}
+
+
+def test_panel_bonusu_saf_yukte_kapasiteyi_buyutur():
+    """Aynı ailenin saf 100+120 cm panel yükünde araç bonusuyla %103'e kadar açılır."""
+    plan = RotaPlani(
+        bolge_kodu="EGE", tip=SevkiyatTipi.FTL, profil=IC_FTL,
+        panel_bonus_haritasi=PANEL_HARITASI,
+    )
+    plan.ekle(musteri(
+        "PANEL", "IZMIR", 1.02,
+        teslimatlar=(
+            panel_teslimat("PANEL-1", 0.60, "100"),
+            panel_teslimat("PANEL-2", 0.42, "120"),
+        ),
+    ))
+    assert plan.kapasite() == Decimal("1.03")
+    assert plan.secili_gecerli_dolu_mu
+
+
+def test_panel_bonusu_haritasiz_uygulanmaz():
+    """Panel haritası verilmezse (varsayılan) bonus hiç devreye girmez."""
+    plan = RotaPlani(bolge_kodu="EGE", tip=SevkiyatTipi.FTL, profil=IC_FTL)
+    plan.ekle(musteri(
+        "PANEL", "IZMIR", 1.02,
+        teslimatlar=(
+            panel_teslimat("PANEL-1", 0.60, "100"),
+            panel_teslimat("PANEL-2", 0.42, "120"),
+        ),
+    ))
+    assert plan.kapasite() == Decimal("0.98")
+
+
+def test_panel_bonusu_tek_uzunlukta_uygulanmaz():
+    """Aynı ailenin yalnız tek boyu (yalnız 100 ya da yalnız 120) bonusa girmez."""
+    plan = RotaPlani(
+        bolge_kodu="EGE", tip=SevkiyatTipi.FTL, profil=IC_FTL,
+        panel_bonus_haritasi=PANEL_HARITASI,
+    )
+    plan.ekle(musteri(
+        "PANEL", "IZMIR", 0.90,
+        teslimatlar=(panel_teslimat("PANEL-1", 0.90, "100"),),
+    ))
+    assert plan.kapasite() == Decimal("0.98")
+
+
+def test_panel_bonusu_karisik_yukte_uygulanmaz():
+    """Panel dışı tek bir SKU bile karışırsa araç bonusu kaybeder."""
+    plan = RotaPlani(
+        bolge_kodu="EGE", tip=SevkiyatTipi.FTL, profil=IC_FTL,
+        panel_bonus_haritasi=PANEL_HARITASI,
+    )
+    plan.ekle(musteri(
+        "KARISIK", "IZMIR", 1.02,
+        teslimatlar=(
+            panel_teslimat("KARISIK-1", 0.40, "100"),
+            panel_teslimat("KARISIK-2", 0.40, "120"),
+            replace(teslimat("KARISIK-3", 0.22), sku_kodlari=("U1",)),
+        ),
+    ))
+    assert plan.kapasite() == Decimal("0.98")
+
+
+def test_panel_bonusu_tek_musterilik_saf_yuk_bolunmeden_tek_araca_siger():
+    """Gerçek vakada olduğu gibi: tek müşterinin saf 100+120 cm yükü bölünmeden gider.
+
+    Bonus haritası verilmeden aynı yük normal sınırı (0,98) aştığı için tek durakta
+    bölünür ve alt limiti (0,85) dolduramayan parçalar beklemede kalır.
+    """
+    yuk = musteri(
+        "PANEL", "IZMIR", 1.02,
+        teslimatlar=(
+            panel_teslimat("PANEL-1", 0.60, "100"),
+            panel_teslimat("PANEL-2", 0.42, "120"),
+        ),
+    )
+    sonuc = planla(
+        [yuk], SevkiyatTipi.FTL, IC_FTL, panel_bonus_haritasi=PANEL_HARITASI,
+    )
+    assert len(sonuc.planlar) == 1
+    plan = sonuc.planlar[0]
+    assert not plan.istisna_asim
+    assert plan.toplam_birim == Decimal("1.02")
+    assert not sonuc.bekleyenler
+
+    sonuc_haritasiz = planla([yuk], SevkiyatTipi.FTL, IC_FTL)
+    assert sonuc_haritasiz.planlar == []
+    assert sonuc_haritasiz.bekleyenler
 
 
 def test_farkli_bolgeler_ayni_araca_binmez():
@@ -325,7 +458,7 @@ def test_rutin_aracta_durak_siniri_yoktur():
         musteri(f"BAYİ{sira}", "ISTANBUL", 0.05, ilce=f"ILCE{sira}", palet=1)
         for sira in range(12)
     ]
-    sonuc = planla(musteriler, SevkiyatTipi.RUTIN, IC_RUTIN)
+    sonuc = planla(musteriler, SevkiyatTipi.RUTIN, IC_RUTIN, kalanlari_zorla=True)
     assert max(plan.durak_sayisi for plan in sonuc.planlar) > 5
 
 
@@ -448,10 +581,11 @@ def test_plan_uretimi_tipleri_ayirir(ic_veri):
 def test_ortak_yukleme_notu_plana_islenir(ic_veri):
     """64 + 74 aynı araca yüklenince az olan depodaki mal diğerine getirilir."""
     db = ic_veri
-    # İkisi de 3 paletten büyük olmalı ki FTL kovasına düşsünler. Toplam 0,98:
-    # iki duraklı araçta durak payı (%1 x 2) düşülünce kalan kapasite tam budur.
+    # İkisi de 3 paletten büyük olmalı ki FTL kovasına düşsünler. Toplam 0,96:
+    # iki duraklı, iki depolu araçta durak payı (%1 x 2) + depo payı (%1 x 2)
+    # düşülünce kalan kapasite tam budur.
     _siparis(db, "T1", 60, "BAYİ A", "IZMIR", depo="64")
-    _siparis(db, "T2", 38, "BAYİ B", "IZMIR", depo="74", ilce="BORNOVA")
+    _siparis(db, "T2", 36, "BAYİ B", "IZMIR", depo="74", ilce="BORNOVA")
     db.flush()
 
     sonuc = ic_piyasa_servisi.plan_uret(
