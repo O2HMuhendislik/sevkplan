@@ -33,6 +33,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from app.domain.aktarma import aktarma_merkezi, merkez_bolge_kodu
 from app.domain.bolgeler import il_bolgesi
+from app.domain.istanbul import yaka as istanbul_yakasi
 from app.domain.koordinatlar import mesafe_km, rota_km
 from app.domain.iller import (
     BOLUNEBILIR_DEPOLAR,
@@ -198,6 +199,15 @@ class MusteriSiparisi:
     @property
     def bolge_kodu(self) -> str:
         return il_bolgesi(self.il)
+
+    @property
+    def istanbul_yakasi(self) -> str | None:
+        """Avrupa/Anadolu — yalnızca İstanbul için dolu, başka ilde None.
+
+        Bkz. `app.domain.istanbul`. FTL aracında iki yaka aynı araca binmez; ilçe
+        tanınmıyorsa None döner ve bu müşteri hiçbir yakayla çakışmaz.
+        """
+        return istanbul_yakasi(self.il, self.ilce)
 
     @property
     def uzaklik(self) -> int:
@@ -860,6 +870,34 @@ class RotaPlani:
             return True
         return self.son_ugrak_orani >= kurallar.son_ugrak_asgari_oran
 
+    @property
+    def istanbul_yakasi(self) -> str | None:
+        """Araçtaki müşterilerin İstanbul yakası; karışık ya da yakasız araçta None.
+
+        Aracın kendi yakası ancak bütün İstanbul müşterileri **aynı** yakadaysa
+        bellidir. Henüz hiç İstanbul müşterisi yoksa (ya da hiçbiri çözülemiyorsa)
+        None döner — araç henüz hiçbir yakaya bağlanmamış demektir, ilk İstanbul
+        müşterisi hangi yakadan gelirse aracın yakası o olur.
+        """
+        yakalar = {m.istanbul_yakasi for m in self.musteriler if m.istanbul_yakasi}
+        return next(iter(yakalar)) if len(yakalar) == 1 else None
+
+    def yaka_uygun_mu(self, musteri: MusteriSiparisi) -> bool:
+        """Bu müşteri eklenirse araçta İstanbul'un iki yakası bir arada olur mu?
+
+        Yalnızca FTL'de aranır: rutin/kargo/EXW'de araç kapı kapı dolaşmaz (rutin
+        aktarma merkezine iner), Boğaz geçişi sorunu yok. İki taraftan biri
+        çözülemiyorsa (tanınmayan ilçe, İstanbul dışı müşteri) kural uygulanamaz,
+        engel çıkarılmaz.
+        """
+        if self.tip is not SevkiyatTipi.FTL:
+            return True
+        yeni = musteri.istanbul_yakasi
+        if yeni is None:
+            return True
+        mevcut = {m.istanbul_yakasi for m in self.musteriler if m.istanbul_yakasi}
+        return not mevcut or yeni in mevcut
+
     def ekle(self, musteri: MusteriSiparisi) -> None:
         self.musteriler.append(musteri)
 
@@ -871,6 +909,8 @@ class RotaPlani:
         # Müşteri eklenince durak sayısı bir artar; kapasite payı da ona göre düşer.
         limit = self.kapasite(durak=self.durak_sayisi + 1)
         if self.toplam_birim + self.musteri_olcusu(musteri) > limit:
+            return False
+        if not self.yaka_uygun_mu(musteri):
             return False
         # Hacim yetse bile rota zikzak yapıyorsa bu araca binmez.
         return self.sapma_uygun_mu(musteri, kurallar)

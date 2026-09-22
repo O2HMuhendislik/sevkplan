@@ -1232,6 +1232,77 @@ def test_zikzak_rota_ayni_araca_binmez():
         assert plan.sapma_km is None or plan.sapma_km <= 100
 
 
+def test_istanbulun_iki_yakasi_ayni_araca_binmez():
+    """FTL aracında İstanbul'un Avrupa ve Anadolu yakası bir arada olmaz.
+
+    Boğaz'ı geçip tekrar geçmek hem köprü/tünel ücretini hem trafik süresini
+    katlıyor. Kadıköy (Anadolu) ile Esenler (Avrupa) hacim olarak tek araca
+    sığsa bile ayrı araca gider.
+    """
+    musteriler = [
+        musteri("KADIKOY BAYİ", "ISTANBUL", 0.4, ilce="KADIKOY"),
+        musteri("ESENLER BAYİ", "ISTANBUL", 0.4, ilce="ESENLER"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+
+    assert len(sonuc.planlar) == 2
+    for plan in sonuc.planlar:
+        assert len(plan.musteriler) == 1
+        assert plan.istanbul_yakasi in ("AVRUPA", "ANADOLU")
+
+
+def test_istanbulun_ayni_yakasi_ayni_araca_biner():
+    """Aynı yakadaki iki ilçe normal şekilde birleşir; kural onları ayırmaz."""
+    musteriler = [
+        musteri("KADIKOY BAYİ", "ISTANBUL", 0.3, ilce="KADIKOY"),
+        musteri("USKUDAR BAYİ", "ISTANBUL", 0.3, ilce="USKUDAR"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 2
+    assert sonuc.planlar[0].istanbul_yakasi == "ANADOLU"
+
+
+def test_istanbul_disi_musteri_yaka_kuralindan_etkilenmez():
+    """Kocaeli müşterisinin yakası yok; hiçbir İstanbul yakasıyla çakışmaz."""
+    musteriler = [
+        musteri("KADIKOY BAYİ", "ISTANBUL", 0.3, ilce="KADIKOY"),
+        musteri("KOCAELI BAYİ", "KOCAELI", 0.3, ilce="GEBZE"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 2
+
+
+def test_tanimsiz_ilceli_istanbul_musterisi_hicbir_araci_bloklamaz():
+    """İlçe tanınmıyorsa yaka bilinmez; kural uygulanamaz, engel çıkarılmaz."""
+    musteriler = [
+        musteri("KADIKOY BAYİ", "ISTANBUL", 0.3, ilce="KADIKOY"),
+        musteri("BİLİNMEYEN BAYİ", "ISTANBUL", 0.3, ilce="ACAYIP MAHALLE"),
+    ]
+    sonuc = planla(musteriler, SevkiyatTipi.FTL, IC_FTL, kalanlari_zorla=True)
+
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 2
+
+
+def test_istanbul_yaka_kurali_yalnizca_ftlde_uygulanir():
+    """Parsiyelde araç aktarma merkezine iner, kapı kapı dolaşmaz; kural aranmaz."""
+    sonuc = planla(
+        [
+            _depolu_musteri("A", "ISTANBUL", 0.2, ("64",), ilce="KADIKOY"),
+            _depolu_musteri("B", "ISTANBUL", 0.2, ("64",), ilce="ESENLER"),
+        ],
+        SevkiyatTipi.RUTIN,
+        IC_RUTIN,
+        kalanlari_zorla=True,
+    )
+    assert len(sonuc.planlar) == 1
+    assert sonuc.planlar[0].durak_sayisi == 2
+
+
 def test_ayni_guzergahtaki_duraklar_birlikte_gider():
     """Kayseri ve Van aynı yolun üzerinde: sapma 14 km, tek araca binerler."""
     sonuc = planla(
