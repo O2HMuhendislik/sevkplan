@@ -1332,6 +1332,34 @@ def rota_axata_sil(
     return yonlendir(f"/rota/planlar/{plan_id}", mesaj="Axata numarası silindi.")
 
 
+@uygulama.post("/rota/planlar/{plan_id}/satir-ekle")
+def rota_plana_satir_ekle(
+    plan_id: int,
+    satir_id: int = Form(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("ROTA", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bekleyenler ekranındaki "mevcut plana ekle" eylemi.
+
+    Aynı müşteriye zaten sevk edilmemiş bir plan varsa yeni sipariş otomatik
+    ikinci araca girmez (bkz. `ic_piyasa_servisi._acik_plan_cakismasini_ayikla`);
+    bu satır o çakışmayı çözen manuel eylemdir.
+    """
+    plan = _ic_plan_getir(db, plan_id)
+    kurallar = masterdata_servisi.kurallari_kur(db)
+    try:
+        ic_piyasa_servisi.plana_ekle(
+            db, plan, [satir_id], kurallar, kullanici.kullanici_adi,
+        )
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/rota/bekleyenler", hata=str(hata))
+    return yonlendir(
+        "/rota/bekleyenler", mesaj=f"Sipariş {plan.sefer_no} planına eklendi."
+    )
+
+
 @uygulama.post("/rota/planlar/{plan_id}/arac")
 def rota_arac_kaydet(
     plan_id: int,
@@ -1755,6 +1783,31 @@ def ihracat_axata_sil(
         db.rollback()
         return yonlendir(f"/ihracat/planlar/{plan_id}", hata=str(hata))
     return yonlendir(f"/ihracat/planlar/{plan_id}", mesaj="Axata numarası silindi.")
+
+
+@uygulama.post("/ihracat/planlar/{plan_id}/satir-ekle")
+def ihracat_plana_satir_ekle(
+    plan_id: int,
+    satir_id: int = Form(...),
+    kullanici: Kullanici = Depends(modul_yetkisi("IHRACAT", duzenleme=True)),
+    db: Session = Depends(oturum_bagimliligi),
+):
+    """Bekleyenler ekranındaki "mevcut plana ekle" eylemi.
+
+    Aynı müşteriye zaten sevk edilmemiş bir plan varsa yeni sipariş otomatik
+    ikinci araca girmez (bkz. `ihracat_servisi._acik_plan_cakismasini_ayikla`);
+    bu satır o çakışmayı çözen manuel eylemdir.
+    """
+    plan = _ihracat_plan_getir(db, plan_id)
+    try:
+        ihracat_servisi.plana_ekle(db, plan, [satir_id], kullanici.kullanici_adi)
+        db.commit()
+    except PlanHatasi as hata:
+        db.rollback()
+        return yonlendir("/ihracat/bekleyenler", hata=str(hata))
+    return yonlendir(
+        "/ihracat/bekleyenler", mesaj=f"Sipariş {plan.sefer_no} planına eklendi."
+    )
 
 
 @uygulama.post("/ihracat/planlar/{plan_id}/arac")

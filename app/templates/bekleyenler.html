@@ -1,6 +1,7 @@
 {% extends "temel.html" %}
 {% set aktif_modul = modul_kodu %}
 {% set aktif_menu = 'bekleyenler' %}
+{% set modul_yolu = '/rota' if modul_kodu == 'ROTA' else ('/ihracat' if modul_kodu == 'IHRACAT' else '/ring') %}
 {% block icerik %}
 <h1>Bekleyen siparişler <span class="soluk">({{ satirlar | length }} satır)</span></h1>
 
@@ -56,7 +57,7 @@
     <thead><tr>
       <th class="sag">#</th><th>Durum</th><th>Teslimat</th><th>Sipariş</th>
       <th>Bayi</th><th>İl / İlçe</th><th>Depo</th><th>Ürün</th>
-      <th class="sag">Adet</th><th>Termin</th><th>Bekleme</th><th>Sebep</th>
+      <th class="sag">Adet</th><th>Termin</th><th>Bekleme</th><th>Sebep</th><th></th>
     </tr></thead>
     <tbody>
     {% for satir in satirlar %}
@@ -73,6 +74,18 @@
         <td>{{ satir.termin_tarihi | tarih }}</td>
         <td class="sag">{{ satir.bekleme_gunu }} gün</td>
         <td class="soluk">{{ satir.bekleme_gerekcesi }}</td>
+        <td>
+          {% if satir.cakisan_plan_id %}
+          <form method="post"
+                action="{{ modul_yolu }}/planlar/{{ satir.cakisan_plan_id }}/satir-ekle">
+            <input type="hidden" name="satir_id" value="{{ satir.id }}">
+            <button type="submit" class="dugme ikincil"
+                    title="Bu müşteriye zaten sevk edilmemiş {{ satir.cakisan_plan.sefer_no if satir.cakisan_plan else '' }} planı var">
+              Plana ekle
+            </button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>

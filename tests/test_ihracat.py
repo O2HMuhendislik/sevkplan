@@ -276,6 +276,143 @@ def test_master_datada_olmayan_musteri_tir_varsayilir(ihracat_veri):
     assert "master datada yok" in sonuc.ozet()
 
 
+def test_ayni_musteriye_acik_plan_varken_ikinci_arac_otomatik_acilmaz(ihracat_veri):
+    """Sevk edilmemiş bir plan varsa aynı müşterinin yeni siparişi otomatik ikinci
+    araca girmez; beklemede kalır ve gerekçesi mevcut sefer numarasını gösterir.
+    """
+    from app.models import PlanDurumu, SiparisSatiri
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    ilk = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), kullanici="test"
+    )
+    assert len(ilk.planlar) == 1
+    sefer_no = ilk.planlar[0].sefer_no
+    assert ilk.planlar[0].durum is PlanDurumu.TASLAK
+
+    _ihracat_satiri(db, "S2", "T2", "VAILLANT D.O.O.", 5000, 3000)
+    ikinci = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), kullanici="test"
+    )
+    assert ikinci.planlar == []
+    assert len(ikinci.bekleyenler) == 1
+    assert sefer_no in ikinci.bekleyenler[0].sebep
+    assert "TASLAK" in ikinci.bekleyenler[0].sebep
+
+    yeni_satir = db.query(SiparisSatiri).filter_by(teslimat_no="T2").one()
+    assert yeni_satir.plan_id is None
+    assert sefer_no in yeni_satir.bekleme_sebebi
+    assert yeni_satir.cakisan_plan_id == ilk.planlar[0].id
+
+    # Hedef plan artık açık değil (sevk edildi): eski işaret bir sonraki turda temizlenir.
+    ilk.planlar[0].durum = PlanDurumu.TAMAMLANDI
+    db.flush()
+    ihracat_servisi.plan_uret(db, plan_tarihi=date(2026, 9, 3), kullanici="test")
+    db.refresh(yeni_satir)
+    assert yeni_satir.cakisan_plan_id is None
+
+
+def test_tamamlanan_ihracat_planindan_sonra_ayni_musteriye_yeni_arac_acilabilir(
+    ihracat_veri,
+):
+    """Plan sevk edilince (TAMAMLANDI) aynı müşterinin sonraki siparişi serbest kalır."""
+    from app.models import PlanDurumu
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    ilk = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), kullanici="test"
+    )
+    ilk.planlar[0].durum = PlanDurumu.TAMAMLANDI
+    db.flush()
+
+    _ihracat_satiri(db, "S2", "T2", "VAILLANT D.O.O.", 20000, 15000)
+    ikinci = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), kullanici="test"
+    )
+    assert len(ikinci.planlar) == 1
+    assert not ikinci.bekleyenler
+
+
+def test_ihracatta_manuel_secimde_acik_plan_kontrolu_atlanir(ihracat_veri):
+    """Manuel planlama ekranından bilinçli seçilen teslimat çakışma kontrolünü aşar."""
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    ihracat_servisi.plan_uret(db, plan_tarihi=date(2026, 9, 1), kullanici="test")
+
+    _ihracat_satiri(db, "S2", "T2", "VAILLANT D.O.O.", 20000, 15000)
+    sonuc = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), kullanici="test", teslimat_nolar=["T2"],
+    )
+    assert len(sonuc.planlar) == 1
+    assert not sonuc.bekleyenler
+
+
+def test_ihracat_plana_ekle_ayni_musteriye_hacim_katar(ihracat_veri):
+    """Sığan siparişi mevcut plana ekler; toplam hacim ve satır durumu güncellenir."""
+    from app.models import SiparisDurumu
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 2000, 1500)
+    ilk = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), kullanici="test", kalanlari_zorla=True,
+    )
+    plan = ilk.planlar[0]
+    onceki = plan.toplam_birim
+
+    yeni = _ihracat_satiri(db, "S2", "T2", "VAILLANT D.O.O.", 200, 150)
+    guncel = ihracat_servisi.plana_ekle(
+        db, plan, [yeni.id], kullanici="test",
+    )
+    assert guncel.toplam_birim > onceki
+    assert yeni.plan_id == plan.id
+    assert yeni.durum == SiparisDurumu.PLANLANDI
+
+
+def test_ihracat_plana_ekle_kapasiteyi_asinca_hata_verir(ihracat_veri):
+    """Sığmayan sipariş plana eklenmez; hiçbir alan değişmeden hata döner."""
+    from app.models import SiparisDurumu
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    ilk = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), kullanici="test"
+    )
+    plan = ilk.planlar[0]
+    onceki = plan.toplam_birim
+
+    yeni = _ihracat_satiri(db, "S2", "T2", "VAILLANT D.O.O.", 200000, 150000)
+    with pytest.raises(ihracat_servisi.PlanHatasi):
+        ihracat_servisi.plana_ekle(db, plan, [yeni.id], kullanici="test")
+
+    assert plan.toplam_birim == onceki
+    assert yeni.plan_id is None
+    assert yeni.durum == SiparisDurumu.BEKLEMEDE
+
+
+def test_ihracat_plana_ekle_farkli_musteri_icin_reddedilir(ihracat_veri):
+    """Plandaki müşteriden farklı bir sipariş 'yeni araç' sayılır, reddedilir."""
+    from app.services import ihracat_servisi
+
+    db = ihracat_veri
+    _ihracat_satiri(db, "S1", "T1", "VAILLANT D.O.O.", 20000, 15000)
+    ilk = ihracat_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), kullanici="test"
+    )
+    plan = ilk.planlar[0]
+
+    yeni = _ihracat_satiri(db, "S2", "T2", "ANSAL REFRIGERACION SA", 100, 50)
+    with pytest.raises(ihracat_servisi.PlanHatasi):
+        ihracat_servisi.plana_ekle(db, plan, [yeni.id], kullanici="test")
+
+
 def test_ihracat_formu_musteri_notunu_ve_arac_bloklarini_yazar(ihracat_veri, tmp_path):
     from openpyxl import load_workbook
 

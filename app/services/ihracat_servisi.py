@@ -184,6 +184,58 @@ def musteri_yuklerini_topla(
     return yukler, tanimsizlar
 
 
+def _acik_plan_haritasi(db: Session) -> dict[str, SevkiyatPlani]:
+    """Sevk edilmemiş (TAMAMLANDI/İPTAL dışı) planlardaki müşterilerin anahtarı.
+
+    Aynı müşteriye ikinci bir araç açılmasını önlemek için kullanılır (bkz.
+    `_acik_plan_cakismasini_ayikla`); ROTA'daki eşdeğeriyle aynı mantık.
+    """
+    satir_plan_ciftleri = db.execute(
+        select(SiparisSatiri, SevkiyatPlani)
+        .join(SevkiyatPlani, SiparisSatiri.plan_id == SevkiyatPlani.id)
+        .where(
+            SiparisSatiri.modul == MODUL_KODU,
+            SevkiyatPlani.durum.not_in([PlanDurumu.TAMAMLANDI, PlanDurumu.IPTAL]),
+        )
+    ).all()
+    return {yer_adi(satir.bayi_adi): plan for satir, plan in satir_plan_ciftleri}
+
+
+def _acik_plan_cakismasini_ayikla(
+    db: Session,
+    yukler: list[MusteriYuku],
+    satir_haritasi: dict[int, SiparisSatiri],
+) -> tuple[list[MusteriYuku], list[BekleyenYuk]]:
+    """Aynı müşteriye zaten sevk edilmemiş bir plan varsa yükü otomatik ikinci
+    araca sokmaz; gerekçesiyle beklemede bırakır. Kullanıcı ya mevcut plana
+    ekler ya da bilinçli olarak ayrı sefer onaylar — manuel planlama ekranından
+    belirli teslimatları seçip çalıştırmak (`plan_uret`'in `teslimat_nolar`
+    parametresi) bu kontrolü atlar, çünkü seçim zaten bilinçli bir insan kararıdır.
+    """
+    harita = _acik_plan_haritasi(db)
+    if not harita:
+        return yukler, []
+    kalanlar: list[MusteriYuku] = []
+    cakisanlar: list[BekleyenYuk] = []
+    for yuk in yukler:
+        plan = harita.get(yuk.anahtar)
+        if plan is None:
+            kalanlar.append(yuk)
+            continue
+        sebep = (
+            f"Bu müşteriye zaten sevk edilmemiş bir plan var: "
+            f"{plan.sefer_no} ({plan.durum.value}) — mevcut plana eklenmeli ya "
+            "da ayrı sefer bilinçli olarak onaylanmalı"
+        )
+        cakisanlar.append(BekleyenYuk(musteri=yuk, sebep=sebep))
+        for satir_id in yuk.satir_idleri:
+            satir = satir_haritasi.get(satir_id)
+            if satir is not None:
+                satir.bekleme_sebebi = sebep
+                satir.cakisan_plan_id = plan.id
+    return kalanlar, cakisanlar
+
+
 def plan_uret(
     db: Session,
     plan_tarihi: date | None = None,
@@ -196,6 +248,12 @@ def plan_uret(
 
     `teslimat_nolar` verilirse yalnızca o teslimatlar değerlendirilir; manuel
     planlama ekranı (/ihracat/manuel-plan) bunu kullanır.
+
+    Bir müşteriye zaten sevk edilmemiş (TAMAMLANDI/İPTAL dışı) bir plan varsa yeni
+    siparişi bu turda otomatik ikinci bir araca sokmaz — beklemede bırakır (bkz.
+    `_acik_plan_cakismasini_ayikla`). Bu kontrol yalnızca `teslimat_nolar`
+    verilmeyen toplu/otomatik turlarda çalışır; manuel planlamadan belirli
+    teslimatlar seçilip çalıştırıldığında (ayrı sefer bilinçli onayı) atlanır.
     """
     plan_tarihi = plan_tarihi or date.today()
     satirlar = list(
@@ -219,13 +277,37 @@ def plan_uret(
         db.flush()
         return sonuc
 
-    planlama = planla(yukler, kurallar, kalanlari_zorla)
     satir_haritasi = {satir.id: satir for satir in satirlar}
+
+    # Manuel seçimle (teslimat_nolar) çalıştırılan turlar bilinçli bir insan
+    # kararıdır; toplu/otomatik turlarda aynı müşteriye ikinci araç açılmaz.
+    cakisan_bekleyenler: list[BekleyenYuk] = []
+    if teslimat_nolar is None:
+        eski_cakisanlar = {
+            sid for sid, satir in satir_haritasi.items()
+            if satir.cakisan_plan_id is not None
+        }
+        yukler, cakisan_bekleyenler = _acik_plan_cakismasini_ayikla(
+            db, yukler, satir_haritasi,
+        )
+        # Hedef plan artık açık değilse (sevk edildi/iptal oldu) eski işaret kalmasın.
+        yeni_cakisanlar = {
+            sid for b in cakisan_bekleyenler for sid in b.musteri.satir_idleri
+        }
+        for sid in eski_cakisanlar - yeni_cakisanlar:
+            satir_haritasi[sid].cakisan_plan_id = None
+            satir_haritasi[sid].bekleme_sebebi = None
+        if not yukler:
+            sonuc.bekleyenler = cakisan_bekleyenler
+            db.flush()
+            return sonuc
+
+    planlama = planla(yukler, kurallar, kalanlari_zorla)
     for taslak in planlama.planlar:
         sonuc.planlar.append(
             _plani_kaydet(db, taslak, satir_haritasi, plan_tarihi, kullanici)
         )
-    sonuc.bekleyenler = planlama.bekleyenler
+    sonuc.bekleyenler = cakisan_bekleyenler + planlama.bekleyenler
     db.flush()
     return sonuc
 
@@ -292,6 +374,8 @@ def _plani_kaydet(
             satir = satir_haritasi[satir_id]
             satir.plan_id = plan.id
             satir.durum = SiparisDurumu.PLANLANDI
+            satir.bekleme_sebebi = None
+            satir.cakisan_plan_id = None
 
     notlar = [
         f"{musteri.arac_tipi.ad} · %{taslak.doluluk_yuzdesi} "
@@ -326,6 +410,112 @@ def _plani_kaydet(
             kullanici=kullanici,
         )
     )
+    return plan
+
+
+def plana_ekle(
+    db: Session,
+    plan: SevkiyatPlani,
+    satir_idleri: Collection[int],
+    kullanici: str,
+) -> SevkiyatPlani:
+    """Bekleyen siparişi, o müşteriyi ZATEN içeren sevk edilmemiş bir plana ekler.
+
+    İhracatta plan = tek müşteri + tek araç; eklenecek sipariş planın müşterisiyle
+    aynı olmalı — bu bir yeni araç açma işlemi değildir. Sığmıyorsa (hacim ya da
+    ağırlık, `IhracatPlani.sigar_mi` ile aynı kontrol) `PlanHatasi` fırlatılır,
+    hiçbir satır değişmez. Plan MAIL_GÖNDERİLDİ ya da sonrasındaysa araç muhtemelen
+    yükleniyordur; eklemeye izin verilmez — ayrı sefer açılmalı (bkz.
+    `_acik_plan_cakismasini_ayikla`).
+    """
+    if plan.modul != MODUL_KODU:
+        raise PlanHatasi("Plan İhracat modülüne ait değil.")
+    if plan.durum not in {PlanDurumu.TASLAK, PlanDurumu.AXATA_BEKLIYOR}:
+        raise PlanHatasi(
+            f"{plan.sefer_no} {plan.durum.value} durumunda; bu aşamada plana satır "
+            "eklenemez. Araç muhtemelen yükleniyor — ayrı sefer açılmalı."
+        )
+
+    ids = {int(i) for i in satir_idleri}
+    yeni_satirlar = list(
+        db.scalars(select(SiparisSatiri).where(SiparisSatiri.id.in_(ids))).all()
+    )
+    if not yeni_satirlar:
+        raise PlanHatasi("Eklenecek satır bulunamadı.")
+    if any(
+        s.durum != SiparisDurumu.BEKLEMEDE or s.plan_id is not None
+        for s in yeni_satirlar
+    ):
+        raise PlanHatasi(
+            "Yalnızca beklemedeki, başka bir plana bağlı olmayan satırlar eklenebilir."
+        )
+
+    mevcut_yukler, _ = musteri_yuklerini_topla(db, list(plan.satirlar))
+    if len(mevcut_yukler) != 1:
+        raise PlanHatasi("Plandaki müşteri bilgisi çözülemedi.")
+    mevcut_musteri = mevcut_yukler[0]
+
+    yeni_yukler, _ = musteri_yuklerini_topla(db, yeni_satirlar)
+    if len(yeni_yukler) != 1 or yeni_yukler[0].anahtar != mevcut_musteri.anahtar:
+        raise PlanHatasi(
+            "Eklenecek sipariş bu planın müşterisiyle aynı değil — bu bir yeni "
+            "araç açma işlemidir, plana ekleme değil."
+        )
+    yeni_musteri = yeni_yukler[0]
+
+    taslak = IhracatPlani(musteri=mevcut_musteri)
+    for teslimat in mevcut_musteri.teslimatlar:
+        taslak.ekle(teslimat)
+
+    for teslimat in yeni_musteri.teslimatlar:
+        if not taslak.sigar_mi(teslimat):
+            raise PlanHatasi(
+                f"Eklenecek hacim araç kapasitesini aşıyor: yeni toplam "
+                f"{(taslak.hacim + teslimat.anahtar):.3f} anahtar / "
+                f"{(taslak.agirlik + teslimat.agirlik):.0f} kg, kapasite "
+                f"{taslak.profil.ust_limit} anahtar / "
+                f"{taslak.musteri.agirlik_kapasitesi:.0f} kg."
+            )
+        taslak.ekle(teslimat)
+
+    for satir in yeni_satirlar:
+        satir.plan_id = plan.id
+        satir.durum = SiparisDurumu.PLANLANDI
+        satir.bekleme_sebebi = None
+        satir.cakisan_plan_id = None
+
+    urun_kodlari = sorted({kod for t in taslak.teslimatlar for kod in t.kodlar})
+    depolar = taslak.depolar
+    plan.urun_kodlari = ", ".join(urun_kodlari)[:500]
+    plan.toplam_birim = taslak.hacim
+    plan.toplam_palet = taslak.palet
+    plan.toplam_desi = taslak.desi
+    plan.toplam_agirlik = taslak.agirlik
+    plan.toplam_adet = taslak.adet
+    plan.doluluk_yuzdesi = taslak.doluluk_yuzdesi
+    plan.teslimat_sayisi = len(taslak.teslimatlar)
+    plan.kisitlayan_olcu = taslak.kisitlayan
+    plan.marka_paylari_metni = (
+        paylari_metne_cevir(paylari_hesapla(taslak.depo_katkilari)) or None
+    )
+    if depolar:
+        plan.depo_kodu = depolar[0]
+        plan.yukleme_deposu = depolar[0]
+
+    db.add(
+        PlanHareketi(
+            plan=plan,
+            onceki_durum=plan.durum.value,
+            yeni_durum=plan.durum.value,
+            aciklama=(
+                "Sipariş eklendi: "
+                + ", ".join(s.teslimat_no for s in yeni_satirlar)
+                + f" · yeni toplam %{taslak.doluluk_yuzdesi}"
+            ),
+            kullanici=kullanici,
+        )
+    )
+    db.flush()
     return plan
 
 

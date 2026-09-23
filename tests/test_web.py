@@ -442,6 +442,70 @@ def test_alinamayan_satirlar_gerekcesiyle_gosterilir(istemci, fabrika):
     assert "master datada tanımlı değil" in ekran.text
 
 
+def test_bekleyenler_ekraninda_acik_plan_cakismasi_plana_eklenebilir(istemci, fabrika):
+    """Aynı müşteriye zaten sevk edilmemiş plan varken yeni sipariş otomatik ikinci
+    araca girmez; bekleyenler ekranındaki "Plana ekle" eylemi mevcut plana bağlar.
+    """
+    from app.models import SevkiyatPlani, SiparisSatiri
+
+    urunler = kitap(
+        ["StokKodu", "StokAdi", "Ürün Grubu", "Palet içi adet", "Tır yükleme adeti"],
+        [["U1", "Kombi A", "KOMBİ", 10, 100]],
+    )
+    istemci.post("/masterdata/urunler/yukle", files={"dosya": ("urun.xlsx", urunler)})
+
+    ilk_siparis = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi"],
+        [["S1", "T1", "U1", 95, "64", "İZMİR", "BAYİ A"]],
+    )
+    istemci.post("/rota/siparisler/yukle", files={"dosya": ("s1.xlsx", ilk_siparis)})
+    istemci.post(
+        "/rota/planlar/uret", data={"tipler": ["FTL"], "plan_tarihi": "2026-09-01"}
+    )
+
+    with fabrika() as db:
+        ilk_plan = (
+            db.query(SevkiyatPlani)
+            .filter_by(modul="ROTA", sevkiyat_tipi="FTL")
+            .one()
+        )
+        sefer_no = ilk_plan.sefer_no
+        ilk_plan_id = ilk_plan.id
+
+    ikinci_siparis = kitap(
+        ["Sipariş No", "Teslimat No", "StokKodu", "Adet", "Depo  Kodu", "SehirAdi",
+         "BayiAdi"],
+        [["S2", "T2", "U1", 3, "64", "İZMİR", "BAYİ A"]],
+    )
+    istemci.post("/rota/siparisler/yukle", files={"dosya": ("s2.xlsx", ikinci_siparis)})
+    istemci.post(
+        "/rota/planlar/uret", data={"tipler": ["FTL"], "plan_tarihi": "2026-09-02"}
+    )
+
+    ekran = istemci.get("/rota/bekleyenler")
+    assert "Plana ekle" in ekran.text
+    assert sefer_no in ekran.text
+
+    with fabrika() as db:
+        yeni_satir = db.query(SiparisSatiri).filter_by(teslimat_no="T2").one()
+        assert yeni_satir.cakisan_plan_id == ilk_plan_id
+        satir_id = yeni_satir.id
+
+    cevap = istemci.post(
+        f"/rota/planlar/{ilk_plan_id}/satir-ekle", data={"satir_id": satir_id},
+    )
+    assert cevap.status_code == 200
+    assert "planına eklendi" in sorgu(cevap)
+
+    with fabrika() as db:
+        yeni_satir = db.query(SiparisSatiri).filter_by(teslimat_no="T2").one()
+        assert yeni_satir.plan_id == ilk_plan_id
+        assert yeni_satir.cakisan_plan_id is None
+        guncel_plan = db.get(SevkiyatPlani, ilk_plan_id)
+        assert guncel_plan.toplam_birim == Decimal("0.98")
+
+
 def test_baslikta_marka_ve_logo_var(istemci):
     """Başlık her ekranda kurumsal kimliği taşır; logo tek dosyadan gelir."""
     cevap = istemci.get("/")

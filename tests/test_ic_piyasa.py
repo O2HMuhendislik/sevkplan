@@ -668,6 +668,169 @@ def test_gunluk_sinir_daha_once_uretilen_planlari_sayar(ic_veri):
     assert [p.plan_tarihi for p in ikinci.planlar] == [date(2026, 9, 2)]
 
 
+def test_ayni_musteriye_acik_plan_varken_ikinci_arac_otomatik_acilmaz(ic_veri):
+    """Sevk edilmemiş bir plan varsa aynı müşterinin yeni siparişi otomatik ikinci
+    araca girmez; beklemede kalır ve gerekçesi mevcut sefer numarasını gösterir.
+    """
+    db = ic_veri
+    from app.models import PlanDurumu, SiparisSatiri
+
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert len(ilk.planlar) == 1
+    sefer_no = ilk.planlar[0].sefer_no
+    assert ilk.planlar[0].durum is PlanDurumu.TASLAK
+
+    _siparis(db, "T2", 30, "BAYİ A", "IZMIR")
+    db.flush()
+    ikinci = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert ikinci.planlar == []
+    assert len(ikinci.bekleyenler) == 1
+    assert sefer_no in ikinci.bekleyenler[0].sebep
+    assert "TASLAK" in ikinci.bekleyenler[0].sebep
+
+    yeni_satir = db.query(SiparisSatiri).filter_by(teslimat_no="T2").one()
+    assert yeni_satir.plan_id is None
+    assert sefer_no in yeni_satir.bekleme_sebebi
+    assert yeni_satir.cakisan_plan_id == ilk.planlar[0].id
+
+
+def test_plana_ekle_ayni_musteriye_hacim_katar(ic_veri):
+    """Sığan siparişi mevcut plana ekler; toplam hacim ve satır durumu güncellenir."""
+    db = ic_veri
+    from app.models import SiparisDurumu
+
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    plan = ilk.planlar[0]
+    assert plan.toplam_birim == Decimal("0.95")
+
+    yeni = _siparis(db, "T2", 3, "BAYİ A", "IZMIR")
+    db.flush()
+
+    guncel = ic_piyasa_servisi.plana_ekle(
+        db, plan, [yeni.id], Kurallar(), kullanici="test",
+    )
+    assert guncel.toplam_birim == Decimal("0.98")
+    assert guncel.durak_sayisi == 1
+    assert yeni.plan_id == plan.id
+    assert yeni.durum == SiparisDurumu.PLANLANDI
+
+
+def test_plana_ekle_kapasiteyi_asinca_hata_verir(ic_veri):
+    """Sığmayan sipariş plana eklenmez; hiçbir alan değişmeden hata döner."""
+    db = ic_veri
+    from app.models import SiparisDurumu
+
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    plan = ilk.planlar[0]
+
+    yeni = _siparis(db, "T2", 10, "BAYİ A", "IZMIR")
+    db.flush()
+
+    with pytest.raises(ic_piyasa_servisi.PlanHatasi):
+        ic_piyasa_servisi.plana_ekle(db, plan, [yeni.id], Kurallar(), kullanici="test")
+
+    assert plan.toplam_birim == Decimal("0.95")
+    assert yeni.plan_id is None
+    assert yeni.durum == SiparisDurumu.BEKLEMEDE
+
+
+def test_plana_ekle_yuklemeye_girmis_planda_reddedilir(ic_veri):
+    """MAIL_GÖNDERİLDİ ve sonrası durumlarda ekleme yapılmaz; ayrı sefer gerekir."""
+    db = ic_veri
+    from app.models import PlanDurumu
+
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    plan = ilk.planlar[0]
+    plan.durum = PlanDurumu.MAIL_GONDERILDI
+    db.flush()
+
+    yeni = _siparis(db, "T2", 1, "BAYİ A", "IZMIR")
+    db.flush()
+
+    with pytest.raises(ic_piyasa_servisi.PlanHatasi):
+        ic_piyasa_servisi.plana_ekle(db, plan, [yeni.id], Kurallar(), kullanici="test")
+
+
+def test_plana_ekle_farkli_musteri_icin_reddedilir(ic_veri):
+    """Plandaki müşterilerden biri olmayan bir sipariş 'durak ekleme' sayılır, reddedilir."""
+    db = ic_veri
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    plan = ilk.planlar[0]
+
+    yeni = _siparis(db, "T2", 1, "BAŞKA BAYİ", "ANKARA")
+    db.flush()
+
+    with pytest.raises(ic_piyasa_servisi.PlanHatasi):
+        ic_piyasa_servisi.plana_ekle(db, plan, [yeni.id], Kurallar(), kullanici="test")
+
+
+def test_tamamlanan_plandan_sonra_ayni_musteriye_yeni_arac_acilabilir(ic_veri):
+    """Plan sevk edilince (TAMAMLANDI) aynı müşterinin sonraki siparişi serbest kalır."""
+    db = ic_veri
+    from app.models import PlanDurumu
+
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ilk = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    ilk.planlar[0].durum = PlanDurumu.TAMAMLANDI
+    db.flush()
+
+    _siparis(db, "T2", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ikinci = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+    assert len(ikinci.planlar) == 1
+    assert not ikinci.bekleyenler
+
+
+def test_manuel_secimde_acik_plan_kontrolu_atlanir(ic_veri):
+    """Manuel planlama ekranından bilinçli seçilen teslimat çakışma kontrolünü aşar.
+
+    Planlamacı "ayrı sefer aç" der ve teslimatı elle seçip çalıştırırsa, bu artık
+    otomatik değil bilinçli bir insan kararıdır.
+    """
+    db = ic_veri
+    _siparis(db, "T1", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 1), tipler=[SevkiyatTipi.FTL], kullanici="test"
+    )
+
+    _siparis(db, "T2", 95, "BAYİ A", "IZMIR")
+    db.flush()
+    sonuc = ic_piyasa_servisi.plan_uret(
+        db, plan_tarihi=date(2026, 9, 2), tipler=[SevkiyatTipi.FTL], kullanici="test",
+        teslimat_nolar=["T2"],
+    )
+    assert len(sonuc.planlar) == 1
+    assert not sonuc.bekleyenler
+
+
 def test_planlama_ufkuna_sigmayan_hacim_beklemede_kalir(ic_veri):
     """Ufuk sonsuz değil: bir yıllık havuz tek çalıştırmada 100 günlük araç üretmemeli."""
     db = ic_veri

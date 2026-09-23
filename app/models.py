@@ -502,7 +502,9 @@ class SevkiyatPlani(Temel):
     """Yükleme formuna basılacak serbest not; planlamacı depoya buradan yazar."""
     olusturan: Mapped[str] = mapped_column(String(100), default="sistem")
 
-    satirlar: Mapped[list[SiparisSatiri]] = relationship(back_populates="plan")
+    satirlar: Mapped[list[SiparisSatiri]] = relationship(
+        back_populates="plan", foreign_keys="SiparisSatiri.plan_id"
+    )
     hareketler: Mapped[list[PlanHareketi]] = relationship(
         back_populates="plan", cascade="all, delete-orphan"
     )
@@ -932,6 +934,15 @@ class SiparisSatiri(Temel):
     plan_id: Mapped[int | None] = mapped_column(
         ForeignKey("sevkiyat_planlari.id"), index=True, default=None
     )
+    cakisan_plan_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sevkiyat_planlari.id"), default=None
+    )
+    """Bu müşteriye zaten sevk edilmemiş bir plan varsa o planın id'si.
+
+    `plan_id` boşken (satır henüz hiçbir plana bağlı değilken) doldurulur; ekranda
+    "mevcut plana ekle" eylemi buradan hedef planı bulur (bkz.
+    `ic_piyasa_servisi._acik_plan_cakismasini_ayikla` ve İhracat karşılığı).
+    """
     ice_aktarim_id: Mapped[int | None] = mapped_column(
         ForeignKey("ice_aktarimlar.id"), default=None
     )
@@ -944,7 +955,12 @@ class SiparisSatiri(Temel):
     olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     """Siparişin sisteme girdiği an. Plana alınma süresi KPI'ı bundan hesaplanır."""
 
-    plan: Mapped[SevkiyatPlani | None] = relationship(back_populates="satirlar")
+    plan: Mapped[SevkiyatPlani | None] = relationship(
+        back_populates="satirlar", foreign_keys="SiparisSatiri.plan_id"
+    )
+    cakisan_plan: Mapped[SevkiyatPlani | None] = relationship(
+        foreign_keys="SiparisSatiri.cakisan_plan_id", viewonly=True
+    )
     urun: Mapped[Urun | None] = relationship(
         primaryjoin="foreign(SiparisSatiri.urun_kodu) == Urun.urun_kodu",
         viewonly=True,
